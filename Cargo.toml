@@ -1,0 +1,16 @@
+[package]
+name = "ctrlr"
+version = "0.1.0"
+edition = "2024"
+authors = ["Hermann Berket <ger4ik777@gmail.com>"]
+
+[dependencies]
+color-eyre = "0.6.5"
+crossterm = "0.29.0"
+ratatui = "0.30.0"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
