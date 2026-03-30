@@ -9,6 +9,12 @@ use ratatui::{
 use std::io;
 use std::time::{Duration, Instant};
 
+#[derive(Clone, Debug, PartialEq)]
+enum ActivePane {
+    Search,
+    History,
+}
+
 #[derive(Clone, Debug)]
 struct Command {
     id: u32,
@@ -25,6 +31,7 @@ struct AppState {
     search_query: String,
     status_message: Option<String>,
     status_timestamp: Option<Instant>,
+    active_pane: ActivePane,
 }
 
 impl AppState {
@@ -37,7 +44,15 @@ impl AppState {
             search_query: String::new(),
             status_message: None,
             status_timestamp: None,
+            active_pane: ActivePane::Search,
         }
+    }
+
+    fn switch_pane(&mut self) {
+        self.active_pane = match self.active_pane {
+            ActivePane::Search => ActivePane::History,
+            ActivePane::History => ActivePane::Search,
+        };
     }
 
     fn navigate_up(&mut self) {
@@ -163,6 +178,8 @@ fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
             state.status_timestamp = None;
         }
 
+
+
         terminal.draw(|f| render(f, &state, &mut list_state))?;
         if let Event::Key(key) = crossterm::event::read()? {
             // quit
@@ -177,36 +194,80 @@ fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
 }
 
 fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -> Option<String> {
+    // Keys that return early
+    match (key.code, key.modifiers) {
+        (KeyCode::Tab, _) => {
+            state.switch_pane();
+            return None;
+        }
+        (KeyCode::Char('1'), KeyModifiers::NONE) => {
+            state.active_pane = ActivePane::Search;
+            return None;
+        }
+        (KeyCode::Char('2'), KeyModifiers::NONE) => {
+            state.active_pane = ActivePane::History;
+            return None;
+        }
+        (KeyCode::Enter, _) => return state.selected_command(),
+        _ => {}
+    }
+
+    // Keys that work in both panes (navigation, escape)
     match (key.code, key.modifiers) {
         (KeyCode::Up, _) => {
+            if state.active_pane == ActivePane::Search {
+                state.active_pane = ActivePane::History;
+            }
             state.navigate_up();
             list_state.select(Some(state.selected_index));
-            None
         }
         (KeyCode::Down, _) => {
+            if state.active_pane == ActivePane::Search {
+                state.active_pane = ActivePane::History;
+            }
             state.navigate_down();
             list_state.select(Some(state.selected_index));
-            None
         }
-        (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
-            state.toggle_favorite();
-            None
-        }
-        (KeyCode::Char(c), KeyModifiers::NONE) => {
-            state.add_to_search(c);
-            None
-        }
-        (KeyCode::Backspace, _) => {
-            state.remove_from_search();
-            None
-        }
-        (KeyCode::Enter, _) => state.selected_command(),
         (KeyCode::Esc, _) => {
             state.handle_esc();
-            None
         }
-        _ => None,
+        _ => {}
     }
+
+    // Pane-specific keys
+    match state.active_pane {
+        ActivePane::Search => {
+            match (key.code, key.modifiers) {
+                (KeyCode::Char(c), KeyModifiers::NONE) => {
+                    state.add_to_search(c);
+                }
+                (KeyCode::Backspace, _) => {
+                    state.remove_from_search();
+                }
+                _ => {}
+            }
+        }
+        ActivePane::History => {
+            match (key.code, key.modifiers) {
+                (KeyCode::Char('/'), KeyModifiers::NONE) => {
+                    state.active_pane = ActivePane::Search;
+                }
+                (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                    state.navigate_down();
+                    list_state.select(Some(state.selected_index));
+                }
+                (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                    state.navigate_up();
+                    list_state.select(Some(state.selected_index));
+                }
+                (KeyCode::Char('f'), KeyModifiers::NONE) => {
+                    state.toggle_favorite();
+                }
+                _ => {}
+            }
+        }
+    }
+    None
 }
 
 fn render(frame: &mut Frame, state: &AppState, list_state: &mut ListState) {
@@ -221,12 +282,23 @@ fn render(frame: &mut Frame, state: &AppState, list_state: &mut ListState) {
         .split(area);
 
     // search bar
-    let search_text = format!("Search: {}", state.search_query);
+    let cursor = if state.active_pane == ActivePane::Search { "▋" } else { "" };
+    let search_text = format!("Search: {}{}", state.search_query, cursor);
+    let search_border_color = if state.active_pane == ActivePane::Search {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
     frame.render_widget(
         Paragraph::new(search_text).block(
             Block::bordered()
-                .title("ctrlr")
-                .border_type(BorderType::Rounded),
+                .title(if state.active_pane == ActivePane::Search {
+                    "[Search]"
+                } else {
+                    "Search"
+                })
+                .border_type(BorderType::Rounded)
+                .border_style(Style::new().fg(search_border_color)),
         ),
         chunks[0],
     );
@@ -255,11 +327,21 @@ fn render(frame: &mut Frame, state: &AppState, list_state: &mut ListState) {
             .collect()
     };
 
+    let history_border_color = if state.active_pane == ActivePane::History {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
     let list = List::new(items)
         .block(
             Block::bordered()
-                .title("History")
-                .border_type(BorderType::Rounded),
+                .title(if state.active_pane == ActivePane::History {
+                    "[History]"
+                } else {
+                    "History"
+                })
+                .border_type(BorderType::Rounded)
+                .border_style(Style::new().fg(history_border_color)),
         )
         .highlight_style(Style::default()
             .bg(Color::Blue)
@@ -270,9 +352,17 @@ fn render(frame: &mut Frame, state: &AppState, list_state: &mut ListState) {
     frame.render_stateful_widget(list, chunks[1], list_state);
 
     //Footer
-    let footer_text = state
-        .status_message
-        .clone()
-        .unwrap_or_else(|| " ↑/↓: Navigate | Enter: Select | Ctrl+f: Favorite | Esc: Exit ".into());
+    let footer_text = if let Some(msg) = &state.status_message {
+        msg.clone()
+    } else {
+        match state.active_pane {
+            ActivePane::Search => {
+                " 2: History | Type to search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ".into()
+            }
+            ActivePane::History => {
+                " /: Search | 1: Search | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ".into()
+            }
+        }
+    };
     frame.render_widget(Paragraph::new(footer_text), chunks[2]);
 }
