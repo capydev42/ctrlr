@@ -1,4 +1,4 @@
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
@@ -7,9 +7,11 @@ use ratatui::{
 };
 
 use std::io;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug)]
 struct Command {
+    id: u32,
     text: String,
     tags: Vec<String>,
     favorite: bool,
@@ -21,6 +23,8 @@ struct AppState {
     filtered: Vec<Command>,
     selected_index: usize,
     search_query: String,
+    status_message: Option<String>,
+    status_timestamp: Option<Instant>,
 }
 
 impl AppState {
@@ -31,6 +35,8 @@ impl AppState {
             filtered,
             selected_index: 0,
             search_query: String::new(),
+            status_message: None,
+            status_timestamp: None,
         }
     }
 
@@ -86,9 +92,27 @@ impl AppState {
     }
 
     fn selected_command(&self) -> Option<String> {
+        if self.filtered.is_empty() {
+            return None;
+        }
         self.filtered
             .get(self.selected_index)
             .map(|c| c.text.clone())
+    }
+
+    fn toggle_favorite(&mut self) {
+        if let Some(selected) = self.filtered.get(self.selected_index)
+            && let Some(cmd) = self.commands.iter_mut().find(|c| c.id == selected.id)
+        {
+            cmd.favorite = !cmd.favorite;
+            self.status_message = Some(if cmd.favorite {
+                format!("⭐ Favorited: {}", cmd.text)
+            } else {
+                format!("⭐ Unfavorited: {}", cmd.text)
+            });
+            self.status_timestamp = Some(Instant::now());
+        }
+        self.filter_commands();
     }
 }
 
@@ -104,18 +128,21 @@ fn main() -> color_eyre::Result<()> {
 fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
     let commands = vec![
         Command {
+            id: 0,
             text: "ls -la".into(),
             tags: vec!["general".into()],
             favorite: true,
             _context: String::default(),
         },
         Command {
+            id: 1,
             text: "docker build -t myapp .".into(),
             tags: vec!["docker".into()],
             favorite: true,
             _context: String::default(),
         },
         Command {
+            id: 2,
             text: "git status".into(),
             tags: vec!["git".into()],
             favorite: false,
@@ -128,6 +155,14 @@ fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
     list_state.select(Some(0));
 
     loop {
+        // Clear status after 2 seconds
+        if let (Some(_), Some(ts)) = (&state.status_message, state.status_timestamp)
+            && ts.elapsed() > Duration::from_secs(2)
+        {
+            state.status_message = None;
+            state.status_timestamp = None;
+        }
+
         terminal.draw(|f| render(f, &state, &mut list_state))?;
         if let Event::Key(key) = crossterm::event::read()? {
             // quit
@@ -142,27 +177,31 @@ fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
 }
 
 fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -> Option<String> {
-    match key.code {
-        KeyCode::Up => {
+    match (key.code, key.modifiers) {
+        (KeyCode::Up, _) => {
             state.navigate_up();
             list_state.select(Some(state.selected_index));
             None
         }
-        KeyCode::Down => {
+        (KeyCode::Down, _) => {
             state.navigate_down();
             list_state.select(Some(state.selected_index));
             None
         }
-        KeyCode::Char(c) => {
+        (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
+            state.toggle_favorite();
+            None
+        }
+        (KeyCode::Char(c), KeyModifiers::NONE) => {
             state.add_to_search(c);
             None
         }
-        KeyCode::Backspace => {
+        (KeyCode::Backspace, _) => {
             state.remove_from_search();
             None
         }
-        KeyCode::Enter => state.selected_command(),
-        KeyCode::Esc => {
+        (KeyCode::Enter, _) => state.selected_command(),
+        (KeyCode::Esc, _) => {
             state.handle_esc();
             None
         }
@@ -186,27 +225,35 @@ fn render(frame: &mut Frame, state: &AppState, list_state: &mut ListState) {
     frame.render_widget(
         Paragraph::new(search_text).block(
             Block::bordered()
-                .title("cltr")
+                .title("ctrlr")
                 .border_type(BorderType::Rounded),
         ),
         chunks[0],
     );
 
     //History List
-    let items: Vec<ListItem> = state
-        .filtered
-        .iter()
-        .map(|cmd| {
-            let tags = cmd
-                .tags
-                .iter()
-                .map(|t| format!("#{}", t))
-                .collect::<Vec<_>>()
-                .join(" ");
-            let fav = if cmd.favorite { " *" } else { "" };
-            ListItem::new(format!("{}  {}{}", cmd.text, tags, fav))
-        })
-        .collect();
+    let items: Vec<ListItem> = if state.filtered.is_empty() {
+        vec![ListItem::new("No results found")]
+    } else {
+        state
+            .filtered
+            .iter()
+            .map(|cmd| {
+                let tags = cmd
+                    .tags
+                    .iter()
+                    .map(|t| format!("#{}", t))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                ListItem::new(format!(
+                    "{:<2} {:<50} {}",
+                    if cmd.favorite { "⭐" } else { " " },
+                    cmd.text,
+                    tags
+                ))
+            })
+            .collect()
+    };
 
     let list = List::new(items)
         .block(
@@ -214,16 +261,18 @@ fn render(frame: &mut Frame, state: &AppState, list_state: &mut ListState) {
                 .title("History")
                 .border_type(BorderType::Rounded),
         )
-        .highlight_style(Style::new().bg(Color::Cyan))
+        .highlight_style(Style::default()
+            .bg(Color::Blue)
+            .fg(Color::White)
+        )
         .highlight_symbol("> ");
 
     frame.render_stateful_widget(list, chunks[1], list_state);
 
     //Footer
-    frame.render_widget(
-        Paragraph::new(
-            " ↑ / ↓ : Navigate  | Enter : Select | f : Favorite | t : Tag | Esc : Exit ",
-        ),
-        chunks[2],
-    );
+    let footer_text = state
+        .status_message
+        .clone()
+        .unwrap_or_else(|| " ↑/↓: Navigate | Enter: Select | Ctrl+f: Favorite | Esc: Exit ".into());
+    frame.render_widget(Paragraph::new(footer_text), chunks[2]);
 }
