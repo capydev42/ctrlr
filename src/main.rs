@@ -1,9 +1,8 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout}, 
+    DefaultTerminal, Frame,
+    layout::{Constraint, Direction, Layout},
     widgets::{Block, Borders, List, Paragraph},
-    DefaultTerminal, Frame
 };
-
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
@@ -33,23 +32,22 @@ fn render(frame: &mut Frame) {
 
     // search bar
     frame.render_widget(
-        Paragraph::new("Search: ").block(Block::bordered().title("cltr")), 
-            chunks[0]
+        Paragraph::new("Search: ").block(Block::bordered().title("cltr")),
+        chunks[0],
     );
 
     //History List
     frame.render_widget(
-//        List::new(commands.iter().map(|c| c.text.as_str())), 
+        //        List::new(commands.iter().map(|c| c.text.as_str())),
         Paragraph::new("History"),
-        chunks[1]
+        chunks[1],
     );
 
     //Footer
     frame.render_widget(
-        Paragraph::new(" ↑ / ↓ : Navigate  | Enter : Select | f : Favorite | t : Tag | Esc : Exit "),
-        chunks[2]);
-
-
-
-
+        Paragraph::new(
+            " ↑ / ↓ : Navigate  | Enter : Select | f : Favorite | t : Tag | Esc : Exit ",
+        ),
+        chunks[2],
+    );
 }
