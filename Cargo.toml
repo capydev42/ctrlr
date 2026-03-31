@@ -10,6 +10,7 @@ crossterm = "0.29.0"
 ratatui = "0.30.0"
 dirs = "6"
 rusqlite = { version = "0.32", features = ["bundled"] }
+sha1 = "0.10"
 
 [profile.release]
 codegen-units = 1

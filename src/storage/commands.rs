@@ -1,10 +1,10 @@
 use rusqlite::Connection;
+use sha1::{Digest, Sha1};
 
 pub fn hash_command(text: &str) -> String {
-
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    std::hash::Hash::hash(&text, &mut hasher);
-    format!("{:x}", std::hash::Hasher::finish(&hasher))
+    let mut hasher = Sha1::new();
+    hasher.update(text.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 pub fn update_favorite(conn: &Connection, text: &str, favorite: bool) -> rusqlite::Result<()> {
