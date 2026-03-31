@@ -108,16 +108,19 @@ impl AppState {
         self.tag_input = parts.join(", ") + ", ";
     }
 
-    fn add_tag(&mut self, tag: String) {
-        if let Some(selected) = self.filtered.get(self.selected_index)
-            && let Some(cmd) = self.commands.iter_mut().find(|c| c.id == selected.id)
-            && !cmd.tags.contains(&tag)
+    fn set_tags(&mut self, tags: Vec<String>) {
+        let current_id = self.filtered.get(self.selected_index).map(|c| c.id);
+        if let Some(id) = current_id
+            && let Some(cmd) = self.commands.iter_mut().find(|c| c.id == id)
         {
-            cmd.tags.push(tag);
-            self.status_message = Some("🏷️ Added tag".into());
+            cmd.tags = tags;
+            self.status_message = Some("🏷️ Tags updated".into());
             self.status_timestamp = Some(Instant::now());
         }
         self.filter_commands();
+        if let Some(id) = current_id {
+            self.selected_index = self.filtered.iter().position(|c| c.id == id).unwrap_or(0);
+        }
     }
 
     fn switch_pane(&mut self) {
@@ -301,9 +304,7 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
                     .map(|t| t.trim().to_string())
                     .filter(|t| !t.is_empty())
                     .collect();
-                for tag in tags {
-                    state.add_tag(tag);
-                }
+                state.set_tags(tags);
                 state.tag_input.clear();
                 state.input_mode = InputMode::Normal;
                 state.tag_selected_index = 0;
@@ -375,7 +376,11 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
                 }
                 (KeyCode::Char('t'), KeyModifiers::NONE) => {
                     state.input_mode = InputMode::TagInput;
-                    state.tag_input = String::new();
+                    if let Some(selected) = state.filtered.get(state.selected_index) {
+                        state.tag_input = selected.tags.join(", ");
+                    } else {
+                        state.tag_input = String::new();
+                    }
                     state.tag_selected_index = 0;
                 }
                 (KeyCode::Char('j'), KeyModifiers::NONE) => {
