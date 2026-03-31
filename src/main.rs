@@ -3,9 +3,11 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, List, ListItem, ListState, Paragraph},
+    widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph},
     DefaultTerminal, Frame,
 };
+
+mod history;
 
 use std::io;
 use std::time::{Duration, Instant};
@@ -226,30 +228,7 @@ fn main() -> color_eyre::Result<()> {
 }
 
 fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
-    let commands = vec![
-        Command {
-            id: 0,
-            text: "ls -la".into(),
-            tags: vec!["general".into()],
-            favorite: true,
-            _context: String::default(),
-        },
-        Command {
-            id: 1,
-            text: "docker build -t myapp .".into(),
-            tags: vec!["docker".into()],
-            favorite: true,
-            _context: String::default(),
-        },
-        Command {
-            id: 2,
-            text: "git status".into(),
-            tags: vec!["git".into()],
-            favorite: false,
-            _context: String::default(),
-        },
-    ];
-
+    let commands = history::load_history();
     let mut state = AppState::new(commands);
     let mut list_state = ListState::default();
     list_state.select(Some(0));
@@ -336,6 +315,7 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
                     }
                 }
             }
+            // think about also supporting ctrl+p/n additionally
             (KeyCode::Up, _) => {
                 let len = state.filtered_tags().len();
                 if len > 0 {
@@ -541,7 +521,7 @@ fn render_history_list(frame: &mut Frame, state: &AppState, list_state: &mut Lis
                 .border_type(BorderType::Rounded)
                 .border_style(Style::new().fg(history_border_color)),
         )
-        .highlight_style(Style::default().bg(Color::Blue).fg(Color::White))
+        .highlight_style(Style::default().bg(Color::Blue).fg(Color::White)) // pff overthink color choice ...
         .highlight_symbol("> ");
 
     frame.render_stateful_widget(list, area, list_state);
@@ -551,7 +531,8 @@ fn render_footer(frame: &mut Frame, state: &AppState, area: Rect) {
     let footer_text = if let Some(msg) = &state.status_message {
         msg.clone()
     } else {
-        match state.active_pane {
+        match state.active_pane { 
+            // help page would be nice .. -> check how others handle this in tuis 
             ActivePane::Search => {
                 " 2: History | Type to search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ".into()
             }
@@ -565,6 +546,7 @@ fn render_footer(frame: &mut Frame, state: &AppState, area: Rect) {
 }
 
 fn render_tag_popup(frame: &mut Frame, state: &AppState, area: Rect) {
+    // lets see if i understand the popup in two weeks still, -> should refactor...
     let tags = state.selected_command_tags();
     let suggestions = if state.tag_cursor_index.is_none() {
         state.filtered_tags()
@@ -581,6 +563,8 @@ fn render_tag_popup(frame: &mut Frame, state: &AppState, area: Rect) {
     let popup_width = 60u16;
 
     let centered = center_rect(popup_width, popup_height, area);
+
+    frame.render_widget(Clear, centered);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)

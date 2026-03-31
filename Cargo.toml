@@ -8,6 +8,7 @@ authors = ["Hermann Berket <ger4ik777@gmail.com>"]
 color-eyre = "0.6.5"
 crossterm = "0.29.0"
 ratatui = "0.30.0"
+dirs = "6"
 
 [profile.release]
 codegen-units = 1
