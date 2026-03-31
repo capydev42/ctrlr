@@ -8,6 +8,7 @@ use ratatui::{
 };
 
 mod history;
+mod storage;
 
 use std::io;
 use std::time::{Duration, Instant};
@@ -31,6 +32,8 @@ struct Command {
     tags: Vec<String>,
     favorite: bool,
     _context: String,
+    use_count: i32,
+    last_used: Option<i64>,
 }
 
 struct AppState {
@@ -45,10 +48,11 @@ struct AppState {
     tag_input: String,
     tag_selected_index: usize,
     tag_cursor_index: Option<usize>,
+    db: Option<rusqlite::Connection>,
 }
 
 impl AppState {
-    fn new(commands: Vec<Command>) -> Self {
+    fn new(commands: Vec<Command>, db: Option<rusqlite::Connection>) -> Self {
         let filtered = commands.clone();
         Self {
             commands,
@@ -62,6 +66,7 @@ impl AppState {
             tag_input: String::new(),
             tag_selected_index: 0,
             tag_cursor_index: None,
+            db,
         }
     }
 
@@ -125,7 +130,13 @@ impl AppState {
         if let Some(id) = current_id
             && let Some(cmd) = self.commands.iter_mut().find(|c| c.id == id)
         {
-            cmd.tags = tags;
+            cmd.tags = tags.clone();
+            
+            if let Some(ref conn) = self.db {
+                use storage::tags;
+                tags::set_tags_for_command(conn, &cmd.text, &tags).ok();
+            }
+            
             self.status_message = Some("🏷️ Tags updated".into());
             self.status_timestamp = Some(Instant::now());
         }
@@ -202,11 +213,36 @@ impl AppState {
             .map(|c| c.text.clone())
     }
 
+    fn mark_executed(&mut self) {
+        if let Some(selected) = self.filtered.get(self.selected_index)
+            && let Some(cmd) = self.commands.iter_mut().find(|c| c.id == selected.id)
+        {
+            cmd.use_count += 1;
+            cmd.last_used = Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0),
+            );
+
+            if let Some(ref conn) = self.db {
+                use storage::commands;
+                commands::increment_use_count(conn, &cmd.text).ok();
+            }
+        }
+    }
+
     fn toggle_favorite(&mut self) {
         if let Some(selected) = self.filtered.get(self.selected_index)
             && let Some(cmd) = self.commands.iter_mut().find(|c| c.id == selected.id)
         {
             cmd.favorite = !cmd.favorite;
+            
+            if let Some(ref conn) = self.db {
+                use storage::commands;
+                commands::update_favorite(conn, &cmd.text, cmd.favorite).ok();
+            }
+            
             self.status_message = Some(if cmd.favorite {
                 format!("⭐ Favorited: {}", cmd.text)
             } else {
@@ -228,8 +264,30 @@ fn main() -> color_eyre::Result<()> {
 }
 
 fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
+    let db = storage::init_db().ok();
     let commands = history::load_history();
-    let mut state = AppState::new(commands);
+    
+    let commands = if let Some(ref conn) = db {
+        commands
+            .into_iter()
+            .map(|mut cmd| {
+                if let Some(meta) = storage::load_metadata(conn, &cmd.text) {
+                    cmd.favorite = meta.favorite;
+                    cmd.use_count = meta.use_count;
+                    cmd.last_used = meta.last_used;
+                }
+                let tags = storage::load_tags(conn, &cmd.text);
+                if !tags.is_empty() {
+                    cmd.tags = tags;
+                }
+                cmd
+            })
+            .collect()
+    } else {
+        commands
+    };
+    
+    let mut state = AppState::new(commands, db);
     let mut list_state = ListState::default();
     list_state.select(Some(0));
 
@@ -369,7 +427,11 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
             state.active_pane = ActivePane::History;
             return None;
         }
-        (KeyCode::Enter, _) => return state.selected_command(),
+        (KeyCode::Enter, _) => {
+            let cmd = state.selected_command();
+            state.mark_executed();
+            return cmd;
+        }
         _ => {}
     }
 

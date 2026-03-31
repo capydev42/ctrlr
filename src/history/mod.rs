@@ -31,6 +31,8 @@ pub fn load_history() -> Vec<Command> {
                     tags: vec!["bash".to_string()],
                     favorite: false,
                     _context: "shell:bash".to_string(),
+                    use_count: 0,
+                    last_used: None,
                 });
                 id += 1;
             }
@@ -44,6 +46,8 @@ pub fn load_history() -> Vec<Command> {
                     tags: vec!["zsh".to_string()],
                     favorite: false,
                     _context: "shell:zsh".to_string(),
+                    use_count: 0,
+                    last_used: None,
                 });
                 id += 1;
             }
@@ -57,6 +61,8 @@ pub fn load_history() -> Vec<Command> {
                     tags: vec!["fish".to_string()],
                     favorite: false,
                     _context: "shell:fish".to_string(),
+                    use_count: 0,
+                    last_used: None,
                 });
                 id += 1;
             }
