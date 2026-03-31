@@ -2,6 +2,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
+    text::{Line, Span},
     widgets::{Block, BorderType, List, ListItem, ListState, Paragraph},
     DefaultTerminal, Frame,
 };
@@ -41,6 +42,7 @@ struct AppState {
     input_mode: InputMode,
     tag_input: String,
     tag_selected_index: usize,
+    tag_cursor_index: Option<usize>,
 }
 
 impl AppState {
@@ -57,7 +59,15 @@ impl AppState {
             input_mode: InputMode::Normal,
             tag_input: String::new(),
             tag_selected_index: 0,
+            tag_cursor_index: None,
         }
+    }
+
+    fn selected_command_tags(&self) -> Vec<String> {
+        self.filtered
+            .get(self.selected_index)
+            .map(|c| c.tags.clone())
+            .unwrap_or_default()
     }
 
     fn current_tag_fragment(&self) -> String {
@@ -270,20 +280,60 @@ fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
 fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -> Option<String> {
     if state.input_mode == InputMode::TagInput {
         match (key.code, key.modifiers) {
-            (KeyCode::Char(c), KeyModifiers::NONE) => {
-                state.tag_input.push(c);
-                state.tag_selected_index = 0;
+            (KeyCode::Left, _) => {
+                let tags = state.selected_command_tags();
+                if !tags.is_empty() {
+                    if let Some(idx) = state.tag_cursor_index {
+                        state.tag_cursor_index = Some(if idx == 0 { tags.len() - 1 } else { idx - 1 });
+                    } else {
+                        state.tag_cursor_index = Some(tags.len() - 1);
+                    }
+                }
+            }
+            (KeyCode::Right, _) => {
+                let tags = state.selected_command_tags();
+                if let Some(idx) = state.tag_cursor_index {
+                    state.tag_cursor_index = Some(if idx + 1 >= tags.len() { 0 } else { idx + 1 });
+                }
             }
             (KeyCode::Backspace, _) => {
-                state.tag_input.pop();
-                state.tag_selected_index = 0;
+                if let Some(idx) = state.tag_cursor_index {
+                    let mut tags = state.selected_command_tags();
+                    if idx < tags.len() {
+                        tags.remove(idx);
+                        let new_len = tags.len();
+                        state.set_tags(tags);
+                        state.tag_cursor_index = if new_len == 0 {
+                            None
+                        } else if idx >= new_len {
+                            Some(new_len - 1)
+                        } else {
+                            Some(idx)
+                        };
+                    }
+                } else if state.tag_input.is_empty() {
+                    let tags = state.selected_command_tags();
+                    if !tags.is_empty() {
+                        state.tag_cursor_index = Some(tags.len() - 1);
+                    }
+                } else {
+                    state.tag_input.pop();
+                }
+            }
+            (KeyCode::Char(c), KeyModifiers::NONE) => {
+                if state.tag_cursor_index.is_some() {
+                    state.tag_cursor_index = None;
+                }
+                state.tag_input.push(c);
             }
             (KeyCode::Tab, _) => {
-                let suggestions = state.filtered_tags();
-                if !suggestions.is_empty() && state.tag_selected_index < suggestions.len() {
-                    let tag = suggestions[state.tag_selected_index].clone();
-                    state.apply_selected_tag(tag);
-                    state.tag_selected_index = 0;
+                if state.tag_cursor_index.is_none() {
+                    let suggestions = state.filtered_tags();
+                    if !suggestions.is_empty() && state.tag_selected_index < suggestions.len() {
+                        let tag = suggestions[state.tag_selected_index].clone();
+                        state.apply_selected_tag(tag);
+                        state.tag_selected_index = 0;
+                    }
                 }
             }
             (KeyCode::Up, _) => {
@@ -299,13 +349,19 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
                 }
             }
             (KeyCode::Enter, _) => {
-                let tags: Vec<String> = state.tag_input
+                let new_tags: Vec<String> = state.tag_input
                     .split(',')
                     .map(|t| t.trim().to_string())
                     .filter(|t| !t.is_empty())
                     .collect();
+
+                let mut tags = state.selected_command_tags();
+                tags.extend(new_tags);
+                tags.sort();
+                tags.dedup();
                 state.set_tags(tags);
                 state.tag_input.clear();
+                state.tag_cursor_index = None;
                 state.input_mode = InputMode::Normal;
                 state.tag_selected_index = 0;
             }
@@ -313,6 +369,7 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
                 state.input_mode = InputMode::Normal;
                 state.tag_input.clear();
                 state.tag_selected_index = 0;
+                state.tag_cursor_index = None;
             }
             _ => {}
         }
@@ -376,12 +433,9 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
                 }
                 (KeyCode::Char('t'), KeyModifiers::NONE) => {
                     state.input_mode = InputMode::TagInput;
-                    if let Some(selected) = state.filtered.get(state.selected_index) {
-                        state.tag_input = selected.tags.join(", ");
-                    } else {
-                        state.tag_input = String::new();
-                    }
+                    state.tag_input = String::new();
                     state.tag_selected_index = 0;
+                    state.tag_cursor_index = None;
                 }
                 (KeyCode::Char('j'), KeyModifiers::NONE) => {
                     state.navigate_down();
@@ -511,35 +565,72 @@ fn render_footer(frame: &mut Frame, state: &AppState, area: Rect) {
 }
 
 fn render_tag_popup(frame: &mut Frame, state: &AppState, area: Rect) {
-    let suggestions = state.filtered_tags();
-    let popup_height = (suggestions.len().min(5) as u16 + 5).max(7);
-    let popup_width = 40u16;
+    let tags = state.selected_command_tags();
+    let suggestions = if state.tag_cursor_index.is_none() {
+        state.filtered_tags()
+    } else {
+        Vec::new()
+    };
+    let has_suggestions = !suggestions.is_empty() && !state.tag_input.is_empty();
 
-    let horizontal_centered = center_rect(popup_width, popup_height, area);
+    let input_height = if tags.is_empty() { 3 } else { 4 };
+    let sugg_count = suggestions.len().min(5);
+    let sugg_height = if has_suggestions { sugg_count as u16 + 2 } else { 0 };
+    let hint_height = 1u16;
+    let popup_height = input_height + sugg_height + hint_height;
+    let popup_width = 60u16;
 
-    let popup_chunks = Layout::default()
+    let centered = center_rect(popup_width, popup_height, area);
+
+    let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-            Constraint::Length(1),
+            Constraint::Length(input_height),
+            Constraint::Length(sugg_height),
+            Constraint::Length(hint_height),
         ])
-        .split(horizontal_centered);
+        .split(centered);
 
-    let input_text = format!("Tag: {}_", state.tag_input);
+    let mut spans: Vec<Span> = Vec::new();
+    spans.push(Span::raw("Tags: "));
+
+    for (i, tag) in tags.iter().enumerate() {
+        if Some(i) == state.tag_cursor_index {
+            spans.push(Span::styled(
+                format!("[ {} ]", tag),
+                Style::default().fg(Color::Black).bg(Color::Yellow),
+            ));
+            spans.push(Span::raw(" "));
+        } else {
+            spans.push(Span::styled(
+                format!(" {} ", tag),
+                Style::default().fg(Color::White).bg(Color::DarkGray),
+            ));
+            spans.push(Span::raw(" "));
+        }
+    }
+
+    if state.tag_cursor_index.is_none() || tags.is_empty() {
+        spans.push(Span::styled(
+            format!("{}▋", state.tag_input),
+            Style::default().fg(Color::White),
+        ));
+    }
+
     frame.render_widget(
-        Paragraph::new(input_text).block(
+        Paragraph::new(Line::from(spans)).block(
             Block::bordered()
-                .title("[Add Tag]")
+                .title("[Edit Tags]")
                 .border_type(BorderType::Rounded)
                 .border_style(Style::new().fg(Color::Yellow)),
         ),
-        popup_chunks[0],
+        chunks[0],
     );
 
-    if !suggestions.is_empty() {
-        let tag_items: Vec<ListItem> = suggestions
+    if has_suggestions {
+        let sugg_items: Vec<ListItem> = suggestions
             .iter()
+            .take(5)
             .enumerate()
             .map(|(i, tag)| {
                 if i == state.tag_selected_index {
@@ -551,25 +642,28 @@ fn render_tag_popup(frame: &mut Frame, state: &AppState, area: Rect) {
             })
             .collect();
 
-        let tag_list = List::new(tag_items)
-            .block(Block::bordered().title("Tags"));
-
-        frame.render_widget(tag_list, popup_chunks[1]);
-    } else {
-        frame.render_widget(
-            Block::bordered()
-                .title("Tags")
-                .border_style(Style::new().fg(Color::DarkGray)),
-            popup_chunks[1],
+        let sugg_height = (sugg_items.len() as u16 + 1).max(3);
+        let sugg_area = Rect::new(
+            chunks[1].x,
+            chunks[1].y,
+            chunks[1].width,
+            sugg_height,
         );
+
+        let sugg_list = List::new(sugg_items).block(Block::bordered().title("Suggestions"));
+        frame.render_widget(sugg_list, sugg_area);
     }
 
-    let keybindings = " TAB:Autocomplete | ↑/↓:Navigate | Enter:Confirm | Esc:Cancel ";
+    let hint = if !tags.is_empty() {
+        "←/→: Select Tag | Backspace: Delete | Type: Add New | Enter: Save"
+    } else {
+        "Type to add tags | Enter: Save | Esc: Cancel"
+    };
     frame.render_widget(
-        Paragraph::new(keybindings)
+        Paragraph::new(hint)
             .style(Style::new().fg(Color::DarkGray))
             .alignment(Alignment::Center),
-        popup_chunks[2],
+        chunks[2],
     );
 }
 
