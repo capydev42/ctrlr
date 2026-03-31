@@ -265,27 +265,30 @@ fn main() -> color_eyre::Result<()> {
 
 fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
     let db = storage::init_db().ok();
-    let commands = history::load_history();
+    let mut commands = history::load_history();
     
-    let commands = if let Some(ref conn) = db {
-        commands
-            .into_iter()
-            .map(|mut cmd| {
-                if let Some(meta) = storage::load_metadata(conn, &cmd.text) {
-                    cmd.favorite = meta.favorite;
-                    cmd.use_count = meta.use_count;
-                    cmd.last_used = meta.last_used;
-                }
-                let tags = storage::load_tags(conn, &cmd.text);
-                if !tags.is_empty() {
-                    cmd.tags = tags;
-                }
-                cmd
+    if let Some(ref conn) = db {
+        let cmd_refs: Vec<(&str, String)> = commands
+            .iter()
+            .map(|c| {
+                let id = storage::commands::hash_command(&c.text);
+                (c.text.as_str(), id)
             })
-            .collect()
-    } else {
-        commands
-    };
+            .collect();
+        storage::commands::ensure_commands_exist(conn, &cmd_refs).ok();
+
+        for cmd in &mut commands {
+            if let Some(meta) = storage::load_metadata(conn, &cmd.text) {
+                cmd.favorite = meta.favorite;
+                cmd.use_count = meta.use_count;
+                cmd.last_used = meta.last_used;
+            }
+            let tags = storage::load_tags(conn, &cmd.text);
+            if !tags.is_empty() {
+                cmd.tags = tags;
+            }
+        }
+    }
     
     let mut state = AppState::new(commands, db);
     let mut list_state = ListState::default();

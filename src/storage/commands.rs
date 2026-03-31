@@ -7,6 +7,17 @@ pub fn hash_command(text: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+pub fn ensure_commands_exist(
+    conn: &Connection,
+    commands: &[(&str, String)],
+) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare("INSERT OR IGNORE INTO commands (id, text) VALUES (?, ?)")?;
+    for (text, id) in commands {
+        stmt.execute([id.as_str(), text])?;
+    }
+    Ok(())
+}
+
 pub fn update_favorite(conn: &Connection, text: &str, favorite: bool) -> rusqlite::Result<()> {
     let id = hash_command(text);
 
