@@ -27,9 +27,7 @@ pub fn read_history(path: &Path) -> Vec<HistoryEntry> {
 
 fn parse_fish_line(line: &str) -> Option<HistoryEntry> {
     if line.starts_with('-') {
-        if let Some(cmd) = parse_fish_yaml_line(line) {
-            return Some(cmd);
-        }
+        return parse_fish_yaml_line(line);
     }
 
     if let Some(stripped) = line.strip_prefix("cmd ") {
