@@ -126,20 +126,20 @@ impl AppState {
 
     fn set_tags(&mut self, tags: Vec<String>) {
         let current_id = self.filtered.get(self.selected_index).map(|c| c.id);
-        if let Some(id) = current_id
-            && let Some(cmd) = self.commands.iter_mut().find(|c| c.id == id)
-        {
-            cmd.tags = tags.clone();
+        if let Some(id) = current_id {
+            if let Some(cmd) = self.commands.iter_mut().find(|c| c.id == id) {
+                cmd.tags = tags.clone();
 
-            if let Some(ref mut conn) = self.db {
-                use storage::tags;
-                if let Err(e) = tags::set_tags_for_command(conn, &cmd.text, &tags) {
-                    eprintln!("DB error saving tags: {}", e);
+                if let Some(ref mut conn) = self.db {
+                    use storage::tags;
+                    if let Err(e) = tags::set_tags_for_command(conn, &cmd.text, &tags) {
+                        eprintln!("DB error saving tags: {}", e);
+                    }
                 }
-            }
 
-            self.status_message = Some("🏷️ Tags updated".into());
-            self.status_timestamp = Some(Instant::now());
+                self.status_message = Some("🏷️ Tags updated".into());
+                self.status_timestamp = Some(Instant::now());
+            }
         }
         self.filter_commands();
         if let Some(id) = current_id {
@@ -215,45 +215,45 @@ impl AppState {
     }
 
     fn mark_executed(&mut self) {
-        if let Some(selected) = self.filtered.get(self.selected_index)
-            && let Some(cmd) = self.commands.iter_mut().find(|c| c.id == selected.id)
-        {
-            cmd.use_count += 1;
-            cmd.last_used = Some(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs() as i64)
-                    .unwrap_or(0),
-            );
+        if let Some(selected) = self.filtered.get(self.selected_index) {
+            if let Some(cmd) = self.commands.iter_mut().find(|c| c.id == selected.id) {
+                cmd.use_count += 1;
+                cmd.last_used = Some(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0),
+                );
 
-            if let Some(ref mut conn) = self.db {
-                use storage::commands;
-                if let Err(e) = commands::increment_use_count(conn, &cmd.text) {
-                    eprintln!("DB error updating use count: {}", e);
+                if let Some(ref mut conn) = self.db {
+                    use storage::commands;
+                    if let Err(e) = commands::increment_use_count(conn, &cmd.text) {
+                        eprintln!("DB error updating use count: {}", e);
+                    }
                 }
             }
         }
     }
 
     fn toggle_favorite(&mut self) {
-        if let Some(selected) = self.filtered.get(self.selected_index)
-            && let Some(cmd) = self.commands.iter_mut().find(|c| c.id == selected.id)
-        {
-            cmd.favorite = !cmd.favorite;
+        if let Some(selected) = self.filtered.get(self.selected_index) {
+            if let Some(cmd) = self.commands.iter_mut().find(|c| c.id == selected.id) {
+                cmd.favorite = !cmd.favorite;
 
-            if let Some(ref mut conn) = self.db {
-                use storage::commands;
-                if let Err(e) = commands::update_favorite(conn, &cmd.text, cmd.favorite) {
-                    eprintln!("DB error updating favorite: {}", e);
+                if let Some(ref mut conn) = self.db {
+                    use storage::commands;
+                    if let Err(e) = commands::update_favorite(conn, &cmd.text, cmd.favorite) {
+                        eprintln!("DB error updating favorite: {}", e);
+                    }
                 }
-            }
 
-            self.status_message = Some(if cmd.favorite {
-                format!("⭐ Favorited: {}", cmd.text)
-            } else {
-                format!("⭐ Unfavorited: {}", cmd.text)
-            });
-            self.status_timestamp = Some(Instant::now());
+                self.status_message = Some(if cmd.favorite {
+                    format!("⭐ Favorited: {}", cmd.text)
+                } else {
+                    format!("⭐ Unfavorited: {}", cmd.text)
+                });
+                self.status_timestamp = Some(Instant::now());
+            }
         }
         self.filter_commands();
     }
@@ -341,11 +341,11 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
     list_state.select(Some(0));
 
     loop {
-        if let (Some(_), Some(ts)) = (&state.status_message, state.status_timestamp)
-            && ts.elapsed() > Duration::from_secs(2)
-        {
-            state.status_message = None;
-            state.status_timestamp = None;
+        if let (Some(_), Some(ts)) = (&state.status_message, state.status_timestamp) {
+            if ts.elapsed() > Duration::from_secs(2) {
+                state.status_message = None;
+                state.status_timestamp = None;
+            }
         }
 
         terminal.draw(|f| render(f, &state, &mut list_state))?;

@@ -45,17 +45,17 @@ fn get_output_file_flag(args: &[String]) -> Option<String> {
 fn check_integration_warning() {
     if let Some(shell) = Shell::detect() {
         let config_path = shell.config_path();
-        if let Ok(content) = std::fs::read_to_string(&config_path)
-            && !shells::is_installed(shell, &content)
-        {
-            println!();
-            println!("⚡ ctrlr shell integration not found");
-            println!();
-            println!("Run:");
-            println!("    ctrlr init");
-            println!();
-            println!("to enable keybindings (Ctrl+R)");
-            println!();
+        if let Ok(content) = std::fs::read_to_string(&config_path) {
+            if !shells::is_installed(shell, &content) {
+                println!();
+                println!("⚡ ctrlr shell integration not found");
+                println!();
+                println!("Run:");
+                println!("    ctrlr init");
+                println!();
+                println!("to enable keybindings (Ctrl+R)");
+                println!();
+            }
         }
     }
 }
