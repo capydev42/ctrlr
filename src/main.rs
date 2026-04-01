@@ -28,11 +28,11 @@ enum InputMode {
 
 #[derive(Clone, Debug)]
 struct Command {
-    id: u32,
+    id: String,
     text: String,
     tags: Vec<String>,
     favorite: bool,
-    _context: String,
+    _context: Vec<String>,
     use_count: i32,
     last_used: Option<i64>,
 }
@@ -125,10 +125,10 @@ impl AppState {
     }
 
     fn set_tags(&mut self, tags: Vec<String>) {
-        let current_id = self.filtered.get(self.selected_index).map(|c| c.id);
+        let current_id = self.filtered.get(self.selected_index).map(|c| c.id.clone());
 
-        if let Some(id) = current_id {
-            let cmd = self.commands.iter_mut().find(|c| c.id == id);
+        if let Some(ref id) = current_id {
+            let cmd = self.commands.iter_mut().find(|c| &c.id == id);
             if let Some(cmd) = cmd {
                 cmd.tags = tags.clone();
 
@@ -144,8 +144,8 @@ impl AppState {
             }
         }
         self.filter_commands();
-        if let Some(id) = current_id {
-            self.selected_index = self.filtered.iter().position(|c| c.id == id).unwrap_or(0);
+        if let Some(ref id) = current_id {
+            self.selected_index = self.filtered.iter().position(|c| c.id == *id).unwrap_or(0);
         }
     }
 
@@ -217,7 +217,7 @@ impl AppState {
     }
 
     fn mark_executed(&mut self) {
-        let selected_id = self.filtered.get(self.selected_index).map(|c| c.id);
+        let selected_id = self.filtered.get(self.selected_index).map(|c| c.id.clone());
         let cmd = selected_id.and_then(|id| self.commands.iter_mut().find(|c| c.id == id));
         if let Some(cmd) = cmd {
             cmd.use_count += 1;
@@ -238,7 +238,7 @@ impl AppState {
     }
 
     fn toggle_favorite(&mut self) {
-        let selected_id = self.filtered.get(self.selected_index).map(|c| c.id);
+        let selected_id = self.filtered.get(self.selected_index).map(|c| c.id.clone());
         let cmd = selected_id.and_then(|id| self.commands.iter_mut().find(|c| c.id == id));
         if let Some(cmd) = cmd {
             cmd.favorite = !cmd.favorite;
@@ -312,14 +312,13 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
         }
     };
     let mut commands = history::load_history();
+    commands = history::deduplicate(commands);
+    commands.reverse();
 
     if let Some(ref mut conn) = db {
         let cmd_refs: Vec<(&str, String)> = commands
             .iter()
-            .map(|c| {
-                let id = storage::commands::hash_command(&c.text);
-                (c.text.as_str(), id)
-            })
+            .map(|c| (c.text.as_str(), c.id.clone()))
             .collect();
         if let Err(e) = storage::commands::ensure_commands_exist(conn, &cmd_refs) {
             eprintln!("Failed to save commands: {}", e);
