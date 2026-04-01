@@ -25,7 +25,7 @@ jobs:
         rust: [stable, nightly]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-action@${{ matrix.rust }}
+      - uses: dtolnay/rust-toolchain@${{ matrix.rust }}
       - run: cargo test
 
   msrv:
