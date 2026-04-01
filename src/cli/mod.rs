@@ -20,8 +20,9 @@ pub fn run() -> color_eyre::Result<()> {
         let print_only = args.iter().any(|a| a == "--print");
         crate::cli::init::run(shell, print_only)?;
     } else {
+        let output_file = get_output_file_flag(&args);
         check_integration_warning();
-        crate::run_tui()?;
+        crate::run_tui(output_file)?;
     }
 
     Ok(())
@@ -32,6 +33,13 @@ fn get_shell_flag(args: &[String]) -> Option<Shell> {
         .position(|a| a == "--shell")
         .and_then(|i| args.get(i + 1))
         .and_then(|s| Shell::from_str(s))
+}
+
+fn get_output_file_flag(args: &[String]) -> Option<String> {
+    args.iter()
+        .position(|a| a == "--output-file" || a == "-o")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.to_string())
 }
 
 fn check_integration_warning() {
@@ -62,11 +70,13 @@ fn print_help() {
     println!();
     println!("Options:");
     println!("  --help, -h        Show this help");
+    println!("  --output-file, -o Write selected command to file instead of stdout");
     println!();
     println!("Examples:");
     println!("  ctrlr             Open the TUI");
     println!("  ctrlr init        Add shell integration (Ctrl+R)");
     println!("  ctrlr init --print   Print integration script");
+    println!("  ctrlr --output-file /tmp/cmd  Write output to file");
 }
 
 fn print_init_help() {

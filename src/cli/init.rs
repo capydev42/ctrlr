@@ -26,9 +26,20 @@ pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
     let config_path = shell.config_path();
     let config_content = fs::read_to_string(&config_path).unwrap_or_default();
 
-    if shells::is_installed(shell, &config_content) {
-        println!("✔ ctrlr already installed in {}", config_path.display());
+    let is_installed = shells::is_installed(shell, &config_content);
+    let is_current = shells::is_up_to_date(shell, &config_content);
+
+    if is_installed && is_current {
+        println!(
+            "✔ ctrlr integration is up to date in {}",
+            config_path.display()
+        );
         return Ok(());
+    }
+
+    if is_installed && !is_current {
+        println!("ctrlr integration found but outdated. Updating...");
+        remove_integration(&config_path, &config_content)?;
     }
 
     let script = shells::generate_script(shell);
@@ -61,6 +72,42 @@ pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
 
     println!("✔ Installed ctrlr integration");
     println!("→ Restart shell or run: source {}", config_path.display());
+
+    Ok(())
+}
+
+fn remove_integration(config_path: &PathBuf, content: &str) -> Result<(), Report> {
+    let marker = "# ctrlr integration";
+    let lines: Vec<&str> = content.lines().collect();
+    let mut new_lines: Vec<&str> = Vec::new();
+    let mut skip_until: Option<usize> = None;
+
+    for (i, line) in lines.iter().enumerate() {
+        if let Some(skip_to) = skip_until {
+            if i <= skip_to {
+                continue;
+            }
+            skip_until = None;
+        }
+
+        if line.contains(marker) {
+            skip_until = Some(i + 3);
+            if line.contains("bind -x") || line.contains("bindkey") || line.contains("bind \\") {
+                skip_until = Some(i + 1);
+            }
+            continue;
+        }
+
+        new_lines.push(line);
+    }
+
+    let new_content = new_lines.join("\n");
+    fs::write(config_path, new_content).map_err(|e| {
+        Report::new(std::io::Error::other(format!(
+            "Failed to update config: {}",
+            e
+        )))
+    })?;
 
     Ok(())
 }

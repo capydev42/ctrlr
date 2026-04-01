@@ -264,11 +264,44 @@ fn main() -> color_eyre::Result<()> {
     cli::run()
 }
 
-pub fn run_tui() -> color_eyre::Result<Option<String>> {
-    Ok(ratatui::run(app)?)
+pub fn run_tui(output_file: Option<String>) -> color_eyre::Result<Option<String>> {
+    let mut terminal = ratatui::init();
+    let result = app(&mut terminal, output_file.clone());
+    ratatui::restore();
+
+    match result {
+        Ok(Some(cmd)) => {
+            if let Some(path) = output_file {
+                match std::fs::write(&path, &cmd) {
+                    Ok(()) => Ok(Some(cmd)),
+                    Err(e) => {
+                        eprintln!("Failed to write output file: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                Ok(Some(cmd))
+            }
+        }
+        Ok(None) => {
+            if let Some(path) = output_file {
+                if let Err(e) = std::fs::write(&path, "") {
+                    eprintln!("Failed to write output file: {}", e);
+                }
+                std::process::exit(1);
+            }
+            Ok(None)
+        }
+        Err(e) => {
+            if let Some(path) = output_file {
+                let _ = std::fs::write(&path, "");
+            }
+            Err(color_eyre::Report::new(e))
+        }
+    }
 }
 
-fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
+fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Result<Option<String>> {
     let mut db = match storage::init_db() {
         Ok(conn) => Some(conn),
         Err(e) => {

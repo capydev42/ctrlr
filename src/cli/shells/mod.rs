@@ -14,9 +14,7 @@ pub enum Shell {
 impl Shell {
     pub fn detect() -> Option<Self> {
         let shell = std::env::var("SHELL").ok()?;
-        let basename = std::path::Path::new(&shell)
-            .file_name()?
-            .to_str()?;
+        let basename = std::path::Path::new(&shell).file_name()?.to_str()?;
         match basename {
             "bash" => Some(Shell::Bash),
             "zsh" => Some(Shell::Zsh),
@@ -76,5 +74,13 @@ pub fn is_installed(shell: Shell, config_content: &str) -> bool {
         Shell::Bash => bash::is_installed(config_content),
         Shell::Zsh => zsh::is_installed(config_content),
         Shell::Fish => fish::is_installed(config_content),
+    }
+}
+
+pub fn is_up_to_date(shell: Shell, config_content: &str) -> bool {
+    match shell {
+        Shell::Bash => bash::is_up_to_date(config_content),
+        Shell::Zsh => zsh::is_up_to_date(config_content),
+        Shell::Fish => fish::is_up_to_date(config_content),
     }
 }
