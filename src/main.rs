@@ -134,7 +134,9 @@ impl AppState {
             
             if let Some(ref mut conn) = self.db {
                 use storage::tags;
-                tags::set_tags_for_command(conn, &cmd.text, &tags).ok();
+                if let Err(e) = tags::set_tags_for_command(conn, &cmd.text, &tags) {
+                    eprintln!("DB error saving tags: {}", e);
+                }
             }
             
             self.status_message = Some("🏷️ Tags updated".into());
@@ -225,9 +227,11 @@ impl AppState {
                     .unwrap_or(0),
             );
 
-            if let Some(ref conn) = self.db {
+            if let Some(ref mut conn) = self.db {
                 use storage::commands;
-                commands::increment_use_count(conn, &cmd.text).ok();
+                if let Err(e) = commands::increment_use_count(conn, &cmd.text) {
+                    eprintln!("DB error updating use count: {}", e);
+                }
             }
         }
     }
@@ -238,9 +242,11 @@ impl AppState {
         {
             cmd.favorite = !cmd.favorite;
             
-            if let Some(ref conn) = self.db {
+            if let Some(ref mut conn) = self.db {
                 use storage::commands;
-                commands::update_favorite(conn, &cmd.text, cmd.favorite).ok();
+                if let Err(e) = commands::update_favorite(conn, &cmd.text, cmd.favorite) {
+                    eprintln!("DB error updating favorite: {}", e);
+                }
             }
             
             self.status_message = Some(if cmd.favorite {
@@ -264,7 +270,13 @@ fn main() -> color_eyre::Result<()> {
 }
 
 fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
-    let mut db = storage::init_db().ok();
+    let mut db = match storage::init_db() {
+        Ok(conn) => Some(conn),
+        Err(e) => {
+            eprintln!("Failed to initialize database: {}", e);
+            None
+        }
+    };
     let mut commands = history::load_history();
     
     if let Some(ref mut conn) = db {
@@ -275,7 +287,9 @@ fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
                 (c.text.as_str(), id)
             })
             .collect();
-        storage::commands::ensure_commands_exist(conn, &cmd_refs).ok();
+        if let Err(e) = storage::commands::ensure_commands_exist(conn, &cmd_refs) {
+            eprintln!("Failed to save commands: {}", e);
+        }
 
         for cmd in &mut commands {
             if let Some(meta) = storage::load_metadata(conn, &cmd.text) {
