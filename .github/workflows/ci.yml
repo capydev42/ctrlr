@@ -27,10 +27,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: cargo build --locked --all-targets
+        run: cargo build --all-targets
 
       - name: Test
-        run: cargo test --locked --all-targets
+        run: cargo test --all-targets
 
       - name: Clippy
         if: matrix.os == 'ubuntu-latest'
@@ -42,11 +42,11 @@ jobs:
 
       - name: Release build
         if: matrix.os == 'ubuntu-latest'
-        run: cargo build --locked --release
+        run: cargo build --release
 
       - name: Documentation check
         if: matrix.os == 'ubuntu-latest'
-        run: cargo doc --locked --no-deps
+        run: cargo doc --no-deps
 
   msrv:
     name: MSRV check
@@ -63,10 +63,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: cargo build --locked --all-targets
+        run: cargo build --all-targets
 
       - name: Test
-        run: cargo test --locked --all-targets
+        run: cargo test --all-targets
 
   audit:
     name: Security audit
@@ -83,7 +83,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        run: cargo install cargo-audit
 
       - name: Run cargo audit
         run: cargo audit
