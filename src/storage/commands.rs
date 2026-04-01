@@ -8,13 +8,17 @@ pub fn hash_command(text: &str) -> String {
 }
 
 pub fn ensure_commands_exist(
-    conn: &Connection,
+    conn: &mut Connection,
     commands: &[(&str, String)],
 ) -> rusqlite::Result<()> {
-    let mut stmt = conn.prepare("INSERT OR IGNORE INTO commands (id, text) VALUES (?, ?)")?;
-    for (text, id) in commands {
-        stmt.execute([id.as_str(), text])?;
+    let tx = conn.transaction()?;
+    {
+        let mut stmt = tx.prepare("INSERT OR IGNORE INTO commands (id, text) VALUES (?, ?)")?;
+        for (text, id) in commands {
+            stmt.execute([id.as_str(), text])?;
+        }
     }
+    tx.commit()?;
     Ok(())
 }
 

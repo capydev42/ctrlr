@@ -132,7 +132,7 @@ impl AppState {
         {
             cmd.tags = tags.clone();
             
-            if let Some(ref conn) = self.db {
+            if let Some(ref mut conn) = self.db {
                 use storage::tags;
                 tags::set_tags_for_command(conn, &cmd.text, &tags).ok();
             }
@@ -264,10 +264,10 @@ fn main() -> color_eyre::Result<()> {
 }
 
 fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
-    let db = storage::init_db().ok();
+    let mut db = storage::init_db().ok();
     let mut commands = history::load_history();
     
-    if let Some(ref conn) = db {
+    if let Some(ref mut conn) = db {
         let cmd_refs: Vec<(&str, String)> = commands
             .iter()
             .map(|c| {
