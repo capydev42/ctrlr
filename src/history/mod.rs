@@ -75,36 +75,37 @@ pub fn load_history() -> Vec<Command> {
 }
 
 pub fn deduplicate(commands: Vec<Command>) -> Vec<Command> {
-    let mut map: HashMap<String, Command> = HashMap::new();
+    let mut seen: HashMap<String, Command> = HashMap::new();
+    let mut result: Vec<Command> = Vec::new();
 
     for cmd in commands.into_iter().rev() {
         let key = normalize(&cmd.text);
 
-        map.entry(key)
-            .and_modify(|existing| {
-                existing.use_count += cmd.use_count;
+        if let Some(existing) = seen.get_mut(&key) {
+            existing.use_count += cmd.use_count;
 
-                let mut tags_set: HashSet<String> = existing.tags.drain(..).collect();
-                tags_set.extend(cmd.tags.clone());
-                existing.tags = tags_set.into_iter().collect();
-                existing.tags.sort();
+            let mut tags_set: HashSet<String> = existing.tags.drain(..).collect();
+            tags_set.extend(cmd.tags.clone());
+            existing.tags = tags_set.into_iter().collect();
+            existing.tags.sort();
 
-                existing.favorite |= cmd.favorite;
+            existing.favorite |= cmd.favorite;
 
-                if cmd.last_used > existing.last_used {
-                    existing.last_used = cmd.last_used;
+            if cmd.last_used > existing.last_used {
+                existing.last_used = cmd.last_used;
+            }
+
+            for ctx in cmd._context.clone() {
+                if !existing._context.contains(&ctx) {
+                    existing._context.push(ctx);
                 }
-
-                for ctx in cmd._context.clone() {
-                    if !existing._context.contains(&ctx) {
-                        existing._context.push(ctx);
-                    }
-                }
-            })
-            .or_insert(cmd);
+            }
+        } else {
+            seen.insert(key.clone(), cmd.clone());
+            result.push(cmd);
+        }
     }
 
-    let mut result: Vec<_> = map.into_values().collect();
     result.reverse();
     result
 }
