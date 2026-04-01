@@ -1,12 +1,13 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
+    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph},
-    DefaultTerminal, Frame,
 };
 
+mod cli;
 mod history;
 mod storage;
 
@@ -87,10 +88,7 @@ impl AppState {
     }
 
     fn get_all_tags(&self) -> Vec<String> {
-        let mut tags: Vec<String> = self.commands
-            .iter()
-            .flat_map(|c| c.tags.clone())
-            .collect();
+        let mut tags: Vec<String> = self.commands.iter().flat_map(|c| c.tags.clone()).collect();
         tags.sort();
         tags.dedup();
         tags
@@ -110,7 +108,8 @@ impl AppState {
     }
 
     fn apply_selected_tag(&mut self, tag: String) {
-        let mut parts: Vec<String> = self.tag_input
+        let mut parts: Vec<String> = self
+            .tag_input
             .split(',')
             .map(|s| s.trim().to_string())
             .collect();
@@ -131,14 +130,14 @@ impl AppState {
             && let Some(cmd) = self.commands.iter_mut().find(|c| c.id == id)
         {
             cmd.tags = tags.clone();
-            
+
             if let Some(ref mut conn) = self.db {
                 use storage::tags;
                 if let Err(e) = tags::set_tags_for_command(conn, &cmd.text, &tags) {
                     eprintln!("DB error saving tags: {}", e);
                 }
             }
-            
+
             self.status_message = Some("🏷️ Tags updated".into());
             self.status_timestamp = Some(Instant::now());
         }
@@ -241,14 +240,14 @@ impl AppState {
             && let Some(cmd) = self.commands.iter_mut().find(|c| c.id == selected.id)
         {
             cmd.favorite = !cmd.favorite;
-            
+
             if let Some(ref mut conn) = self.db {
                 use storage::commands;
                 if let Err(e) = commands::update_favorite(conn, &cmd.text, cmd.favorite) {
                     eprintln!("DB error updating favorite: {}", e);
                 }
             }
-            
+
             self.status_message = Some(if cmd.favorite {
                 format!("⭐ Favorited: {}", cmd.text)
             } else {
@@ -262,11 +261,11 @@ impl AppState {
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
+    cli::run()
+}
 
-    if let Some(cmd) = ratatui::run(app)? {
-        println!("{}", cmd);
-    }
-    Ok(())
+pub fn run_tui() -> color_eyre::Result<Option<String>> {
+    Ok(ratatui::run(app)?)
 }
 
 fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
@@ -278,7 +277,7 @@ fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
         }
     };
     let mut commands = history::load_history();
-    
+
     if let Some(ref mut conn) = db {
         let cmd_refs: Vec<(&str, String)> = commands
             .iter()
@@ -303,7 +302,7 @@ fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
             }
         }
     }
-    
+
     let mut state = AppState::new(commands, db);
     let mut list_state = ListState::default();
     list_state.select(Some(0));
@@ -318,9 +317,9 @@ fn app(terminal: &mut DefaultTerminal) -> io::Result<Option<String>> {
 
         terminal.draw(|f| render(f, &state, &mut list_state))?;
         if let Event::Key(key) = crossterm::event::read()? {
-            if key.code == KeyCode::Esc 
-                && state.input_mode != InputMode::TagInput 
-                && state.handle_esc() 
+            if key.code == KeyCode::Esc
+                && state.input_mode != InputMode::TagInput
+                && state.handle_esc()
             {
                 break Ok(None);
             }
@@ -338,7 +337,8 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
                 let tags = state.selected_command_tags();
                 if !tags.is_empty() {
                     if let Some(idx) = state.tag_cursor_index {
-                        state.tag_cursor_index = Some(if idx == 0 { tags.len() - 1 } else { idx - 1 });
+                        state.tag_cursor_index =
+                            Some(if idx == 0 { tags.len() - 1 } else { idx - 1 });
                     } else {
                         state.tag_cursor_index = Some(tags.len() - 1);
                     }
@@ -404,7 +404,8 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
                 }
             }
             (KeyCode::Enter, _) => {
-                let new_tags: Vec<String> = state.tag_input
+                let new_tags: Vec<String> = state
+                    .tag_input
                     .split(',')
                     .map(|t| t.trim().to_string())
                     .filter(|t| !t.is_empty())
@@ -474,42 +475,38 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
     }
 
     match state.active_pane {
-        ActivePane::Search => {
-            match (key.code, key.modifiers) {
-                (KeyCode::Char(c), KeyModifiers::NONE) => {
-                    state.add_to_search(c);
-                }
-                (KeyCode::Backspace, _) => {
-                    state.remove_from_search();
-                }
-                _ => {}
+        ActivePane::Search => match (key.code, key.modifiers) {
+            (KeyCode::Char(c), KeyModifiers::NONE) => {
+                state.add_to_search(c);
             }
-        }
-        ActivePane::History => {
-            match (key.code, key.modifiers) {
-                (KeyCode::Char('/'), KeyModifiers::NONE) => {
-                    state.active_pane = ActivePane::Search;
-                }
-                (KeyCode::Char('t'), KeyModifiers::NONE) => {
-                    state.input_mode = InputMode::TagInput;
-                    state.tag_input = String::new();
-                    state.tag_selected_index = 0;
-                    state.tag_cursor_index = None;
-                }
-                (KeyCode::Char('j'), KeyModifiers::NONE) => {
-                    state.navigate_down();
-                    list_state.select(Some(state.selected_index));
-                }
-                (KeyCode::Char('k'), KeyModifiers::NONE) => {
-                    state.navigate_up();
-                    list_state.select(Some(state.selected_index));
-                }
-                (KeyCode::Char('f'), KeyModifiers::NONE) => {
-                    state.toggle_favorite();
-                }
-                _ => {}
+            (KeyCode::Backspace, _) => {
+                state.remove_from_search();
             }
-        }
+            _ => {}
+        },
+        ActivePane::History => match (key.code, key.modifiers) {
+            (KeyCode::Char('/'), KeyModifiers::NONE) => {
+                state.active_pane = ActivePane::Search;
+            }
+            (KeyCode::Char('t'), KeyModifiers::NONE) => {
+                state.input_mode = InputMode::TagInput;
+                state.tag_input = String::new();
+                state.tag_selected_index = 0;
+                state.tag_cursor_index = None;
+            }
+            (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                state.navigate_down();
+                list_state.select(Some(state.selected_index));
+            }
+            (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                state.navigate_up();
+                list_state.select(Some(state.selected_index));
+            }
+            (KeyCode::Char('f'), KeyModifiers::NONE) => {
+                state.toggle_favorite();
+            }
+            _ => {}
+        },
     }
     None
 }
@@ -536,7 +533,11 @@ fn render(frame: &mut Frame, state: &AppState, list_state: &mut ListState) {
 }
 
 fn render_search_bar(frame: &mut Frame, state: &AppState, area: Rect) {
-    let cursor = if state.active_pane == ActivePane::Search { "▋" } else { "" };
+    let cursor = if state.active_pane == ActivePane::Search {
+        "▋"
+    } else {
+        ""
+    };
     let search_text = format!("Search: {}{}", state.search_query, cursor);
     let search_border_color = if state.active_pane == ActivePane::Search {
         Color::Yellow
@@ -559,7 +560,12 @@ fn render_search_bar(frame: &mut Frame, state: &AppState, area: Rect) {
     );
 }
 
-fn render_history_list(frame: &mut Frame, state: &AppState, list_state: &mut ListState, area: Rect) {
+fn render_history_list(
+    frame: &mut Frame,
+    state: &AppState,
+    list_state: &mut ListState,
+    area: Rect,
+) {
     let items: Vec<ListItem> = if state.filtered.is_empty() {
         vec![ListItem::new("No results found")]
     } else {
@@ -610,7 +616,7 @@ fn render_footer(frame: &mut Frame, state: &AppState, area: Rect) {
     let footer_text = if let Some(msg) = &state.status_message {
         msg.clone()
     } else {
-        match state.active_pane { 
+        match state.active_pane {
             // help page would be nice .. -> check how others handle this in tuis 
             ActivePane::Search => {
                 " 2: History | Type to search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ".into()
@@ -636,7 +642,11 @@ fn render_tag_popup(frame: &mut Frame, state: &AppState, area: Rect) {
 
     let input_height = if tags.is_empty() { 3 } else { 4 };
     let sugg_count = suggestions.len().min(5);
-    let sugg_height = if has_suggestions { sugg_count as u16 + 2 } else { 0 };
+    let sugg_height = if has_suggestions {
+        sugg_count as u16 + 2
+    } else {
+        0
+    };
     let hint_height = 1u16;
     let popup_height = input_height + sugg_height + hint_height;
     let popup_width = 60u16;
@@ -706,12 +716,7 @@ fn render_tag_popup(frame: &mut Frame, state: &AppState, area: Rect) {
             .collect();
 
         let sugg_height = (sugg_items.len() as u16 + 1).max(3);
-        let sugg_area = Rect::new(
-            chunks[1].x,
-            chunks[1].y,
-            chunks[1].width,
-            sugg_height,
-        );
+        let sugg_area = Rect::new(chunks[1].x, chunks[1].y, chunks[1].width, sugg_height);
 
         let sugg_list = List::new(sugg_items).block(Block::bordered().title("Suggestions"));
         frame.render_widget(sugg_list, sugg_area);

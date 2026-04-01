@@ -58,39 +58,41 @@ pub struct CommandMeta {
 
 pub fn load_metadata(conn: &Connection, text: &str) -> Option<CommandMeta> {
     let id = commands::hash_command(text);
-    
-    let mut stmt = conn.prepare(
-        "SELECT favorite, last_used, use_count FROM commands WHERE id = ?"
-    ).ok()?;
-    
-    let meta = stmt.query_row([&id], |row| {
-        Ok(CommandMeta {
-            favorite: row.get::<_, i32>(0)? != 0,
-            last_used: row.get::<_, Option<i64>>(1)?,
-            use_count: row.get::<_, i32>(2)?,
+
+    let mut stmt = conn
+        .prepare("SELECT favorite, last_used, use_count FROM commands WHERE id = ?")
+        .ok()?;
+
+    let meta = stmt
+        .query_row([&id], |row| {
+            Ok(CommandMeta {
+                favorite: row.get::<_, i32>(0)? != 0,
+                last_used: row.get::<_, Option<i64>>(1)?,
+                use_count: row.get::<_, i32>(2)?,
+            })
         })
-    }).ok()?;
-    
+        .ok()?;
+
     Some(meta)
 }
 
 pub fn load_tags(conn: &Connection, text: &str) -> Vec<String> {
     let id = commands::hash_command(text);
-    
+
     let mut stmt = match conn.prepare(
         "SELECT t.name FROM tags t 
          JOIN command_tags ct ON t.id = ct.tag_id 
-         WHERE ct.command_id = ?"
+         WHERE ct.command_id = ?",
     ) {
         Ok(s) => s,
         Err(_) => return vec![],
     };
-    
+
     let tags: Vec<String> = stmt
         .query_map([&id], |row| row.get(0))
         .ok()
         .map(|iter| iter.filter_map(|t| t.ok()).collect())
         .unwrap_or_default();
-    
+
     tags
 }

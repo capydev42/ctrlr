@@ -69,7 +69,7 @@ pub fn load_history() -> Vec<Command> {
         }
         _ => {}
     }
-    
+
     // last command first
     commands.reverse();
     commands
