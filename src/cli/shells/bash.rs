@@ -1,4 +1,6 @@
 const BASH_SCRIPT: &str = r#"# ctrlr integration
+export PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND; } history -a"
+
 _ctrlr_widget() {
     local tmpfile=$(mktemp)
     ctrlr --output-file "$tmpfile"

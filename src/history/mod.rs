@@ -15,7 +15,37 @@ pub struct HistoryEntry {
     pub timestamp: Option<i64>,
 }
 
+pub fn flush_history() {
+    let shell = detect_shell();
+    let result = match shell {
+        "bash" => std::process::Command::new("bash")
+            .arg("-c")
+            .arg("history -a")
+            .output(),
+        "zsh" => std::process::Command::new("zsh")
+            .arg("-c")
+            .arg("fc -W")
+            .output(),
+        "fish" => std::process::Command::new("fish")
+            .arg("-c")
+            .arg("history save")
+            .output(),
+        _ => return,
+    };
+
+    if let Err(e) = result {
+        eprintln!("Failed to flush {} history: {}", shell, e);
+    } else if let Ok(output) = result
+        && !output.status.success()
+    {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("History flush failed for {}: {}", shell, stderr);
+    }
+}
+
 pub fn load_history() -> Vec<Command> {
+    flush_history();
+
     let mut commands = Vec::new();
 
     let shell = detect_shell();

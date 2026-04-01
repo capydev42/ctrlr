@@ -1,4 +1,8 @@
 const ZSH_SCRIPT: &str = r#"# ctrlr integration
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd _flush_zsh_history
+_flush_zsh_history() { fc -W }
+
 _ctrlr_widget() {
     local tmpfile=$(mktemp)
     ctrlr --output-file "$tmpfile"

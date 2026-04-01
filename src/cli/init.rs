@@ -91,9 +91,9 @@ fn remove_integration(config_path: &PathBuf, content: &str) -> Result<(), Report
         }
 
         if line.contains(marker) {
-            skip_until = Some(i + 3);
+            skip_until = Some(i + 8);
             if line.contains("bind -x") || line.contains("bindkey") || line.contains("bind \\") {
-                skip_until = Some(i + 1);
+                skip_until = Some(i + 10);
             }
             continue;
         }
