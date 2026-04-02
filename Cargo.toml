@@ -11,6 +11,7 @@ ratatui = "0.30.0"
 dirs = "6"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha1 = "0.10"
+fuzzy-matcher = "0.3"
 
 [profile.release]
 codegen-units = 1

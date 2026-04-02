@@ -1,4 +1,6 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -11,6 +13,7 @@ mod cli;
 mod history;
 mod storage;
 
+use std::collections::HashSet;
 use std::io;
 use std::time::{Duration, Instant};
 
@@ -40,6 +43,7 @@ struct Command {
 struct AppState {
     commands: Vec<Command>,
     filtered: Vec<Command>,
+    matched_indices: Vec<Option<HashSet<usize>>>,
     selected_index: usize,
     search_query: String,
     status_message: Option<String>,
@@ -50,14 +54,17 @@ struct AppState {
     tag_selected_index: usize,
     tag_cursor_index: Option<usize>,
     db: Option<rusqlite::Connection>,
+    matcher: SkimMatcherV2,
 }
 
 impl AppState {
     fn new(commands: Vec<Command>, db: Option<rusqlite::Connection>) -> Self {
         let filtered = commands.clone();
+        let matched_indices = vec![None; filtered.len()];
         Self {
             commands,
             filtered,
+            matched_indices,
             selected_index: 0,
             search_query: String::new(),
             status_message: None,
@@ -68,6 +75,7 @@ impl AppState {
             tag_selected_index: 0,
             tag_cursor_index: None,
             db,
+            matcher: SkimMatcherV2::default(),
         }
     }
 
@@ -181,19 +189,71 @@ impl AppState {
     fn filter_commands(&mut self) {
         if self.search_query.is_empty() {
             self.filtered = self.commands.clone();
+            self.matched_indices = vec![None; self.filtered.len()];
         } else {
-            let query = self.search_query.to_lowercase();
-            self.filtered = self
+            let query = &self.search_query;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+
+            let mut scored: Vec<(i64, Vec<usize>, Command, bool)> = self
                 .commands
                 .iter()
-                .filter(|cmd| {
-                    cmd.text.to_lowercase().contains(&query)
-                        || cmd.tags.iter().any(|t| t.to_lowercase().contains(&query))
+                .filter_map(|cmd| {
+                    let best_text = self.matcher.fuzzy_indices(&cmd.text, query);
+                    let mut best_tag: Option<(i64, Vec<usize>)> = None;
+
+                    for tag in &cmd.tags {
+                        if let Some((score, _)) = self.matcher.fuzzy_indices(tag, query) {
+                            best_tag = Some(match best_tag {
+                                Some((s, _)) => {
+                                    if score > s {
+                                        (score, self.matcher.fuzzy_indices(tag, query).unwrap().1)
+                                    } else {
+                                        best_tag.unwrap()
+                                    }
+                                }
+                                None => (score, self.matcher.fuzzy_indices(tag, query).unwrap().1),
+                            });
+                        }
+                    }
+
+                    match (best_text, best_tag) {
+                        (Some((text_score, text_indices)), Some((tag_score, _))) => {
+                            if text_score >= tag_score {
+                                Some((text_score, text_indices, cmd.clone(), true))
+                            } else {
+                                Some((tag_score, vec![], cmd.clone(), false))
+                            }
+                        }
+                        (Some((score, indices)), None) => Some((score, indices, cmd.clone(), true)),
+                        (None, Some((score, _))) => Some((score, vec![], cmd.clone(), false)),
+                        (None, None) => None,
+                    }
                 })
-                .cloned()
+                .collect();
+
+            scored.sort_by(|a, b| {
+                let score_a = compute_ranking_score(&a.2, a.0, now);
+                let score_b = compute_ranking_score(&b.2, b.0, now);
+                score_b
+                    .cmp(&score_a)
+                    .then_with(|| b.2.use_count.cmp(&a.2.use_count))
+            });
+
+            self.filtered = scored.iter().map(|(_, _, cmd, _)| cmd.clone()).collect();
+            self.matched_indices = scored
+                .into_iter()
+                .map(|(_, indices, _, is_text)| {
+                    if is_text {
+                        Some(indices.into_iter().collect())
+                    } else {
+                        None
+                    }
+                })
                 .collect();
         }
-        self.filtered.sort_by(|a, b| b.favorite.cmp(&a.favorite));
         self.selected_index = 0;
     }
 
@@ -259,6 +319,29 @@ impl AppState {
         }
         self.filter_commands();
     }
+}
+
+fn compute_ranking_score(cmd: &Command, fuzzy: i64, now: i64) -> i64 {
+    let usage = cmd.use_count as i64 * 2;
+
+    let recency = if let Some(ts) = cmd.last_used {
+        let age = now - ts;
+        if age < 3600 {
+            50
+        } else if age < 86400 {
+            20
+        } else if age < 604800 {
+            10
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
+    let favorite = if cmd.favorite { 100 } else { 0 };
+
+    fuzzy * 10 + usage + recency + favorite
 }
 
 fn main() -> color_eyre::Result<()> {
@@ -608,19 +691,50 @@ fn render_history_list(
         state
             .filtered
             .iter()
-            .map(|cmd| {
+            .enumerate()
+            .map(|(idx, cmd)| {
                 let tags = cmd
                     .tags
                     .iter()
                     .map(|t| format!("#{}", t))
                     .collect::<Vec<_>>()
                     .join(" ");
-                ListItem::new(format!(
-                    "{:<2} {:<50} {}",
-                    if cmd.favorite { "⭐" } else { " " },
-                    cmd.text,
-                    tags
-                ))
+
+                let favorite_str = if cmd.favorite { "⭐" } else { " " };
+
+                let mut spans = vec![Span::raw(format!("{:<2} ", favorite_str))];
+
+                if let Some(Some(indices)) = state.matched_indices.get(idx) {
+                    let chars: Vec<char> = cmd.text.chars().collect();
+                    let mut in_match = false;
+                    for (i, c) in chars.iter().enumerate() {
+                        if indices.contains(&i) {
+                            if !in_match {
+                                spans.push(Span::styled(
+                                    c.to_string(),
+                                    Style::new().fg(Color::Yellow).bold(),
+                                ));
+                                in_match = true;
+                            } else {
+                                spans.push(Span::styled(
+                                    c.to_string(),
+                                    Style::new().fg(Color::Yellow).bold(),
+                                ));
+                            }
+                        } else if in_match {
+                            spans.push(Span::raw(c.to_string()));
+                            in_match = false;
+                        } else {
+                            spans.push(Span::raw(c.to_string()));
+                        }
+                    }
+                } else {
+                    spans.push(Span::raw(&cmd.text));
+                }
+
+                spans.push(Span::raw(format!(" {}", tags)));
+
+                ListItem::new(Line::from(spans))
             })
             .collect()
     };
