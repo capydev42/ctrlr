@@ -55,6 +55,47 @@ Or checkout the [pre-built release packages](https://github.com/ger4ik/ctrlr/rel
 
 ---
 
+## Setup
+
+### From Release Package (Linux/WSL)
+
+1. **Download** the release package from [releases](https://github.com/ger4ik/ctrlr/releases)
+
+2. **Extract:**
+```bash
+cd ~/Downloads
+tar -xzf ctrlr-x86_64-unknown-linux-gnu.tar.gz
+```
+
+3. **Install (global):**
+```bash
+sudo mv ctrlr /usr/local/bin/ctrlr
+```
+
+4. **Or user-local:**
+```bash
+mkdir -p ~/.local/bin
+mv ctrlr ~/.local/bin/
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+5. **Test:**
+```bash
+ctrlr --help
+```
+
+### From Source
+
+```bash
+git clone https://github.com/ger4ik/ctrlr.git
+cd ctrlr
+cargo build --release
+sudo cp target/release/ctrlr /usr/local/bin/
+```
+
+---
+
 ## Usage
 
 ### Start the TUI
@@ -129,7 +170,6 @@ Data is stored locally using SQLite:
 
 - No Windows support (yet)
 - UI is still evolving
-- No fuzzy search (yet)
 - Performance not heavily optimized
 - Some edge cases in history parsing likely exist
 
@@ -137,7 +177,7 @@ Data is stored locally using SQLite:
 
 ## Roadmap (very loose)
 
-- [ ] Better search (fuzzy / ranking)
+- [x] Better search (fuzzy / ranking)
 - [ ] Improved tag UX
 - [ ] Smarter sorting (recency + frequency)
 - [ ] Preview / command details panel
