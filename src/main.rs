@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
 
 mod cli;
@@ -56,6 +56,7 @@ struct AppState {
     status_timestamp: Option<Instant>,
     active_pane: ActivePane,
     view_mode: ViewMode,
+    show_details: bool,
     input_mode: InputMode,
     tag_input: String,
     tag_selected_index: usize,
@@ -78,6 +79,7 @@ impl AppState {
             status_timestamp: None,
             active_pane: ActivePane::Search,
             view_mode: ViewMode::History,
+            show_details: true,
             input_mode: InputMode::Normal,
             tag_input: String::new(),
             tag_selected_index: 0,
@@ -640,6 +642,9 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
             (KeyCode::Char('f'), KeyModifiers::NONE) => {
                 state.toggle_favorite();
             }
+            (KeyCode::Char('d'), KeyModifiers::NONE) => {
+                state.show_details = !state.show_details;
+            }
             _ => {}
         },
     }
@@ -659,9 +664,24 @@ fn render(frame: &mut Frame, state: &AppState, list_state: &mut ListState) {
         ])
         .split(area);
 
+    let (list_area, details_area) = if state.show_details {
+        let content_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
+            .split(chunks[2]);
+        (content_chunks[0], Some(content_chunks[1]))
+    } else {
+        (chunks[2], None)
+    };
+
     render_search_bar(frame, state, chunks[0]);
     render_tabs(frame, state, chunks[1]);
-    render_history_list(frame, state, list_state, chunks[2]);
+    render_history_list(frame, state, list_state, list_area);
+
+    if let Some(area) = details_area {
+        render_details(frame, state, area);
+    }
+
     render_footer(frame, state, chunks[3]);
 
     if state.input_mode == InputMode::TagInput {
@@ -817,6 +837,78 @@ fn render_history_list(
     frame.render_stateful_widget(list, area, list_state);
 }
 
+fn section(title: &str) -> Line<'_> {
+    Line::from(Span::styled(
+        format!("─ {} ─", title),
+        Style::new().fg(Color::Blue).bold(),
+    ))
+}
+
+fn render_details(frame: &mut Frame, state: &AppState, area: Rect) {
+    if area.width < 5 || area.height < 3 {
+        return;
+    }
+
+    let cmd = match state.filtered.get(state.selected_index) {
+        Some(c) => c,
+        None => return,
+    };
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(section("Command"));
+    lines.push(Line::from(cmd.text.clone()));
+    lines.push(Line::from(""));
+
+    if !cmd.tags.is_empty() {
+        lines.push(section("Tags"));
+        for tag in &cmd.tags {
+            lines.push(Line::from(format!("#{}", tag)));
+        }
+        lines.push(Line::from(""));
+    }
+
+    lines.push(section("Usage"));
+    lines.push(Line::from(format!("Used: {}x", cmd.use_count)));
+    if let Some(ts) = cmd.last_used {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let ago = now - ts;
+        let ago_str = if ago < 60 {
+            format!("{}s ago", ago)
+        } else if ago < 3600 {
+            format!("{}m ago", ago / 60)
+        } else if ago < 86400 {
+            format!("{}h ago", ago / 3600)
+        } else {
+            format!("{}d ago", ago / 86400)
+        };
+        lines.push(Line::from(format!("Last used: {}", ago_str)));
+    }
+    lines.push(Line::from(""));
+
+    lines.push(section("Favorite"));
+    let fav_text = if cmd.favorite { "⭐ yes" } else { "○ no" };
+    let fav_style = if cmd.favorite {
+        Style::new().fg(Color::Yellow)
+    } else {
+        Style::new()
+    };
+    lines.push(Line::from(Span::styled(fav_text, fav_style)));
+
+    let block = Block::bordered()
+        .title("Details")
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(Color::DarkGray));
+
+    frame.render_widget(
+        Paragraph::new(lines).block(block).wrap(Wrap { trim: true }),
+        area,
+    );
+}
+
 fn render_footer(frame: &mut Frame, state: &AppState, area: Rect) {
     let footer_text = if let Some(msg) = &state.status_message {
         msg.clone()
@@ -826,7 +918,7 @@ fn render_footer(frame: &mut Frame, state: &AppState, area: Rect) {
                 " 1: History | 2: Favorites | /: Search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ".into()
             }
             ActivePane::History => {
-                " 1: History | 2: Favorites | /: Search | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ".into()
+                " 1: History | 2: Favorites | /: Search | d: Details | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ".into()
             }
         }
     };
