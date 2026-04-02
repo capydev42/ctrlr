@@ -35,11 +35,12 @@ pub fn flush_history() {
 
     if let Err(e) = result {
         eprintln!("Failed to flush {} history: {}", shell, e);
-    } else if let Ok(output) = result
-        && !output.status.success()
-    {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        eprintln!("History flush failed for {}: {}", shell, stderr);
+    } else {
+        let output = result.unwrap();
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("History flush failed for {}: {}", shell, stderr);
+        }
     }
 }
 
