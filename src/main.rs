@@ -849,6 +849,16 @@ fn render_details(frame: &mut Frame, state: &AppState, area: Rect) {
         return;
     }
 
+    if state.filtered.is_empty() {
+        frame.render_widget(
+            Paragraph::new("No command selected")
+                .alignment(Alignment::Center)
+                .block(Block::bordered().title("Details")),
+            area,
+        );
+        return;
+    }
+
     let cmd = match state.filtered.get(state.selected_index) {
         Some(c) => c,
         None => return,
