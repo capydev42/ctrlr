@@ -24,6 +24,12 @@ enum ActivePane {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+enum ViewMode {
+    History,
+    Favorites,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 enum InputMode {
     Normal,
     TagInput,
@@ -49,6 +55,7 @@ struct AppState {
     status_message: Option<String>,
     status_timestamp: Option<Instant>,
     active_pane: ActivePane,
+    view_mode: ViewMode,
     input_mode: InputMode,
     tag_input: String,
     tag_selected_index: usize,
@@ -70,6 +77,7 @@ impl AppState {
             status_message: None,
             status_timestamp: None,
             active_pane: ActivePane::Search,
+            view_mode: ViewMode::History,
             input_mode: InputMode::Normal,
             tag_input: String::new(),
             tag_selected_index: 0,
@@ -187,8 +195,13 @@ impl AppState {
     }
 
     fn filter_commands(&mut self) {
+        let base_commands: Vec<&Command> = match self.view_mode {
+            ViewMode::History => self.commands.iter().collect(),
+            ViewMode::Favorites => self.commands.iter().filter(|c| c.favorite).collect(),
+        };
+
         if self.search_query.is_empty() {
-            self.filtered = self.commands.clone();
+            self.filtered = base_commands.into_iter().cloned().collect();
             self.matched_indices = vec![None; self.filtered.len()];
         } else {
             let query = &self.search_query;
@@ -197,9 +210,8 @@ impl AppState {
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0);
 
-            let mut scored: Vec<(i64, Vec<usize>, Command, bool)> = self
-                .commands
-                .iter()
+            let mut scored: Vec<(i64, Vec<usize>, Command, bool)> = base_commands
+                .into_iter()
                 .filter_map(|cmd| {
                     let best_text = self.matcher.fuzzy_indices(&cmd.text, query);
                     let mut best_tag: Option<(i64, Vec<usize>)> = None;
@@ -557,11 +569,15 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
             return None;
         }
         (KeyCode::Char('1'), KeyModifiers::NONE) => {
-            state.active_pane = ActivePane::Search;
+            state.view_mode = ViewMode::History;
+            state.active_pane = ActivePane::History;
+            state.filter_commands();
             return None;
         }
         (KeyCode::Char('2'), KeyModifiers::NONE) => {
+            state.view_mode = ViewMode::Favorites;
             state.active_pane = ActivePane::History;
+            state.filter_commands();
             return None;
         }
         (KeyCode::Enter, _) => {
@@ -637,14 +653,16 @@ fn render(frame: &mut Frame, state: &AppState, list_state: &mut ListState) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
+            Constraint::Length(1),
             Constraint::Min(0),
             Constraint::Length(2),
         ])
         .split(area);
 
     render_search_bar(frame, state, chunks[0]);
-    render_history_list(frame, state, list_state, chunks[1]);
-    render_footer(frame, state, chunks[2]);
+    render_tabs(frame, state, chunks[1]);
+    render_history_list(frame, state, list_state, chunks[2]);
+    render_footer(frame, state, chunks[3]);
 
     if state.input_mode == InputMode::TagInput {
         render_tag_popup(frame, state, area);
@@ -677,6 +695,30 @@ fn render_search_bar(frame: &mut Frame, state: &AppState, area: Rect) {
         ),
         area,
     );
+}
+
+fn render_tabs(frame: &mut Frame, state: &AppState, area: Rect) {
+    let history_tab = if state.view_mode == ViewMode::History {
+        Span::styled(
+            "● History ",
+            Style::new().fg(Color::Yellow).bg(Color::Blue).bold(),
+        )
+    } else {
+        Span::raw("○ History ")
+    };
+
+    let favorites_tab = if state.view_mode == ViewMode::Favorites {
+        Span::styled(
+            "● Favorites",
+            Style::new().fg(Color::Yellow).bg(Color::Blue).bold(),
+        )
+    } else {
+        Span::raw("○ Favorites")
+    };
+
+    let line = Line::from(vec![history_tab, favorites_tab]);
+
+    frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }
 
 fn render_history_list(
@@ -745,14 +787,27 @@ fn render_history_list(
         Color::DarkGray
     };
 
+    let list_title = match state.view_mode {
+        ViewMode::History => {
+            if state.active_pane == ActivePane::History {
+                "[History]"
+            } else {
+                "History"
+            }
+        }
+        ViewMode::Favorites => {
+            if state.active_pane == ActivePane::History {
+                "[Favorites]"
+            } else {
+                "Favorites"
+            }
+        }
+    };
+
     let list = List::new(items)
         .block(
             Block::bordered()
-                .title(if state.active_pane == ActivePane::History {
-                    "[History]"
-                } else {
-                    "History"
-                })
+                .title(list_title)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::new().fg(history_border_color)),
         )
@@ -767,12 +822,11 @@ fn render_footer(frame: &mut Frame, state: &AppState, area: Rect) {
         msg.clone()
     } else {
         match state.active_pane {
-            // help page would be nice .. -> check how others handle this in tuis 
             ActivePane::Search => {
-                " 2: History | Type to search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ".into()
+                " 1: History | 2: Favorites | /: Search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ".into()
             }
             ActivePane::History => {
-                " /: Search | 1: Search | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ".into()
+                " 1: History | 2: Favorites | /: Search | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ".into()
             }
         }
     };
