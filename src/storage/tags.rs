@@ -19,6 +19,11 @@ pub fn set_tags_for_command(
 
     let tx = conn.transaction()?;
     {
+        tx.execute(
+            "INSERT OR IGNORE INTO commands (id, text) VALUES (?, ?)",
+            [&cmd_id, text],
+        )?;
+
         let current_tags: Vec<String> = {
             let mut stmt = tx.prepare(
                 "SELECT t.name FROM tags t 
