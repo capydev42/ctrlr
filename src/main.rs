@@ -1,12 +1,12 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
-use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 use ratatui::{
-    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph, Wrap},
+    DefaultTerminal, Frame,
 };
 
 mod cli;
@@ -825,6 +825,20 @@ fn handle_key(
             state.load_collection_commands();
             return None;
         }
+        (KeyCode::Char('c'), KeyModifiers::NONE) => {
+            let has_selection = match state.view_mode {
+                ViewMode::Collections => {
+                    matches!(state.active_pane, ActivePane::CollectionItems)
+                        && !state.collection_commands.is_empty()
+                }
+                _ => !state.filtered.is_empty(),
+            };
+            if has_selection {
+                state.collection_input_mode = CollectionInputMode::AddToCollection;
+                state.input_mode = InputMode::CollectionInput;
+            }
+            return None;
+        }
         (KeyCode::Enter, _) => {
             if state.view_mode == ViewMode::Collections {
                 match state.active_pane {
@@ -977,11 +991,6 @@ fn handle_key(
         ActivePane::CollectionItems => match (key.code, key.modifiers) {
             (KeyCode::Char('/'), KeyModifiers::NONE) => {
                 state.active_pane = ActivePane::Search;
-            }
-            (KeyCode::Char('a'), KeyModifiers::NONE) => {
-                state.collection_input_mode = CollectionInputMode::AddToCollection;
-                state.selected_collection_index = 0;
-                state.input_mode = InputMode::CollectionInput;
             }
             (KeyCode::Char('r'), KeyModifiers::NONE) => {
                 if let Some(cmd) = state
@@ -1406,7 +1415,7 @@ fn render_footer(frame: &mut Frame, state: &AppState, area: Rect) {
                         " 1: History | 2: Favorites | 3: Collections | /: Search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ".into()
                     }
                     ActivePane::History => {
-                        " 1: History | 2: Favorites | 3: Collections | /: Search | d: Details | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ".into()
+                        " 1: History | 2: Favorites | 3: Collections | c: Add to Collection | /: Search | d: Details | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ".into()
                     }
                     _ => "".into(),
                 }
@@ -1417,7 +1426,7 @@ fn render_footer(frame: &mut Frame, state: &AppState, area: Rect) {
                         " j/k or ↑/↓: Navigate | Enter: Show commands | n: New | e: Edit | d: Delete | Tab: Switch pane ".into()
                     }
                     ActivePane::CollectionItems => {
-                        " j/k or ↑/↓: Navigate | Enter: Select | a: Add command | r: Remove | Tab: Switch pane ".into()
+                        " j/k or ↑/↓: Navigate | Enter: Select | c: Add to Collection | r: Remove | Tab: Switch pane ".into()
                     }
                     ActivePane::Search => {
                         " j/k: Navigate | Backspace: Delete | Enter: Select | 1/2/3: Switch view ".into()
