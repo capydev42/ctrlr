@@ -354,6 +354,25 @@ impl AppState {
         }
     }
 
+    fn mark_executed_for_text(&mut self, text: &str) {
+        if let Some(cmd) = self.commands.iter_mut().find(|c| c.text == text) {
+            cmd.use_count += 1;
+            cmd.last_used = Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0),
+            );
+
+            if let Some(ref mut conn) = self.db {
+                use storage::commands;
+                if let Err(e) = commands::increment_use_count(conn, &cmd.text) {
+                    eprintln!("DB error updating use count: {}", e);
+                }
+            }
+        }
+    }
+
     fn toggle_favorite(&mut self) {
         let selected_id = self.filtered.get(self.selected_index).map(|c| c.id.clone());
         let cmd = selected_id.and_then(|id| self.commands.iter_mut().find(|c| c.id == id));
@@ -620,8 +639,10 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
     state.load_collections();
     let mut list_state = ListState::default();
     let mut collection_list_state = ListState::default();
+    let mut collection_items_list_state = ListState::default();
     list_state.select(Some(0));
     collection_list_state.select(Some(0));
+    collection_items_list_state.select(Some(0));
 
     loop {
         if let Some(ts) = state.status_timestamp {
@@ -633,7 +654,15 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
             }
         }
 
-        terminal.draw(|f| render(f, &state, &mut list_state, &mut collection_list_state))?;
+        terminal.draw(|f| {
+            render(
+                f,
+                &state,
+                &mut list_state,
+                &mut collection_list_state,
+                &mut collection_items_list_state,
+            )
+        })?;
         if let Event::Key(key) = crossterm::event::read()? {
             if key.code == KeyCode::Esc
                 && state.input_mode != InputMode::TagInput
@@ -786,6 +815,26 @@ fn handle_key(
             return None;
         }
         (KeyCode::Enter, _) => {
+            if state.view_mode == ViewMode::Collections {
+                match state.active_pane {
+                    ActivePane::CollectionsList => {
+                        state.load_collection_commands();
+                        state.active_pane = ActivePane::CollectionItems;
+                        return None;
+                    }
+                    ActivePane::CollectionItems => {
+                        let cmd = state
+                            .collection_commands
+                            .get(state.collection_selected_index)
+                            .cloned();
+                        if let Some(ref c) = cmd {
+                            state.mark_executed_for_text(&c.text);
+                        }
+                        return cmd.map(|c| c.text);
+                    }
+                    _ => return None,
+                }
+            }
             let cmd = state.selected_command();
             state.mark_executed();
             return cmd;
@@ -1028,6 +1077,7 @@ fn render(
     state: &AppState,
     list_state: &mut ListState,
     collection_list_state: &mut ListState,
+    collection_items_list_state: &mut ListState,
 ) {
     let area = frame.area();
 
@@ -1062,7 +1112,13 @@ fn render(
             }
         }
         ViewMode::Collections => {
-            render_collections_view(frame, state, collection_list_state, chunks[2]);
+            render_collections_view(
+                frame,
+                state,
+                collection_list_state,
+                collection_items_list_state,
+                chunks[2],
+            );
         }
     }
 
@@ -1468,6 +1524,7 @@ fn render_collections_view(
     frame: &mut Frame,
     state: &AppState,
     list_state: &mut ListState,
+    items_list_state: &mut ListState,
     area: Rect,
 ) {
     let chunks = Layout::default()
@@ -1476,7 +1533,7 @@ fn render_collections_view(
         .split(area);
 
     render_collection_list(frame, state, list_state, chunks[0]);
-    render_collection_commands(frame, state, chunks[1]);
+    render_collection_commands(frame, state, items_list_state, chunks[1]);
 }
 
 fn render_collection_list(
@@ -1522,7 +1579,12 @@ fn render_collection_list(
     frame.render_stateful_widget(list, area, list_state);
 }
 
-fn render_collection_commands(frame: &mut Frame, state: &AppState, area: Rect) {
+fn render_collection_commands(
+    frame: &mut Frame,
+    state: &AppState,
+    list_state: &mut ListState,
+    area: Rect,
+) {
     let border_color = if state.active_pane == ActivePane::CollectionItems {
         Color::Yellow
     } else {
@@ -1570,7 +1632,8 @@ fn render_collection_commands(frame: &mut Frame, state: &AppState, area: Rect) {
         .highlight_style(Style::default().bg(Color::Blue).fg(Color::White))
         .highlight_symbol("> ");
 
-    frame.render_widget(list, area);
+    list_state.select(Some(state.collection_selected_index));
+    frame.render_stateful_widget(list, area, list_state);
 }
 
 fn render_collection_popup(frame: &mut Frame, state: &AppState, area: Rect) {
