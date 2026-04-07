@@ -1088,7 +1088,7 @@ fn handle_collection_input(state: &mut AppState, key: KeyEvent) -> Option<String
                         .collections
                         .get(state.selected_collection_index)
                         .cloned();
-                    let cmd = state.filtered.get(state.selected_index).cloned();
+                    let cmd = state.active_command().cloned();
                     if let (Some(col), Some(cmd)) = (col, cmd) {
                         state.add_command_to_collection(&cmd.text, &col.id);
                         state.load_collection_commands();
@@ -1357,7 +1357,7 @@ fn render_details(frame: &mut Frame, state: &AppState, area: Rect) {
         return;
     }
 
-    let cmd = match state.filtered.get(state.selected_index) {
+    let cmd = match state.active_command() {
         Some(c) => c,
         None => return,
     };
@@ -1372,6 +1372,16 @@ fn render_details(frame: &mut Frame, state: &AppState, area: Rect) {
         lines.push(section("Tags"));
         for tag in &cmd.tags {
             lines.push(Line::from(format!("#{}", tag)));
+        }
+        lines.push(Line::from(""));
+    }
+
+    if !cmd.collection_ids.is_empty() {
+        lines.push(section("Collections"));
+        for col_id in &cmd.collection_ids {
+            if let Some(col) = state.collections.iter().find(|c| &c.id == col_id) {
+                lines.push(Line::from(format!("- {}", col.name)));
+            }
         }
         lines.push(Line::from(""));
     }
