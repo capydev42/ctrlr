@@ -933,6 +933,9 @@ fn handle_key(
             _ => {}
         },
         ActivePane::CollectionsList => match (key.code, key.modifiers) {
+            (KeyCode::Char('/'), KeyModifiers::NONE) => {
+                state.active_pane = ActivePane::Search;
+            }
             (KeyCode::Char('n'), KeyModifiers::NONE) => {
                 state.collection_input_mode = CollectionInputMode::NewCollection;
                 state.collection_input_text.clear();
@@ -961,6 +964,9 @@ fn handle_key(
             _ => {}
         },
         ActivePane::CollectionItems => match (key.code, key.modifiers) {
+            (KeyCode::Char('/'), KeyModifiers::NONE) => {
+                state.active_pane = ActivePane::Search;
+            }
             (KeyCode::Char('a'), KeyModifiers::NONE) => {
                 state.collection_input_mode = CollectionInputMode::AddToCollection;
                 state.selected_collection_index = 0;
