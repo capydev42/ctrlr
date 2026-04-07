@@ -1,6 +1,7 @@
 use rusqlite::Connection;
 use std::path::PathBuf;
 
+pub mod collections;
 pub mod commands;
 pub mod tags;
 
@@ -40,9 +41,21 @@ pub fn init_db() -> rusqlite::Result<Connection> {
             PRIMARY KEY (command_id, tag_id)
         );
 
+        CREATE TABLE IF NOT EXISTS collections (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS command_collections (
+            command_id TEXT REFERENCES commands(id) ON DELETE CASCADE,
+            collection_id TEXT REFERENCES collections(id) ON DELETE CASCADE,
+            PRIMARY KEY (command_id, collection_id)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_commands_text ON commands(text);
         CREATE INDEX IF NOT EXISTS idx_commands_favorite ON commands(favorite);
         CREATE INDEX IF NOT EXISTS idx_commands_use_count ON commands(use_count DESC);
+        CREATE INDEX IF NOT EXISTS idx_command_collections_collection ON command_collections(collection_id);
         ",
     )?;
 

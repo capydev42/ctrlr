@@ -1,12 +1,12 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
-use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 use ratatui::{
-    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph, Wrap},
+    DefaultTerminal, Frame,
 };
 
 mod cli;
@@ -17,22 +17,36 @@ use std::collections::HashSet;
 use std::io;
 use std::time::{Duration, Instant};
 
+use storage::collections::Collection;
+
 #[derive(Clone, Debug, PartialEq)]
 enum ActivePane {
     Search,
     History,
+    CollectionsList,
+    CollectionItems,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 enum ViewMode {
     History,
     Favorites,
+    Collections,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 enum InputMode {
     Normal,
     TagInput,
+    CollectionInput,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum CollectionInputMode {
+    None,
+    AddToCollection,
+    NewCollection,
+    EditCollection,
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +54,7 @@ struct Command {
     id: String,
     text: String,
     tags: Vec<String>,
+    collection_ids: Vec<String>,
     favorite: bool,
     _context: Vec<String>,
     use_count: i32,
@@ -63,6 +78,13 @@ struct AppState {
     tag_cursor_index: Option<usize>,
     db: Option<rusqlite::Connection>,
     matcher: SkimMatcherV2,
+    collections: Vec<Collection>,
+    selected_collection_index: usize,
+    collection_selected_index: usize,
+    collection_commands: Vec<Command>,
+    collection_input_mode: CollectionInputMode,
+    collection_input_text: String,
+    editing_collection_id: Option<String>,
 }
 
 impl AppState {
@@ -86,6 +108,13 @@ impl AppState {
             tag_cursor_index: None,
             db,
             matcher: SkimMatcherV2::default(),
+            collections: Vec::new(),
+            selected_collection_index: 0,
+            collection_selected_index: 0,
+            collection_commands: Vec::new(),
+            collection_input_mode: CollectionInputMode::None,
+            collection_input_text: String::new(),
+            editing_collection_id: None,
         }
     }
 
@@ -168,9 +197,13 @@ impl AppState {
     }
 
     fn switch_pane(&mut self) {
-        self.active_pane = match self.active_pane {
-            ActivePane::Search => ActivePane::History,
-            ActivePane::History => ActivePane::Search,
+        self.active_pane = match (&self.view_mode, &self.active_pane) {
+            (ViewMode::Collections, ActivePane::CollectionsList) => ActivePane::CollectionItems,
+            (ViewMode::Collections, ActivePane::CollectionItems) => ActivePane::Search,
+            (ViewMode::Collections, ActivePane::Search) => ActivePane::CollectionsList,
+            (_, ActivePane::Search) => ActivePane::History,
+            (_, ActivePane::History) => ActivePane::Search,
+            _ => ActivePane::Search,
         };
     }
 
@@ -200,6 +233,16 @@ impl AppState {
         let base_commands: Vec<&Command> = match self.view_mode {
             ViewMode::History => self.commands.iter().collect(),
             ViewMode::Favorites => self.commands.iter().filter(|c| c.favorite).collect(),
+            ViewMode::Collections => {
+                if let Some(col) = self.selected_collection() {
+                    self.commands
+                        .iter()
+                        .filter(|c| c.collection_ids.contains(&col.id))
+                        .collect()
+                } else {
+                    vec![]
+                }
+            }
         };
 
         if self.search_query.is_empty() {
@@ -333,6 +376,140 @@ impl AppState {
         }
         self.filter_commands();
     }
+
+    fn selected_collection(&self) -> Option<&Collection> {
+        self.collections.get(self.selected_collection_index)
+    }
+
+    fn load_collections(&mut self) {
+        if let Some(ref conn) = self.db {
+            match storage::collections::get_all_collections(conn) {
+                Ok(cols) => self.collections = cols,
+                Err(e) => eprintln!("DB error loading collections: {}", e),
+            }
+        }
+    }
+
+    fn load_collection_commands(&mut self) {
+        self.collection_commands.clear();
+        if let Some(ref conn) = self.db {
+            if let Some(col) = self.selected_collection() {
+                match storage::collections::get_command_ids_in_collection(conn, &col.id) {
+                    Ok(ids) => {
+                        for id in ids {
+                            if let Some(cmd) = self.commands.iter().find(|c| c.id == id) {
+                                self.collection_commands.push(cmd.clone());
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!("DB error loading collection commands: {}", e),
+                }
+            }
+        }
+    }
+
+    fn create_collection(&mut self, name: String) {
+        let name_for_msg = name.clone();
+        if let Some(ref conn) = self.db {
+            match storage::collections::create_collection(conn, &name) {
+                Ok(id) => {
+                    self.collections.push(Collection { id, name });
+                    self.collections.sort_by(|a, b| a.name.cmp(&b.name));
+                    self.status_message = Some(format!("Created collection: {}", name_for_msg));
+                    self.status_timestamp = Some(Instant::now());
+                }
+                Err(e) => eprintln!("DB error creating collection: {}", e),
+            }
+        }
+    }
+
+    fn rename_collection(&mut self, id: &str, new_name: String) {
+        if let Some(ref conn) = self.db {
+            match storage::collections::rename_collection(conn, id, &new_name) {
+                Ok(()) => {
+                    if let Some(col) = self.collections.iter_mut().find(|c| c.id == id) {
+                        col.name = new_name.clone();
+                    }
+                    self.collections.sort_by(|a, b| a.name.cmp(&b.name));
+                    self.status_message = Some(format!("Renamed to: {}", new_name));
+                    self.status_timestamp = Some(Instant::now());
+                }
+                Err(e) => eprintln!("DB error renaming collection: {}", e),
+            }
+        }
+    }
+
+    fn delete_collection(&mut self) {
+        let col_id = self.selected_collection().map(|c| c.id.clone());
+        let col_name = self.selected_collection().map(|c| c.name.clone());
+        if let (Some(id), Some(name)) = (col_id, col_name) {
+            if let Some(ref mut conn) = self.db {
+                match storage::collections::delete_collection(conn, &id) {
+                    Ok(()) => {
+                        self.collections.retain(|c| c.id != id);
+                        if self.selected_collection_index >= self.collections.len() {
+                            self.selected_collection_index =
+                                self.collections.len().saturating_sub(1);
+                        }
+                        self.load_collection_commands();
+                        self.status_message = Some(format!("Deleted collection: {}", name));
+                        self.status_timestamp = Some(Instant::now());
+                    }
+                    Err(e) => eprintln!("DB error deleting collection: {}", e),
+                }
+            }
+        }
+    }
+
+    fn add_command_to_collection(&mut self, cmd_text: &str, collection_id: &str) {
+        let col_name = self
+            .collections
+            .iter()
+            .find(|c| c.id == collection_id)
+            .map(|c| c.name.clone());
+        if let Some(ref conn) = self.db {
+            match storage::collections::add_command_to_collection(conn, cmd_text, collection_id) {
+                Ok(()) => {
+                    if let Some(name) = col_name {
+                        self.status_message = Some(format!("Added to {}", name));
+                        self.status_timestamp = Some(Instant::now());
+                    }
+                    self.load_collection_commands();
+                }
+                Err(e) => eprintln!("DB error adding to collection: {}", e),
+            }
+        }
+    }
+
+    fn remove_command_from_collection(&mut self, cmd_text: &str) {
+        let col_name = self.selected_collection().map(|c| c.name.clone());
+        let col_id = self.selected_collection().map(|c| c.id.clone());
+        if let (Some(name), Some(id)) = (col_name, col_id) {
+            if let Some(ref conn) = self.db {
+                match storage::collections::remove_command_from_collection(conn, cmd_text, &id) {
+                    Ok(()) => {
+                        self.load_collection_commands();
+                        self.status_message = Some(format!("Removed from {}", name));
+                        self.status_timestamp = Some(Instant::now());
+                    }
+                    Err(e) => eprintln!("DB error removing from collection: {}", e),
+                }
+            }
+        }
+    }
+
+    fn navigate_collection_up(&mut self) {
+        self.selected_collection_index = self.selected_collection_index.saturating_sub(1);
+        self.load_collection_commands();
+    }
+
+    fn navigate_collection_down(&mut self) {
+        if !self.collections.is_empty() {
+            self.selected_collection_index =
+                (self.selected_collection_index + 1) % self.collections.len();
+            self.load_collection_commands();
+        }
+    }
 }
 
 fn compute_ranking_score(cmd: &Command, fuzzy: i64, now: i64) -> i64 {
@@ -431,12 +608,20 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
             if !tags.is_empty() {
                 cmd.tags = tags;
             }
+            let collections = storage::collections::get_collections_for_command(conn, &cmd.text)
+                .unwrap_or_default();
+            if !collections.is_empty() {
+                cmd.collection_ids = collections;
+            }
         }
     }
 
     let mut state = AppState::new(commands, db);
+    state.load_collections();
     let mut list_state = ListState::default();
+    let mut collection_list_state = ListState::default();
     list_state.select(Some(0));
+    collection_list_state.select(Some(0));
 
     loop {
         if let Some(ts) = state.status_timestamp {
@@ -448,22 +633,34 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
             }
         }
 
-        terminal.draw(|f| render(f, &state, &mut list_state))?;
+        terminal.draw(|f| render(f, &state, &mut list_state, &mut collection_list_state))?;
         if let Event::Key(key) = crossterm::event::read()? {
             if key.code == KeyCode::Esc
                 && state.input_mode != InputMode::TagInput
+                && state.input_mode != InputMode::CollectionInput
                 && state.handle_esc()
             {
                 break Ok(None);
             }
-            if let Some(cmd) = handle_key(&mut state, &mut list_state, key) {
+            if let Some(cmd) =
+                handle_key(&mut state, &mut list_state, &mut collection_list_state, key)
+            {
                 break Ok(Some(cmd));
             }
         }
     }
 }
 
-fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -> Option<String> {
+fn handle_key(
+    state: &mut AppState,
+    list_state: &mut ListState,
+    _collection_list_state: &mut ListState,
+    key: KeyEvent,
+) -> Option<String> {
+    if state.input_mode == InputMode::CollectionInput {
+        return handle_collection_input(state, key);
+    }
+
     if state.input_mode == InputMode::TagInput {
         match (key.code, key.modifiers) {
             (KeyCode::Left, _) => {
@@ -582,6 +779,12 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
             state.filter_commands();
             return None;
         }
+        (KeyCode::Char('3'), KeyModifiers::NONE) => {
+            state.view_mode = ViewMode::Collections;
+            state.active_pane = ActivePane::CollectionsList;
+            state.load_collection_commands();
+            return None;
+        }
         (KeyCode::Enter, _) => {
             let cmd = state.selected_command();
             state.mark_executed();
@@ -591,20 +794,53 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
     }
 
     match (key.code, key.modifiers) {
-        (KeyCode::Up, _) => {
-            if state.active_pane == ActivePane::Search {
-                state.active_pane = ActivePane::History;
+        (KeyCode::Up, _) => match state.view_mode {
+            ViewMode::Collections => match state.active_pane {
+                ActivePane::CollectionsList => state.navigate_collection_up(),
+                ActivePane::CollectionItems => {
+                    if state.collection_selected_index > 0 {
+                        state.collection_selected_index -= 1;
+                    }
+                }
+                _ => {
+                    if state.active_pane == ActivePane::Search {
+                        state.active_pane = ActivePane::History;
+                    }
+                    state.navigate_up();
+                    list_state.select(Some(state.selected_index));
+                }
+            },
+            _ => {
+                if state.active_pane == ActivePane::Search {
+                    state.active_pane = ActivePane::History;
+                }
+                state.navigate_up();
+                list_state.select(Some(state.selected_index));
             }
-            state.navigate_up();
-            list_state.select(Some(state.selected_index));
-        }
-        (KeyCode::Down, _) => {
-            if state.active_pane == ActivePane::Search {
-                state.active_pane = ActivePane::History;
+        },
+        (KeyCode::Down, _) => match state.view_mode {
+            ViewMode::Collections => match state.active_pane {
+                ActivePane::CollectionsList => state.navigate_collection_down(),
+                ActivePane::CollectionItems => {
+                    state.collection_selected_index = (state.collection_selected_index + 1)
+                        .min(state.collection_commands.len().saturating_sub(1));
+                }
+                _ => {
+                    if state.active_pane == ActivePane::Search {
+                        state.active_pane = ActivePane::History;
+                    }
+                    state.navigate_down();
+                    list_state.select(Some(state.selected_index));
+                }
+            },
+            _ => {
+                if state.active_pane == ActivePane::Search {
+                    state.active_pane = ActivePane::History;
+                }
+                state.navigate_down();
+                list_state.select(Some(state.selected_index));
             }
-            state.navigate_down();
-            list_state.select(Some(state.selected_index));
-        }
+        },
         (KeyCode::Esc, _) => {
             state.handle_esc();
         }
@@ -647,11 +883,152 @@ fn handle_key(state: &mut AppState, list_state: &mut ListState, key: KeyEvent) -
             }
             _ => {}
         },
+        ActivePane::CollectionsList => match (key.code, key.modifiers) {
+            (KeyCode::Char('n'), KeyModifiers::NONE) => {
+                state.collection_input_mode = CollectionInputMode::NewCollection;
+                state.collection_input_text.clear();
+                state.input_mode = InputMode::CollectionInput;
+            }
+            (KeyCode::Char('e'), KeyModifiers::NONE) => {
+                if state.selected_collection().is_some() {
+                    state.editing_collection_id = state.selected_collection().map(|c| c.id.clone());
+                    state.collection_input_text = state
+                        .selected_collection()
+                        .map(|c| c.name.clone())
+                        .unwrap_or_default();
+                    state.collection_input_mode = CollectionInputMode::EditCollection;
+                    state.input_mode = InputMode::CollectionInput;
+                }
+            }
+            (KeyCode::Char('d'), KeyModifiers::NONE) => {
+                state.delete_collection();
+            }
+            (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                state.navigate_collection_down();
+            }
+            (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                state.navigate_collection_up();
+            }
+            _ => {}
+        },
+        ActivePane::CollectionItems => match (key.code, key.modifiers) {
+            (KeyCode::Char('a'), KeyModifiers::NONE) => {
+                state.collection_input_mode = CollectionInputMode::AddToCollection;
+                state.selected_collection_index = 0;
+                state.input_mode = InputMode::CollectionInput;
+            }
+            (KeyCode::Char('r'), KeyModifiers::NONE) => {
+                if let Some(cmd) = state
+                    .collection_commands
+                    .get(state.collection_selected_index)
+                {
+                    let text = cmd.text.clone();
+                    state.remove_command_from_collection(&text);
+                }
+            }
+            (KeyCode::Char('j'), KeyModifiers::NONE) => {
+                state.collection_selected_index = (state.collection_selected_index + 1)
+                    .min(state.collection_commands.len().saturating_sub(1));
+            }
+            (KeyCode::Char('k'), KeyModifiers::NONE) => {
+                if state.collection_selected_index > 0 {
+                    state.collection_selected_index -= 1;
+                }
+            }
+            _ => {}
+        },
     }
     None
 }
 
-fn render(frame: &mut Frame, state: &AppState, list_state: &mut ListState) {
+fn handle_collection_input(state: &mut AppState, key: KeyEvent) -> Option<String> {
+    match (key.code, key.modifiers) {
+        (KeyCode::Char(c), KeyModifiers::NONE) => {
+            if state.collection_input_mode == CollectionInputMode::AddToCollection {
+                match c {
+                    'j' => {
+                        state.selected_collection_index = (state.selected_collection_index + 1)
+                            .min(state.collections.len().saturating_sub(1));
+                    }
+                    'k' => {
+                        if state.selected_collection_index > 0 {
+                            state.selected_collection_index -= 1;
+                        }
+                    }
+                    _ => {}
+                }
+            } else {
+                state.collection_input_text.push(c);
+            }
+        }
+        (KeyCode::Backspace, _) => {
+            if state.collection_input_mode != CollectionInputMode::AddToCollection {
+                state.collection_input_text.pop();
+            }
+        }
+        (KeyCode::Up, _) => {
+            if state.collection_input_mode == CollectionInputMode::AddToCollection
+                && !state.collections.is_empty()
+            {
+                state.selected_collection_index = state.selected_collection_index.saturating_sub(1);
+            }
+        }
+        (KeyCode::Down, _) => {
+            if state.collection_input_mode == CollectionInputMode::AddToCollection
+                && !state.collections.is_empty()
+            {
+                state.selected_collection_index = (state.selected_collection_index + 1)
+                    .min(state.collections.len().saturating_sub(1));
+            }
+        }
+        (KeyCode::Enter, _) => {
+            match state.collection_input_mode {
+                CollectionInputMode::NewCollection => {
+                    if !state.collection_input_text.is_empty() {
+                        state.create_collection(state.collection_input_text.clone());
+                    }
+                }
+                CollectionInputMode::EditCollection => {
+                    if let Some(id) = state.editing_collection_id.clone() {
+                        if !state.collection_input_text.is_empty() {
+                            state.rename_collection(&id, state.collection_input_text.clone());
+                        }
+                    }
+                }
+                CollectionInputMode::AddToCollection => {
+                    if let Some(col) = state.collections.get(state.selected_collection_index) {
+                        if let Some(cmd) = state.filtered.get(state.selected_index) {
+                            let col_id = col.id.clone();
+                            let cmd_text = cmd.text.clone();
+                            state.add_command_to_collection(&cmd_text, &col_id);
+                            state.load_collection_commands();
+                        }
+                    }
+                }
+                CollectionInputMode::None => {}
+            }
+            state.input_mode = InputMode::Normal;
+            state.collection_input_mode = CollectionInputMode::None;
+            state.collection_input_text.clear();
+            state.editing_collection_id = None;
+        }
+        (KeyCode::Esc, _) => {
+            state.input_mode = InputMode::Normal;
+            state.collection_input_mode = CollectionInputMode::None;
+            state.collection_input_text.clear();
+            state.editing_collection_id = None;
+        }
+        _ => {}
+    }
+    None
+}
+
+fn render(
+    frame: &mut Frame,
+    state: &AppState,
+    list_state: &mut ListState,
+    collection_list_state: &mut ListState,
+) {
     let area = frame.area();
 
     let chunks = Layout::default()
@@ -664,28 +1041,37 @@ fn render(frame: &mut Frame, state: &AppState, list_state: &mut ListState) {
         ])
         .split(area);
 
-    let (list_area, details_area) = if state.show_details {
-        let content_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
-            .split(chunks[2]);
-        (content_chunks[0], Some(content_chunks[1]))
-    } else {
-        (chunks[2], None)
-    };
-
     render_search_bar(frame, state, chunks[0]);
     render_tabs(frame, state, chunks[1]);
-    render_history_list(frame, state, list_state, list_area);
-
-    if let Some(area) = details_area {
-        render_details(frame, state, area);
-    }
-
     render_footer(frame, state, chunks[3]);
+
+    match state.view_mode {
+        ViewMode::History | ViewMode::Favorites => {
+            let (list_area, details_area) = if state.show_details {
+                let content_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
+                    .split(chunks[2]);
+                (content_chunks[0], Some(content_chunks[1]))
+            } else {
+                (chunks[2], None)
+            };
+            render_history_list(frame, state, list_state, list_area);
+            if let Some(details_area) = details_area {
+                render_details(frame, state, details_area);
+            }
+        }
+        ViewMode::Collections => {
+            render_collections_view(frame, state, collection_list_state, chunks[2]);
+        }
+    }
 
     if state.input_mode == InputMode::TagInput {
         render_tag_popup(frame, state, area);
+    }
+
+    if state.input_mode == InputMode::CollectionInput {
+        render_collection_popup(frame, state, area);
     }
 }
 
@@ -729,14 +1115,23 @@ fn render_tabs(frame: &mut Frame, state: &AppState, area: Rect) {
 
     let favorites_tab = if state.view_mode == ViewMode::Favorites {
         Span::styled(
-            "● Favorites",
+            "● Favorites ",
             Style::new().fg(Color::Yellow).bg(Color::Blue).bold(),
         )
     } else {
-        Span::raw("○ Favorites")
+        Span::raw("○ Favorites ")
     };
 
-    let line = Line::from(vec![history_tab, favorites_tab]);
+    let collections_tab = if state.view_mode == ViewMode::Collections {
+        Span::styled(
+            "● Collections",
+            Style::new().fg(Color::Yellow).bg(Color::Blue).bold(),
+        )
+    } else {
+        Span::raw("○ Collections")
+    };
+
+    let line = Line::from(vec![history_tab, favorites_tab, collections_tab]);
 
     frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }
@@ -820,6 +1215,13 @@ fn render_history_list(
                 "[Favorites]"
             } else {
                 "Favorites"
+            }
+        }
+        ViewMode::Collections => {
+            if let Some(col) = state.selected_collection() {
+                &col.name
+            } else {
+                "Commands"
             }
         }
     };
@@ -923,12 +1325,33 @@ fn render_footer(frame: &mut Frame, state: &AppState, area: Rect) {
     let footer_text = if let Some(msg) = &state.status_message {
         msg.clone()
     } else {
-        match state.active_pane {
-            ActivePane::Search => {
-                " 1: History | 2: Favorites | /: Search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ".into()
+        match state.view_mode {
+            ViewMode::History | ViewMode::Favorites => {
+                match state.active_pane {
+                    ActivePane::Search => {
+                        " 1: History | 2: Favorites | 3: Collections | /: Search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ".into()
+                    }
+                    ActivePane::History => {
+                        " 1: History | 2: Favorites | 3: Collections | /: Search | d: Details | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ".into()
+                    }
+                    _ => "".into(),
+                }
             }
-            ActivePane::History => {
-                " 1: History | 2: Favorites | /: Search | d: Details | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ".into()
+            ViewMode::Collections => {
+                match state.active_pane {
+                    ActivePane::CollectionsList => {
+                        " j/k or ↑/↓: Navigate | Enter: Show commands | n: New | e: Edit | d: Delete | Tab: Switch pane ".into()
+                    }
+                    ActivePane::CollectionItems => {
+                        " j/k or ↑/↓: Navigate | Enter: Select | a: Add command | r: Remove | Tab: Switch pane ".into()
+                    }
+                    ActivePane::Search => {
+                        " j/k: Navigate | Backspace: Delete | Enter: Select | 1/2/3: Switch view ".into()
+                    }
+                    ActivePane::History => {
+                        " j/k: Navigate | Enter: Select | 1/2/3: Switch view ".into()
+                    }
+                }
             }
         }
     };
@@ -1038,6 +1461,184 @@ fn render_tag_popup(frame: &mut Frame, state: &AppState, area: Rect) {
             .style(Style::new().fg(Color::DarkGray))
             .alignment(Alignment::Center),
         chunks[2],
+    );
+}
+
+fn render_collections_view(
+    frame: &mut Frame,
+    state: &AppState,
+    list_state: &mut ListState,
+    area: Rect,
+) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+        .split(area);
+
+    render_collection_list(frame, state, list_state, chunks[0]);
+    render_collection_commands(frame, state, chunks[1]);
+}
+
+fn render_collection_list(
+    frame: &mut Frame,
+    state: &AppState,
+    list_state: &mut ListState,
+    area: Rect,
+) {
+    let items: Vec<ListItem> = if state.collections.is_empty() {
+        vec![ListItem::new("No collections yet")]
+    } else {
+        state
+            .collections
+            .iter()
+            .enumerate()
+            .map(|(idx, col)| {
+                let prefix = if idx == state.selected_collection_index {
+                    "> "
+                } else {
+                    "  "
+                };
+                ListItem::new(format!("{}{}", prefix, col.name))
+            })
+            .collect()
+    };
+
+    let border_color = if state.active_pane == ActivePane::CollectionsList {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
+
+    let list = List::new(items)
+        .block(
+            Block::bordered()
+                .title("[Collections]")
+                .border_type(BorderType::Rounded)
+                .border_style(Style::new().fg(border_color)),
+        )
+        .highlight_style(Style::default().bg(Color::Blue).fg(Color::White));
+
+    list_state.select(Some(state.selected_collection_index));
+    frame.render_stateful_widget(list, area, list_state);
+}
+
+fn render_collection_commands(frame: &mut Frame, state: &AppState, area: Rect) {
+    let border_color = if state.active_pane == ActivePane::CollectionItems {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
+
+    let (title, items): (&str, Vec<ListItem>) = if state.collections.is_empty() {
+        ("Commands", vec![ListItem::new("Create a collection first")])
+    } else if let Some(col) = state.selected_collection() {
+        if state.collection_commands.is_empty() {
+            (
+                &col.name,
+                vec![ListItem::new("No commands in this collection")],
+            )
+        } else {
+            (
+                &col.name,
+                state
+                    .collection_commands
+                    .iter()
+                    .map(|cmd| {
+                        let tags = cmd
+                            .tags
+                            .iter()
+                            .map(|t| format!("#{}", t))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        let fav = if cmd.favorite { "⭐" } else { " " };
+                        ListItem::new(format!("{} {} {}", fav, cmd.text, tags))
+                    })
+                    .collect(),
+            )
+        }
+    } else {
+        ("Commands", vec![ListItem::new("Select a collection")])
+    };
+
+    let list = List::new(items)
+        .block(
+            Block::bordered()
+                .title(title)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::new().fg(border_color)),
+        )
+        .highlight_style(Style::default().bg(Color::Blue).fg(Color::White))
+        .highlight_symbol("> ");
+
+    frame.render_widget(list, area);
+}
+
+fn render_collection_popup(frame: &mut Frame, state: &AppState, area: Rect) {
+    let popup_height = 5u16;
+    let popup_width = 50u16;
+    let centered = center_rect(popup_width, popup_height, area);
+
+    frame.render_widget(Clear, centered);
+
+    let (title, hint) = match state.collection_input_mode {
+        CollectionInputMode::NewCollection => (
+            "[New Collection]",
+            "Type name | Enter: Create | Esc: Cancel",
+        ),
+        CollectionInputMode::EditCollection => (
+            "[Rename Collection]",
+            "Type name | Enter: Save | Esc: Cancel",
+        ),
+        CollectionInputMode::AddToCollection => (
+            "[Add to Collection]",
+            "j/k: Navigate | Enter: Add | Esc: Cancel",
+        ),
+        CollectionInputMode::None => return,
+    };
+
+    let content: Vec<ListItem> =
+        if state.collection_input_mode == CollectionInputMode::AddToCollection {
+            if state.collections.is_empty() {
+                vec![ListItem::new("No collections - press n to create one")]
+            } else {
+                state
+                    .collections
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, col)| {
+                        if idx == state.selected_collection_index {
+                            ListItem::new(format!("> {}", col.name))
+                                .style(Style::new().bg(Color::Blue).fg(Color::Black))
+                        } else {
+                            ListItem::new(format!("  {}", col.name))
+                        }
+                    })
+                    .collect()
+            }
+        } else {
+            let input_text = if state.collection_input_text.is_empty() {
+                "▋".to_string()
+            } else {
+                format!("{}▋", state.collection_input_text)
+            };
+            vec![ListItem::new(input_text)]
+        };
+
+    let list = List::new(content).block(
+        Block::bordered()
+            .title(title)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::new().fg(Color::Yellow)),
+    );
+
+    frame.render_widget(list, centered);
+
+    let hint_area = Rect::new(centered.x, centered.y + popup_height - 1, popup_width, 1);
+    frame.render_widget(
+        Paragraph::new(hint)
+            .style(Style::new().fg(Color::DarkGray))
+            .alignment(Alignment::Center),
+        hint_area,
     );
 }
 
