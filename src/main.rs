@@ -411,18 +411,16 @@ impl AppState {
 
     fn load_collection_commands(&mut self) {
         self.collection_commands.clear();
-        if let Some(ref conn) = self.db {
-            if let Some(col) = self.selected_collection() {
-                match storage::collections::get_command_ids_in_collection(conn, &col.id) {
-                    Ok(ids) => {
-                        for id in ids {
-                            if let Some(cmd) = self.commands.iter().find(|c| c.id == id) {
-                                self.collection_commands.push(cmd.clone());
-                            }
+        if let Some(ref conn) = self.db && let Some(col) = self.selected_collection() {
+            match storage::collections::get_command_ids_in_collection(conn, &col.id) {
+                Ok(ids) => {
+                    for id in ids {
+                        if let Some(cmd) = self.commands.iter().find(|c| c.id == id) {
+                            self.collection_commands.push(cmd.clone());
                         }
                     }
-                    Err(e) => eprintln!("DB error loading collection commands: {}", e),
                 }
+                Err(e) => eprintln!("DB error loading collection commands: {}", e),
             }
         }
     }
@@ -461,21 +459,21 @@ impl AppState {
     fn delete_collection(&mut self) {
         let col_id = self.selected_collection().map(|c| c.id.clone());
         let col_name = self.selected_collection().map(|c| c.name.clone());
-        if let (Some(id), Some(name)) = (col_id, col_name) {
-            if let Some(ref mut conn) = self.db {
-                match storage::collections::delete_collection(conn, &id) {
-                    Ok(()) => {
-                        self.collections.retain(|c| c.id != id);
-                        if self.selected_collection_index >= self.collections.len() {
-                            self.selected_collection_index =
-                                self.collections.len().saturating_sub(1);
-                        }
-                        self.load_collection_commands();
-                        self.status_message = Some(format!("Deleted collection: {}", name));
-                        self.status_timestamp = Some(Instant::now());
+        if let (Some(id), Some(name)) = (col_id, col_name)
+            && let Some(ref mut conn) = self.db
+        {
+            match storage::collections::delete_collection(conn, &id) {
+                Ok(()) => {
+                    self.collections.retain(|c| c.id != id);
+                    if self.selected_collection_index >= self.collections.len() {
+                        self.selected_collection_index =
+                            self.collections.len().saturating_sub(1);
                     }
-                    Err(e) => eprintln!("DB error deleting collection: {}", e),
+                    self.load_collection_commands();
+                    self.status_message = Some(format!("Deleted collection: {}", name));
+                    self.status_timestamp = Some(Instant::now());
                 }
+                Err(e) => eprintln!("DB error deleting collection: {}", e),
             }
         }
     }
@@ -503,16 +501,16 @@ impl AppState {
     fn remove_command_from_collection(&mut self, cmd_text: &str) {
         let col_name = self.selected_collection().map(|c| c.name.clone());
         let col_id = self.selected_collection().map(|c| c.id.clone());
-        if let (Some(name), Some(id)) = (col_name, col_id) {
-            if let Some(ref conn) = self.db {
-                match storage::collections::remove_command_from_collection(conn, cmd_text, &id) {
-                    Ok(()) => {
-                        self.load_collection_commands();
-                        self.status_message = Some(format!("Removed from {}", name));
-                        self.status_timestamp = Some(Instant::now());
-                    }
-                    Err(e) => eprintln!("DB error removing from collection: {}", e),
+        if let (Some(name), Some(id)) = (col_name, col_id)
+            && let Some(ref conn) = self.db
+        {
+            match storage::collections::remove_command_from_collection(conn, cmd_text, &id) {
+                Ok(()) => {
+                    self.load_collection_commands();
+                    self.status_message = Some(format!("Removed from {}", name));
+                    self.status_timestamp = Some(Instant::now());
                 }
+                Err(e) => eprintln!("DB error removing from collection: {}", e),
             }
         }
     }
@@ -1044,20 +1042,20 @@ fn handle_collection_input(state: &mut AppState, key: KeyEvent) -> Option<String
                     }
                 }
                 CollectionInputMode::EditCollection => {
-                    if let Some(id) = state.editing_collection_id.clone() {
-                        if !state.collection_input_text.is_empty() {
-                            state.rename_collection(&id, state.collection_input_text.clone());
-                        }
+                    if let Some(id) = state.editing_collection_id.clone()
+                        && !state.collection_input_text.is_empty()
+                    {
+                        state.rename_collection(&id, state.collection_input_text.clone());
                     }
                 }
                 CollectionInputMode::AddToCollection => {
-                    if let Some(col) = state.collections.get(state.selected_collection_index) {
-                        if let Some(cmd) = state.filtered.get(state.selected_index) {
-                            let col_id = col.id.clone();
-                            let cmd_text = cmd.text.clone();
-                            state.add_command_to_collection(&cmd_text, &col_id);
-                            state.load_collection_commands();
-                        }
+                    if let Some(col) = state.collections.get(state.selected_collection_index)
+                        && let Some(cmd) = state.filtered.get(state.selected_index)
+                    {
+                        let col_id = col.id.clone();
+                        let cmd_text = cmd.text.clone();
+                        state.add_command_to_collection(&cmd_text, &col_id);
+                        state.load_collection_commands();
                     }
                 }
                 CollectionInputMode::None => {}
