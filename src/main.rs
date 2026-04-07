@@ -1,12 +1,12 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
-use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::{
+    DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph, Wrap},
-    DefaultTerminal, Frame,
 };
 
 mod cli;
@@ -331,6 +331,19 @@ impl AppState {
         self.filtered
             .get(self.selected_index)
             .map(|c| c.text.clone())
+    }
+
+    fn active_command(&self) -> Option<&Command> {
+        match self.view_mode {
+            ViewMode::Collections => {
+                if self.active_pane == ActivePane::CollectionItems {
+                    self.collection_commands.get(self.collection_selected_index)
+                } else {
+                    self.filtered.get(self.selected_index)
+                }
+            }
+            _ => self.filtered.get(self.selected_index),
+        }
     }
 
     fn mark_executed(&mut self) {
@@ -1691,16 +1704,25 @@ fn render_collection_popup(frame: &mut Frame, state: &AppState, area: Rect) {
             if state.collections.is_empty() {
                 vec![ListItem::new("No collections - press n to create one")]
             } else {
+                let active_cmd = state.active_command();
+                let cmd_col_ids: Vec<&str> = active_cmd
+                    .map(|c| c.collection_ids.iter().map(|s| s.as_str()).collect())
+                    .unwrap_or_default();
                 state
                     .collections
                     .iter()
                     .enumerate()
                     .map(|(idx, col)| {
+                        let prefix = if cmd_col_ids.contains(&col.id.as_str()) {
+                            "✔ "
+                        } else {
+                            "  "
+                        };
                         if idx == state.selected_collection_index {
-                            ListItem::new(format!("> {}", col.name))
+                            ListItem::new(format!("> {}{}", prefix, col.name))
                                 .style(Style::new().bg(Color::Blue).fg(Color::Black))
                         } else {
-                            ListItem::new(format!("  {}", col.name))
+                            ListItem::new(format!("  {}{}", prefix, col.name))
                         }
                     })
                     .collect()
