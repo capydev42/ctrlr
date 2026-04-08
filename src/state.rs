@@ -67,6 +67,7 @@ pub struct AppState {
     matcher: SkimMatcherV2,
     pub collections: Vec<Collection>,
     pub selected_collection_index: usize,
+    #[allow(dead_code)]
     pub collection_selected_index: usize,
     pub collection_commands: Vec<Command>,
     pub collection_input_mode: CollectionInputMode,
@@ -326,16 +327,7 @@ impl AppState {
     }
 
     pub fn active_command(&self) -> Option<&Command> {
-        match self.view_mode {
-            ViewMode::Collections => {
-                if self.active_pane == ActivePane::CollectionItems {
-                    self.collection_commands.get(self.collection_selected_index)
-                } else {
-                    self.filtered.get(self.selected_index)
-                }
-            }
-            _ => self.filtered.get(self.selected_index),
-        }
+        self.filtered.get(self.selected_index)
     }
 
     pub fn mark_executed(&mut self) {
