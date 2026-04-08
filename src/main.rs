@@ -470,40 +470,41 @@ fn handle_collection_input(state: &mut AppState, key: KeyEvent) -> Option<String
     match (key.code, key.modifiers) {
         (KeyCode::Char(c), KeyModifiers::NONE) => {
             if state.collection_input_mode == CollectionInputMode::AddToCollection {
-                match c {
-                    'j' => {
-                        state.selected_collection_index = (state.selected_collection_index + 1)
-                            .min(state.collections.len().saturating_sub(1));
-                    }
-                    'k' => {
-                        if state.selected_collection_index > 0 {
-                            state.selected_collection_index -= 1;
-                        }
-                    }
-                    _ => {}
-                }
+                state.collection_input_text.push(c);
+                state.selected_collection_index = 0;
             } else {
                 state.collection_input_text.push(c);
             }
         }
         (KeyCode::Backspace, _) => {
-            if state.collection_input_mode != CollectionInputMode::AddToCollection {
+            if state.collection_input_mode == CollectionInputMode::AddToCollection {
+                if !state.collection_input_text.is_empty() {
+                    state.collection_input_text.pop();
+                    state.selected_collection_index =
+                        state.selected_collection_index.saturating_sub(1);
+                }
+            } else {
                 state.collection_input_text.pop();
             }
         }
         (KeyCode::Up, _) => {
-            if state.collection_input_mode == CollectionInputMode::AddToCollection
-                && !state.collections.is_empty()
-            {
-                state.selected_collection_index = state.selected_collection_index.saturating_sub(1);
+            if state.collection_input_mode == CollectionInputMode::AddToCollection {
+                let filtered_len = state
+                    .filtered_collections(&state.collection_input_text)
+                    .len();
+                if filtered_len > 0 {
+                    state.selected_collection_index =
+                        state.selected_collection_index.saturating_sub(1);
+                }
             }
         }
         (KeyCode::Down, _) => {
-            if state.collection_input_mode == CollectionInputMode::AddToCollection
-                && !state.collections.is_empty()
-            {
-                state.selected_collection_index = (state.selected_collection_index + 1)
-                    .min(state.collections.len().saturating_sub(1));
+            if state.collection_input_mode == CollectionInputMode::AddToCollection {
+                let filtered_len = state
+                    .filtered_collections(&state.collection_input_text)
+                    .len();
+                state.selected_collection_index =
+                    (state.selected_collection_index + 1).min(filtered_len);
             }
         }
         (KeyCode::Enter, _) => {
@@ -521,14 +522,27 @@ fn handle_collection_input(state: &mut AppState, key: KeyEvent) -> Option<String
                     }
                 }
                 CollectionInputMode::AddToCollection => {
-                    let col = state
-                        .collections
-                        .get(state.selected_collection_index)
-                        .cloned();
-                    let cmd = state.active_command().cloned();
-                    if let (Some(col), Some(cmd)) = (col, cmd) {
-                        state.add_command_to_collection(&cmd.text, &col.id);
-                        state.load_collection_commands();
+                    let search_text = state.collection_input_text.trim().to_string();
+                    let selected_idx = state.selected_collection_index;
+                    let cmd_text = state.active_command().map(|c| c.text.clone());
+
+                    let filtered = state.filtered_collections(&search_text);
+
+                    if selected_idx < filtered.len() {
+                        let col_id = filtered[selected_idx].id.clone();
+                        if let Some(text) = cmd_text {
+                            state.add_command_to_collection(&text, &col_id);
+                        }
+                    } else if !search_text.is_empty() && selected_idx == filtered.len() {
+                        state.create_collection(search_text.clone());
+                        let new_col_id = state
+                            .collections
+                            .iter()
+                            .find(|c| c.name.to_lowercase() == search_text.to_lowercase())
+                            .map(|c| c.id.clone());
+                        if let (Some(col_id), Some(text)) = (new_col_id, cmd_text) {
+                            state.add_command_to_collection(&text, &col_id);
+                        }
                     }
                 }
                 CollectionInputMode::None => {}
@@ -1169,8 +1183,8 @@ fn render_collection_commands(
 }
 
 fn render_collection_popup(frame: &mut Frame, state: &AppState, area: Rect) {
-    let popup_height = 5u16;
-    let popup_width = 50u16;
+    let popup_height = 8u16;
+    let popup_width = 45u16;
     let centered = center_rect(popup_width, popup_height, area);
 
     frame.render_widget(Clear, centered);
@@ -1186,63 +1200,98 @@ fn render_collection_popup(frame: &mut Frame, state: &AppState, area: Rect) {
         ),
         CollectionInputMode::AddToCollection => (
             "[Add to Collection]",
-            "j/k: Navigate | Enter: Add | Esc: Cancel",
+            "Type to filter | ↑/↓ Navigate | Enter: Select/Create | Esc: Cancel",
         ),
         CollectionInputMode::None => return,
     };
 
-    let content: Vec<ListItem> =
-        if state.collection_input_mode == CollectionInputMode::AddToCollection {
-            if state.collections.is_empty() {
-                vec![ListItem::new("No collections - press n to create one")]
-            } else {
-                let active_cmd = state.active_command();
-                let cmd_col_ids: Vec<&str> = active_cmd
-                    .map(|c| c.collection_ids.iter().map(|s| s.as_str()).collect())
-                    .unwrap_or_default();
-                state
-                    .collections
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, col)| {
-                        let prefix = if cmd_col_ids.contains(&col.id.as_str()) {
-                            "✔ "
-                        } else {
-                            "  "
-                        };
-                        if idx == state.selected_collection_index {
-                            ListItem::new(format!("> {}{}", prefix, col.name))
-                                .style(Style::new().bg(Color::Blue).fg(Color::Black))
-                        } else {
-                            ListItem::new(format!("  {}{}", prefix, col.name))
-                        }
-                    })
-                    .collect()
-            }
-        } else {
-            let input_text = if state.collection_input_text.is_empty() {
-                "▋".to_string()
-            } else {
-                format!("{}▋", state.collection_input_text)
-            };
-            vec![ListItem::new(input_text)]
-        };
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(centered);
 
-    let list = List::new(content).block(
-        Block::bordered()
-            .title(title)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::new().fg(Color::Yellow)),
+    let search_text = format!("Search: {}{}", state.collection_input_text, "▋");
+    frame.render_widget(
+        Paragraph::new(search_text).style(Style::new().fg(Color::Yellow)),
+        chunks[0],
     );
 
-    frame.render_widget(list, centered);
+    if state.collection_input_mode == CollectionInputMode::AddToCollection {
+        let filtered = state.filtered_collections(&state.collection_input_text);
+        let active_cmd = state.active_command();
+        let cmd_col_ids: Vec<&str> = active_cmd
+            .map(|c| c.collection_ids.iter().map(|s| s.as_str()).collect())
+            .unwrap_or_default();
 
-    let hint_area = Rect::new(centered.x, centered.y + popup_height - 1, popup_width, 1);
+        let search_lower = state.collection_input_text.to_lowercase();
+        let exact_match = filtered
+            .iter()
+            .any(|c| c.name.to_lowercase() == search_lower);
+
+        let mut items: Vec<ListItem> = filtered
+            .iter()
+            .enumerate()
+            .map(|(idx, col)| {
+                let prefix = if cmd_col_ids.contains(&col.id.as_str()) {
+                    "✔ "
+                } else {
+                    "  "
+                };
+                if idx == state.selected_collection_index {
+                    ListItem::new(format!("> {}{}", prefix, col.name))
+                        .style(Style::new().bg(Color::Blue).fg(Color::Black))
+                } else {
+                    ListItem::new(format!("  {}{}", prefix, col.name))
+                }
+            })
+            .collect();
+
+        if !state.collection_input_text.is_empty() && !exact_match {
+            let create_text = format!("+ Create \"{}\"", state.collection_input_text);
+            if state.selected_collection_index == filtered.len() {
+                items.push(
+                    ListItem::new(format!("> {}", create_text))
+                        .style(Style::new().fg(Color::Green)),
+                );
+            } else {
+                items.push(ListItem::new(format!("  {}", create_text)));
+            }
+        }
+
+        let list = List::new(items).block(
+            Block::bordered()
+                .title(title)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::new().fg(Color::Yellow)),
+        );
+        frame.render_widget(list, chunks[2]);
+    } else {
+        let input_display = if state.collection_input_text.is_empty() {
+            "▋".to_string()
+        } else {
+            format!("{}▋", state.collection_input_text)
+        };
+        frame.render_widget(
+            Paragraph::new(input_display).block(
+                Block::bordered()
+                    .title(title)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::new().fg(Color::Yellow)),
+            ),
+            chunks[2],
+        );
+    }
+
     frame.render_widget(
         Paragraph::new(hint)
             .style(Style::new().fg(Color::DarkGray))
             .alignment(Alignment::Center),
-        hint_area,
+        chunks[3],
     );
 }
 

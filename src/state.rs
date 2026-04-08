@@ -568,6 +568,16 @@ impl AppState {
         }
     }
 
+    pub fn filtered_collections(&self, search: &str) -> Vec<&Collection> {
+        if search.is_empty() {
+            return self.collections.iter().collect();
+        }
+        self.collections
+            .iter()
+            .filter(|c| c.name.to_lowercase().contains(&search.to_lowercase()))
+            .collect()
+    }
+
     pub fn navigate_collection_up(&mut self) {
         self.selected_collection_index = self.selected_collection_index.saturating_sub(1);
         self.load_collection_commands();
