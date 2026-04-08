@@ -234,14 +234,16 @@ impl AppState {
             ViewMode::History => self.commands.iter().collect(),
             ViewMode::Favorites => self.commands.iter().filter(|c| c.favorite).collect(),
             ViewMode::Collections => {
-                if let Some(col) = self.selected_collection() {
+                self.collection_commands = if let Some(col) = self.selected_collection() {
                     self.commands
                         .iter()
                         .filter(|c| c.collection_ids.contains(&col.id))
+                        .cloned()
                         .collect()
                 } else {
                     vec![]
-                }
+                };
+                self.collection_commands.iter().collect()
             }
         };
 
@@ -544,6 +546,7 @@ impl AppState {
     fn navigate_collection_up(&mut self) {
         self.selected_collection_index = self.selected_collection_index.saturating_sub(1);
         self.load_collection_commands();
+        self.filter_commands();
     }
 
     fn navigate_collection_down(&mut self) {
@@ -551,6 +554,7 @@ impl AppState {
             self.selected_collection_index =
                 (self.selected_collection_index + 1) % self.collections.len();
             self.load_collection_commands();
+            self.filter_commands();
         }
     }
 }
@@ -836,6 +840,7 @@ fn handle_key(
             state.view_mode = ViewMode::Collections;
             state.active_pane = ActivePane::CollectionsList;
             state.load_collection_commands();
+            state.filter_commands();
             return None;
         }
         (KeyCode::Char('c'), KeyModifiers::NONE) => {
@@ -862,13 +867,11 @@ fn handle_key(
                     ActivePane::CollectionsList => {
                         state.load_collection_commands();
                         state.active_pane = ActivePane::CollectionItems;
+                        state.selected_index = 0;
                         return None;
                     }
                     ActivePane::CollectionItems => {
-                        let cmd = state
-                            .collection_commands
-                            .get(state.collection_selected_index)
-                            .cloned();
+                        let cmd = state.filtered.get(state.selected_index).cloned();
                         if let Some(ref c) = cmd {
                             state.mark_executed_for_text(&c.text);
                         }
@@ -889,9 +892,8 @@ fn handle_key(
             ViewMode::Collections => match state.active_pane {
                 ActivePane::CollectionsList => state.navigate_collection_up(),
                 ActivePane::CollectionItems => {
-                    if state.collection_selected_index > 0 {
-                        state.collection_selected_index -= 1;
-                    }
+                    state.navigate_up();
+                    list_state.select(Some(state.selected_index));
                 }
                 _ => {
                     if state.active_pane == ActivePane::Search {
@@ -913,8 +915,8 @@ fn handle_key(
             ViewMode::Collections => match state.active_pane {
                 ActivePane::CollectionsList => state.navigate_collection_down(),
                 ActivePane::CollectionItems => {
-                    state.collection_selected_index = (state.collection_selected_index + 1)
-                        .min(state.collection_commands.len().saturating_sub(1));
+                    state.navigate_down();
+                    list_state.select(Some(state.selected_index));
                 }
                 _ => {
                     if state.active_pane == ActivePane::Search {
@@ -1013,22 +1015,16 @@ fn handle_key(
                 state.show_details = !state.show_details;
             }
             (KeyCode::Char('r'), KeyModifiers::NONE) => {
-                if let Some(cmd) = state
-                    .collection_commands
-                    .get(state.collection_selected_index)
-                {
+                if let Some(cmd) = state.filtered.get(state.selected_index) {
                     let text = cmd.text.clone();
                     state.remove_command_from_collection(&text);
                 }
             }
             (KeyCode::Char('j'), KeyModifiers::NONE) => {
-                state.collection_selected_index = (state.collection_selected_index + 1)
-                    .min(state.collection_commands.len().saturating_sub(1));
+                state.navigate_down();
             }
             (KeyCode::Char('k'), KeyModifiers::NONE) => {
-                if state.collection_selected_index > 0 {
-                    state.collection_selected_index -= 1;
-                }
+                state.navigate_up();
             }
             _ => {}
         },
@@ -1666,18 +1662,16 @@ fn render_collection_commands(
     let (title, items): (&str, Vec<ListItem>) = if state.collections.is_empty() {
         ("Commands", vec![ListItem::new("Create a collection first")])
     } else if let Some(col) = state.selected_collection() {
-        if state.collection_commands.is_empty() {
-            (
-                &col.name,
-                vec![ListItem::new("No commands in this collection")],
-            )
+        if state.filtered.is_empty() {
+            (&col.name, vec![ListItem::new("No commands match search")])
         } else {
             (
                 &col.name,
                 state
-                    .collection_commands
+                    .filtered
                     .iter()
-                    .map(|cmd| {
+                    .enumerate()
+                    .map(|(idx, cmd)| {
                         let tags = cmd
                             .tags
                             .iter()
@@ -1685,7 +1679,39 @@ fn render_collection_commands(
                             .collect::<Vec<_>>()
                             .join(" ");
                         let fav = if cmd.favorite { "⭐" } else { " " };
-                        ListItem::new(format!("{} {} {}", fav, cmd.text, tags))
+                        let text = if let Some(Some(indices)) = state.matched_indices.get(idx) {
+                            let chars: Vec<char> = cmd.text.chars().collect();
+                            let mut spans = Vec::new();
+                            let mut in_match = false;
+                            for (i, c) in chars.iter().enumerate() {
+                                if indices.contains(&i) {
+                                    if !in_match {
+                                        spans.push(Span::styled(
+                                            c.to_string(),
+                                            Style::new().fg(Color::Yellow).bold(),
+                                        ));
+                                        in_match = true;
+                                    } else {
+                                        spans.push(Span::styled(
+                                            c.to_string(),
+                                            Style::new().fg(Color::Yellow).bold(),
+                                        ));
+                                    }
+                                } else if in_match {
+                                    spans.push(Span::raw(c.to_string()));
+                                    in_match = false;
+                                } else {
+                                    spans.push(Span::raw(c.to_string()));
+                                }
+                            }
+                            Line::from(spans)
+                        } else {
+                            Line::raw(&cmd.text)
+                        };
+                        let mut line = Line::from(vec![Span::raw(format!("{} ", fav))]);
+                        line.spans.extend(text.spans);
+                        line.spans.push(Span::raw(format!(" {}", tags)));
+                        ListItem::new(line)
                     })
                     .collect(),
             )
@@ -1704,7 +1730,7 @@ fn render_collection_commands(
         .highlight_style(Style::default().bg(Color::Blue).fg(Color::White))
         .highlight_symbol("> ");
 
-    list_state.select(Some(state.collection_selected_index));
+    list_state.select(Some(state.selected_index));
     frame.render_stateful_widget(list, area, list_state);
 }
 
