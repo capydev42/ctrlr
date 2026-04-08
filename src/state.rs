@@ -477,11 +477,15 @@ impl AppState {
         };
         match crate::storage::collections::delete_collection(conn, &id) {
             Ok(()) => {
+                for cmd in self.commands.iter_mut() {
+                    cmd.collection_ids.retain(|c| c != &id);
+                }
                 self.collections.retain(|c| c.id != id);
                 if self.selected_collection_index >= self.collections.len() {
                     self.selected_collection_index = self.collections.len().saturating_sub(1);
                 }
                 self.load_collection_commands();
+                self.filter_commands();
                 self.status_message = Some(format!("Deleted collection: {}", name));
                 self.status_timestamp = Some(Instant::now());
             }
@@ -506,7 +510,13 @@ impl AppState {
                         self.status_message = Some(format!("Added to {}", name));
                         self.status_timestamp = Some(Instant::now());
                     }
+                    if let Some(cmd) = self.commands.iter_mut().find(|c| c.text == cmd_text)
+                        && !cmd.collection_ids.contains(&collection_id.to_string())
+                    {
+                        cmd.collection_ids.push(collection_id.to_string());
+                    }
                     self.load_collection_commands();
+                    self.filter_commands();
                 }
                 Err(e) => eprintln!("DB error adding to collection: {}", e),
             }
@@ -526,7 +536,11 @@ impl AppState {
         };
         match crate::storage::collections::remove_command_from_collection(conn, cmd_text, &id) {
             Ok(()) => {
+                if let Some(cmd) = self.commands.iter_mut().find(|c| c.text == cmd_text) {
+                    cmd.collection_ids.retain(|c| c != &id);
+                }
                 self.load_collection_commands();
+                self.filter_commands();
                 self.status_message = Some(format!("Removed from {}", name));
                 self.status_timestamp = Some(Instant::now());
             }
