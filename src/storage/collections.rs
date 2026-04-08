@@ -63,6 +63,20 @@ pub fn add_command_to_collection(
     collection_id: &str,
 ) -> rusqlite::Result<()> {
     let cmd_id = hash_command(cmd_text);
+
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM commands WHERE id = ?)",
+        [&cmd_id],
+        |row| row.get(0),
+    )?;
+
+    if !exists {
+        conn.execute(
+            "INSERT INTO commands (id, text, favorite, use_count) VALUES (?, ?, 0, 0)",
+            (&cmd_id, cmd_text),
+        )?;
+    }
+
     conn.execute(
         "INSERT OR IGNORE INTO command_collections (command_id, collection_id) VALUES (?, ?)",
         (&cmd_id, collection_id),
@@ -121,7 +135,7 @@ pub fn command_in_collection(conn: &Connection, cmd_text: &str, collection_id: &
     .is_ok()
 }
 
-fn hash_command(text: &str) -> String {
+pub fn hash_command(text: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(text.as_bytes());
     format!("{:x}", hasher.finalize())

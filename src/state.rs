@@ -300,7 +300,10 @@ impl AppState {
                 })
                 .collect();
         }
-        self.selected_index = 0;
+
+        if !self.search_query.is_empty() {
+            self.selected_index = 0;
+        }
     }
 
     pub fn handle_esc(&mut self) -> bool {
@@ -500,6 +503,21 @@ impl AppState {
             .find(|c| c.id == collection_id)
             .map(|c| c.name.clone());
 
+        let cmd_id = crate::storage::collections::hash_command(cmd_text);
+
+        if !self.commands.iter().any(|c| c.text == cmd_text) {
+            self.commands.push(Command {
+                id: cmd_id,
+                text: cmd_text.to_string(),
+                tags: vec![],
+                collection_ids: vec![collection_id.to_string()],
+                favorite: false,
+                _context: vec![],
+                use_count: 0,
+                last_used: None,
+            });
+        }
+
         let conn = match self.db.as_ref() {
             Some(c) => c,
             None => return,
@@ -527,6 +545,10 @@ impl AppState {
 
         self.load_collection_commands();
         self.filter_commands();
+
+        if let Some(idx) = self.filtered.iter().position(|c| c.text == cmd_text) {
+            self.selected_index = idx;
+        }
     }
 
     pub fn remove_command_from_collection(&mut self, cmd_text: &str) {
