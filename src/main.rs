@@ -839,16 +839,20 @@ fn handle_key(
             return None;
         }
         (KeyCode::Char('c'), KeyModifiers::NONE) => {
-            let has_selection = match state.view_mode {
-                ViewMode::Collections => {
-                    matches!(state.active_pane, ActivePane::CollectionItems)
-                        && !state.collection_commands.is_empty()
+            if state.active_pane == ActivePane::Search {
+                state.add_to_search('c');
+            } else {
+                let has_selection = match state.view_mode {
+                    ViewMode::Collections => {
+                        matches!(state.active_pane, ActivePane::CollectionItems)
+                            && !state.collection_commands.is_empty()
+                    }
+                    _ => !state.filtered.is_empty(),
+                };
+                if has_selection {
+                    state.collection_input_mode = CollectionInputMode::AddToCollection;
+                    state.input_mode = InputMode::CollectionInput;
                 }
-                _ => !state.filtered.is_empty(),
-            };
-            if has_selection {
-                state.collection_input_mode = CollectionInputMode::AddToCollection;
-                state.input_mode = InputMode::CollectionInput;
             }
             return None;
         }
@@ -1004,6 +1008,9 @@ fn handle_key(
         ActivePane::CollectionItems => match (key.code, key.modifiers) {
             (KeyCode::Char('/'), KeyModifiers::NONE) => {
                 state.active_pane = ActivePane::Search;
+            }
+            (KeyCode::Char('d'), KeyModifiers::NONE) => {
+                state.show_details = !state.show_details;
             }
             (KeyCode::Char('r'), KeyModifiers::NONE) => {
                 if let Some(cmd) = state
@@ -1449,7 +1456,7 @@ fn render_footer(frame: &mut Frame, state: &AppState, area: Rect) {
                         " j/k or ↑/↓: Navigate | Enter: Show commands | n: New | e: Edit | d: Delete | Tab: Switch pane ".into()
                     }
                     ActivePane::CollectionItems => {
-                        " j/k or ↑/↓: Navigate | Enter: Select | c: Add to Collection | r: Remove | Tab: Switch pane ".into()
+                        " j/k or ↑/↓: Navigate | Enter: Select | c: Add | d: Details | r: Remove | Tab: Switch pane ".into()
                     }
                     ActivePane::Search => {
                         " j/k: Navigate | Backspace: Delete | Enter: Select | 1/2/3: Switch view ".into()
@@ -1577,13 +1584,28 @@ fn render_collections_view(
     items_list_state: &mut ListState,
     area: Rect,
 ) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
-        .split(area);
+    if state.active_pane == ActivePane::CollectionItems && state.show_details {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(20),
+                Constraint::Percentage(45),
+                Constraint::Percentage(35),
+            ])
+            .split(area);
 
-    render_collection_list(frame, state, list_state, chunks[0]);
-    render_collection_commands(frame, state, items_list_state, chunks[1]);
+        render_collection_list(frame, state, list_state, chunks[0]);
+        render_collection_commands(frame, state, items_list_state, chunks[1]);
+        render_details(frame, state, chunks[2]);
+    } else {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+            .split(area);
+
+        render_collection_list(frame, state, list_state, chunks[0]);
+        render_collection_commands(frame, state, items_list_state, chunks[1]);
+    }
 }
 
 fn render_collection_list(
