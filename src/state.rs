@@ -499,28 +499,34 @@ impl AppState {
             .iter()
             .find(|c| c.id == collection_id)
             .map(|c| c.name.clone());
-        if let Some(ref conn) = self.db {
-            match crate::storage::collections::add_command_to_collection(
-                conn,
-                cmd_text,
-                collection_id,
-            ) {
-                Ok(()) => {
-                    if let Some(name) = col_name {
-                        self.status_message = Some(format!("Added to {}", name));
-                        self.status_timestamp = Some(Instant::now());
-                    }
-                    if let Some(cmd) = self.commands.iter_mut().find(|c| c.text == cmd_text)
-                        && !cmd.collection_ids.contains(&collection_id.to_string())
-                    {
-                        cmd.collection_ids.push(collection_id.to_string());
-                    }
-                    self.load_collection_commands();
-                    self.filter_commands();
-                }
-                Err(e) => eprintln!("DB error adding to collection: {}", e),
-            }
+
+        let conn = match self.db.as_ref() {
+            Some(c) => c,
+            None => return,
+        };
+
+        let result =
+            crate::storage::collections::add_command_to_collection(conn, cmd_text, collection_id);
+
+        if let Err(e) = result {
+            eprintln!("DB error adding to collection: {}", e);
+            return;
         }
+
+        if let Some(name) = col_name {
+            self.status_message = Some(format!("Added to {}", name));
+            self.status_timestamp = Some(Instant::now());
+        }
+
+        match self.commands.iter_mut().find(|c| c.text == cmd_text) {
+            Some(cmd) if !cmd.collection_ids.contains(&collection_id.to_string()) => {
+                cmd.collection_ids.push(collection_id.to_string());
+            }
+            _ => {}
+        }
+
+        self.load_collection_commands();
+        self.filter_commands();
     }
 
     pub fn remove_command_from_collection(&mut self, cmd_text: &str) {
