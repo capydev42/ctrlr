@@ -1,88 +1,72 @@
 # ctrlr
 
-> A fast, keyboard-driven command history picker for your shell
+> Turn your shell history into a searchable command palette  
+> Stop googling commands you already used.
 
-**ctrlr** is a small TUI tool to search, filter, and reuse your shell history — with tags, favorites, and usage tracking.
-
----
-
-## Status
-
-This project is currently a **work-in-progress MVP / prototype**.
-
-- Built primarily for my own workflow
-- APIs, UX, and structure may change frequently
-- Things might be rough around the edges
-- Look and feel currently are not at peak yet =)
-
-That said — it's already usable and evolving quickly.
+<!-- TODO: Add demo gif -->
 
 ---
 
 ## Features
 
-- **Interactive search** through your shell history
+- **Instant search** through your shell history
 - **Favorites** for frequently used commands
-- **Tagging system** to organize commands
-- **Usage tracking** (use count, last used) - not really used atm
-- **Fast TUI interface** (powered by `ratatui`)
-- **Keyboard-first navigation**
-- Supports: bash, zsh, fish
+- **Tags & collections** to organize commands
+- **Fast TUI** powered by `ratatui`
+- **Keyboard-first workflow**
+- Works with bash, zsh, fish
 
 ---
 
-## Motivation
+## Usage
 
-I am building this because:
-- I did not figure out how to remember all the hundreds of different commands I use when I work with different tech stacks.
-- I still have no idea how others work with that many different commands without googling them frequently.
+### Open the command picker
 
-`ctrlr` is my attempt to turn shell history into something closer to a **personal command palette**.
+```bash
+ctrlr
+```
+
+Search, select, execute.
+
+### Enable Ctrl+R integration
+
+```bash
+ctrlr init
+```
+
+Replaces your default reverse search with ctrlr.
+
+---
+
+## Why ctrlr?
+
+Default shell history search is:
+- Linear and hard to navigate
+- Not searchable in a meaningful way
+- Impossible to organize
+
+ctrlr gives you:
+- Fuzzy search
+- Favorites & tagging
+- Structure over time
+
+### Motivation
+
+I kept forgetting useful commands and re-googling them.
+
+ctrlr turns your shell history into a personal command palette.
 
 ---
 
 ## Installation
 
-Currently, the recommended way is to build from source:
+### From Release (recommended)
+
+Download from: https://github.com/ger4ik/ctrlr/releases
 
 ```bash
-git clone https://github.com/ger4ik/ctrlr.git
-cd ctrlr
-cargo build --release
-```
-
-Or checkout the [pre-built release packages](https://github.com/ger4ik/ctrlr/releases).
-
----
-
-## Setup
-
-### From Release Package (Linux/WSL)
-
-1. **Download** the release package from [releases](https://github.com/ger4ik/ctrlr/releases)
-
-2. **Extract:**
-```bash
-cd ~/Downloads
 tar -xzf ctrlr-x86_64-unknown-linux-gnu.tar.gz
-```
-
-3. **Install (global):**
-```bash
-sudo mv ctrlr /usr/local/bin/ctrlr
-```
-
-4. **Or user-local:**
-```bash
-mkdir -p ~/.local/bin
-mv ctrlr ~/.local/bin/
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-5. **Test:**
-```bash
-ctrlr --help
+sudo mv ctrlr /usr/local/bin/
 ```
 
 ### From Source
@@ -96,58 +80,56 @@ sudo cp target/release/ctrlr /usr/local/bin/
 
 ---
 
-## Usage
-
-### Start the TUI
-
-```bash
-ctrlr
-```
-
-### Add shell integration (Ctrl+R)
-
-```bash
-ctrlr init
-```
-
----
-
 ## Keybindings
 
 ### Global
 
-| Key | Action |
-|-----|--------|
-| Tab | Switch pane |
-| Enter | Select command |
-| Esc | Clear search / exit |
+| Key   | Action                      |
+|-------|----------------------------|
+| Tab   | Switch pane                 |
+| Enter | Select command / Focus list |
+| Esc   | Exit / cancel               |
+| 1     | Show History                |
+| 2     | Show Favorites              |
+| 3     | Show Collections            |
+| c     | Add to collection           |
+
+### Navigation (History / Favorites)
+
+| Key          | Action           |
+|--------------|------------------|
+| j / k        | Navigate (vim)   |
+| Up / Down    | Navigate         |
+| /            | Jump to search   |
+| Enter        | Execute command  |
 
 ### Search
 
-| Key | Action |
-|-----|--------|
-| Type | Search |
-| Backspace | Delete |
-
-### History
-
-| Key | Action |
-|-----|--------|
-| j / k or ↑ / ↓ | Navigate |
-| f | Toggle favorite |
-| t | Edit tags |
-| / | Jump to search |
+| Key       | Action           |
+|-----------|------------------|
+| Type      | Search           |
+| Backspace | Delete character |
+| Enter     | Focus list       |
+| Esc       | Clear / exit     |
 
 ### Tag Editor
 
-| Key | Action |
-|-----|--------|
-| Type | Add tags |
-| Tab | Autocomplete |
-| Enter | Save |
-| Esc | Cancel |
-| ← / → | Select existing tags |
-| Backspace | Delete tag |
+| Key       | Action              |
+|-----------|---------------------|
+| Type      | Add tags            |
+| Up / Down | Navigate suggestions|
+| Enter     | Select / Create     |
+| Tab       | Autocomplete        |
+| Esc       | Cancel              |
+
+### Collections View
+
+| Key   | Action                        |
+|-------|-------------------------------|
+| n     | Create new collection         |
+| e     | Edit / rename collection      |
+| d     | Delete collection             |
+| r     | Remove command from collection |
 
 ---
 
@@ -157,61 +139,27 @@ Data is stored locally using SQLite:
 
 - Command metadata (favorites, usage)
 - Tags
-- Relationships between commands and tags
+- Collections
 
-**Location (platform-dependent):**
+**Locations:**
 
 - Linux: `~/.local/share/ctrlr/ctrlr.db`
 - macOS: `~/Library/Application Support/ctrlr/ctrlr.db`
 
 ---
 
-## Caveats
+## Roadmap
 
-- No Windows support (yet)
-- UI is still evolving
-- Performance not heavily optimized
-- Some edge cases in history parsing likely exist
-
----
-
-## Roadmap (very loose)
-
-- [x] Better search (fuzzy / ranking)
-- [ ] Improved tag UX
-- [ ] Smarter sorting (recency + frequency)
-- [ ] Preview / command details panel
+- [x] Fuzzy search
+- [x] Favorites & tags
+- [x] Collections
+- [ ] Better ranking (recency + frequency)
+- [ ] Improved tagging UX
+- [ ] Command preview / details panel
 - [ ] Plugin / extensibility ideas
-- [ ] Potential shell expansion support
 
 ---
 
 ## Contributing
 
-Right now, this is mainly a personal project — but:
-
-- Ideas
-- Feedback
-- UX suggestions
-
-are very welcome.
-
----
-
-## License
-
-TBD
-
----
-
-## Notes
-
-This is my first iteration of this idea, and also an exploration of:
-
-- Rust TUI development
-- Terminal UX design
-- Personal tooling
-
-If it breaks, feels weird, or incomplete — that's expected :)
-
-But if it already improves your workflow, that's even better.
+Ideas, feedback, and UX suggestions are very welcome.
