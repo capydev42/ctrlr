@@ -104,6 +104,7 @@ jobs:
             artifacts/*.tar.gz
             artifacts/*.zip
             artifacts/checksums.txt
+            install.sh
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
