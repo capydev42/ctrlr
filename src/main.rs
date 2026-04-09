@@ -213,41 +213,21 @@ fn handle_key(
                 }
             }
             (KeyCode::Up, _) => {
-                let suggestions = state.filtered_tags();
-                let max_idx = if state.tag_input.trim().is_empty() {
-                    suggestions.len().saturating_sub(1)
-                } else {
-                    let exact = suggestions
-                        .iter()
-                        .any(|t| t.to_lowercase() == state.tag_input.trim().to_lowercase());
-                    if exact {
-                        suggestions.len().saturating_sub(1)
-                    } else {
-                        suggestions.len()
-                    }
-                };
-                if max_idx > 0 {
-                    state.tag_selected_index = state.tag_selected_index.saturating_sub(1);
-                }
+                state.tag_selected_index = state.tag_selected_index.saturating_sub(1);
             }
             (KeyCode::Down, _) => {
                 let suggestions = state.filtered_tags();
-                let max_idx = if state.tag_input.trim().is_empty() {
-                    suggestions.len().saturating_sub(1)
-                } else {
-                    let exact = suggestions
+                let show_create = !state.tag_input.trim().is_empty()
+                    && !suggestions
                         .iter()
                         .any(|t| t.to_lowercase() == state.tag_input.trim().to_lowercase());
-                    if exact {
-                        suggestions.len().saturating_sub(1)
-                    } else {
-                        suggestions.len()
-                    }
+
+                let max_index = if show_create {
+                    suggestions.len()
+                } else {
+                    suggestions.len().saturating_sub(1)
                 };
-                state.tag_selected_index = state.tag_selected_index.min(max_idx);
-                if max_idx > 0 {
-                    state.tag_selected_index = (state.tag_selected_index + 1) % (max_idx + 1);
-                }
+                state.tag_selected_index = (state.tag_selected_index + 1).min(max_index);
             }
             (KeyCode::Enter, _) => {
                 let search_text = state.tag_input.trim().to_string();
@@ -534,22 +514,26 @@ fn handle_collection_input(state: &mut AppState, key: KeyEvent) -> Option<String
         }
         (KeyCode::Up, _) => {
             if state.collection_input_mode == CollectionInputMode::AddToCollection {
-                let filtered_len = state
-                    .filtered_collections(&state.collection_input_text)
-                    .len();
-                if filtered_len > 0 {
-                    state.selected_collection_index =
-                        state.selected_collection_index.saturating_sub(1);
-                }
+                state.selected_collection_index = state.selected_collection_index.saturating_sub(1);
             }
         }
         (KeyCode::Down, _) => {
             if state.collection_input_mode == CollectionInputMode::AddToCollection {
-                let filtered_len = state
-                    .filtered_collections(&state.collection_input_text)
-                    .len();
+                let search_text = &state.collection_input_text;
+                let show_create = !search_text.is_empty()
+                    && !state
+                        .filtered_collections(search_text)
+                        .iter()
+                        .any(|c| c.name.to_lowercase() == search_text.to_lowercase());
+
+                let filtered_count = state.filtered_collections(search_text).len();
+                let max_index = if show_create {
+                    filtered_count
+                } else {
+                    filtered_count.saturating_sub(1)
+                };
                 state.selected_collection_index =
-                    (state.selected_collection_index + 1).min(filtered_len);
+                    (state.selected_collection_index + 1).min(max_index);
             }
         }
         (KeyCode::Enter, _) => {
