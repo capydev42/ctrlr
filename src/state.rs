@@ -67,8 +67,7 @@ pub struct AppState {
     matcher: SkimMatcherV2,
     pub collections: Vec<Collection>,
     pub selected_collection_index: usize,
-    #[allow(dead_code)]
-    pub collection_selected_index: usize,
+    pub collection_popup_index: usize,
     pub collection_commands: Vec<Command>,
     pub collection_input_mode: CollectionInputMode,
     pub collection_input_text: String,
@@ -98,7 +97,7 @@ impl AppState {
             matcher: SkimMatcherV2::default(),
             collections: Vec::new(),
             selected_collection_index: 0,
-            collection_selected_index: 0,
+            collection_popup_index: 0,
             collection_commands: Vec::new(),
             collection_input_mode: CollectionInputMode::None,
             collection_input_text: String::new(),

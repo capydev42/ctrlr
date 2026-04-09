@@ -4,7 +4,10 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{
+        Block, BorderType, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
+        ScrollbarOrientation, Wrap,
+    },
 };
 
 mod cli;
@@ -102,9 +105,13 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
     let mut list_state = ListState::default();
     let mut collection_list_state = ListState::default();
     let mut collection_items_list_state = ListState::default();
+    let mut tag_popup_list_state = ListState::default();
+    let mut collection_popup_list_state = ListState::default();
     list_state.select(Some(0));
     collection_list_state.select(Some(0));
     collection_items_list_state.select(Some(0));
+    tag_popup_list_state.select(Some(0));
+    collection_popup_list_state.select(Some(0));
 
     loop {
         if let Some(ts) = state.status_timestamp {
@@ -123,6 +130,8 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
                 &mut list_state,
                 &mut collection_list_state,
                 &mut collection_items_list_state,
+                &mut tag_popup_list_state,
+                &mut collection_popup_list_state,
             )
         })?;
         if let Event::Key(key) = crossterm::event::read()? {
@@ -496,7 +505,7 @@ fn handle_collection_input(state: &mut AppState, key: KeyEvent) -> Option<String
         (KeyCode::Char(c), KeyModifiers::NONE) => {
             if state.collection_input_mode == CollectionInputMode::AddToCollection {
                 state.collection_input_text.push(c);
-                state.selected_collection_index = 0;
+                state.collection_popup_index = 0;
             } else {
                 state.collection_input_text.push(c);
             }
@@ -505,8 +514,7 @@ fn handle_collection_input(state: &mut AppState, key: KeyEvent) -> Option<String
             if state.collection_input_mode == CollectionInputMode::AddToCollection {
                 if !state.collection_input_text.is_empty() {
                     state.collection_input_text.pop();
-                    state.selected_collection_index =
-                        state.selected_collection_index.saturating_sub(1);
+                    state.collection_popup_index = state.collection_popup_index.saturating_sub(1);
                 }
             } else {
                 state.collection_input_text.pop();
@@ -514,7 +522,7 @@ fn handle_collection_input(state: &mut AppState, key: KeyEvent) -> Option<String
         }
         (KeyCode::Up, _) => {
             if state.collection_input_mode == CollectionInputMode::AddToCollection {
-                state.selected_collection_index = state.selected_collection_index.saturating_sub(1);
+                state.collection_popup_index = state.collection_popup_index.saturating_sub(1);
             }
         }
         (KeyCode::Down, _) => {
@@ -532,8 +540,7 @@ fn handle_collection_input(state: &mut AppState, key: KeyEvent) -> Option<String
                 } else {
                     filtered_count.saturating_sub(1)
                 };
-                state.selected_collection_index =
-                    (state.selected_collection_index + 1).min(max_index);
+                state.collection_popup_index = (state.collection_popup_index + 1).min(max_index);
             }
         }
         (KeyCode::Enter, _) => {
@@ -552,7 +559,7 @@ fn handle_collection_input(state: &mut AppState, key: KeyEvent) -> Option<String
                 }
                 CollectionInputMode::AddToCollection => {
                     let search_text = state.collection_input_text.trim().to_string();
-                    let selected_idx = state.selected_collection_index;
+                    let selected_idx = state.collection_popup_index;
                     let cmd_text = state.active_command().map(|c| c.text.clone());
 
                     let filtered = state.filtered_collections(&search_text);
@@ -598,6 +605,8 @@ fn render(
     list_state: &mut ListState,
     collection_list_state: &mut ListState,
     collection_items_list_state: &mut ListState,
+    tag_popup_list_state: &mut ListState,
+    collection_popup_list_state: &mut ListState,
 ) {
     let area = frame.area();
 
@@ -643,11 +652,11 @@ fn render(
     }
 
     if state.input_mode == InputMode::TagInput {
-        render_tag_popup(frame, state, area);
+        render_tag_popup(frame, state, tag_popup_list_state, area);
     }
 
     if state.input_mode == InputMode::CollectionInput {
-        render_collection_popup(frame, state, area);
+        render_collection_popup(frame, state, collection_popup_list_state, area);
     }
 }
 
@@ -945,7 +954,7 @@ fn render_footer(frame: &mut Frame, state: &AppState, area: Rect) {
     frame.render_widget(Paragraph::new(footer_text), area);
 }
 
-fn render_tag_popup(frame: &mut Frame, state: &AppState, area: Rect) {
+fn render_tag_popup(frame: &mut Frame, state: &AppState, list_state: &mut ListState, area: Rect) {
     let tags = state.selected_command_tags();
     let suggestions = if state.tag_cursor_index.is_none() {
         state.filtered_tags()
@@ -1047,11 +1056,33 @@ fn render_tag_popup(frame: &mut Frame, state: &AppState, area: Rect) {
             }
         }
 
-        let sugg_height = (sugg_items.len() as u16 + 1).max(3);
-        let sugg_area = Rect::new(chunks[1].x, chunks[1].y, chunks[1].width, sugg_height);
+        let total_items = sugg_items.len();
+        let sugg_height = (total_items as u16 + 1).max(3);
+        let sugg_area = Rect::new(chunks[1].x, chunks[1].y, chunks[1].width - 1, sugg_height);
+        let scrollbar_area = Rect::new(
+            chunks[1].x + chunks[1].width - 1,
+            chunks[1].y,
+            1,
+            sugg_height,
+        );
 
-        let sugg_list = List::new(sugg_items).block(Block::bordered().title("Suggestions"));
-        frame.render_widget(sugg_list, sugg_area);
+        let visible_rows = 5usize;
+        let offset = state.tag_selected_index.saturating_sub(visible_rows / 2);
+        *list_state.offset_mut() = offset;
+        list_state.select(Some(state.tag_selected_index));
+
+        let sugg_list = List::new(sugg_items)
+            .block(Block::bordered().title("Suggestions"))
+            .highlight_style(Style::new().bg(Color::Blue).fg(Color::Black));
+        frame.render_stateful_widget(sugg_list, sugg_area, list_state);
+
+        if total_items > 3 {
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .style(Style::new().fg(Color::DarkGray));
+            let mut scrollbar_state = ratatui::widgets::ScrollbarState::new(total_items)
+                .position(state.tag_selected_index);
+            frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
+        }
     }
 
     let hint = "↑/↓: Navigate | Type: Filter | Enter: Select/Create | Esc: Cancel";
@@ -1224,7 +1255,12 @@ fn render_collection_commands(
     frame.render_stateful_widget(list, area, list_state);
 }
 
-fn render_collection_popup(frame: &mut Frame, state: &AppState, area: Rect) {
+fn render_collection_popup(
+    frame: &mut Frame,
+    state: &AppState,
+    list_state: &mut ListState,
+    area: Rect,
+) {
     let popup_height = 8u16;
     let popup_width = 45u16;
     let centered = center_rect(popup_width, popup_height, area);
@@ -1284,7 +1320,7 @@ fn render_collection_popup(frame: &mut Frame, state: &AppState, area: Rect) {
                 } else {
                     "  "
                 };
-                if idx == state.selected_collection_index {
+                if idx == state.collection_popup_index {
                     ListItem::new(format!("> {}{}", prefix, col.name))
                         .style(Style::new().bg(Color::Blue).fg(Color::Black))
                 } else {
@@ -1295,7 +1331,7 @@ fn render_collection_popup(frame: &mut Frame, state: &AppState, area: Rect) {
 
         if !state.collection_input_text.is_empty() && !exact_match {
             let create_text = format!("+ Create \"{}\"", state.collection_input_text);
-            if state.selected_collection_index == filtered.len() {
+            if state.collection_popup_index == filtered.len() {
                 items.push(
                     ListItem::new(format!("> {}", create_text))
                         .style(Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
@@ -1308,13 +1344,44 @@ fn render_collection_popup(frame: &mut Frame, state: &AppState, area: Rect) {
             }
         }
 
-        let list = List::new(items).block(
-            Block::bordered()
-                .title(title)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::new().fg(Color::Yellow)),
+        let total_items = items.len();
+        let list_area = Rect::new(
+            chunks[2].x,
+            chunks[2].y,
+            chunks[2].width - 1,
+            chunks[2].height,
         );
-        frame.render_widget(list, chunks[2]);
+        let scrollbar_area = Rect::new(
+            chunks[2].x + chunks[2].width - 1,
+            chunks[2].y,
+            1,
+            chunks[2].height,
+        );
+
+        let visible_rows = 5usize;
+        let offset = state
+            .collection_popup_index
+            .saturating_sub(visible_rows / 2);
+        *list_state.offset_mut() = offset;
+        list_state.select(Some(state.collection_popup_index));
+
+        let list = List::new(items)
+            .block(
+                Block::bordered()
+                    .title(title)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::new().fg(Color::Yellow)),
+            )
+            .highlight_style(Style::new().bg(Color::Blue).fg(Color::White));
+        frame.render_stateful_widget(list, list_area, list_state);
+
+        if total_items > 3 {
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .style(Style::new().fg(Color::DarkGray));
+            let mut scrollbar_state = ratatui::widgets::ScrollbarState::new(total_items)
+                .position(state.collection_popup_index);
+            frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
+        }
     } else {
         let input_display = if state.collection_input_text.is_empty() {
             "▋".to_string()
