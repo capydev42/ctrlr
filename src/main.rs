@@ -2,7 +2,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
@@ -1037,10 +1037,13 @@ fn render_tag_popup(frame: &mut Frame, state: &AppState, area: Rect) {
             if state.tag_selected_index == suggestions.len() {
                 sugg_items.push(
                     ListItem::new(format!("> {}", create_text))
-                        .style(Style::new().fg(Color::Green)),
+                        .style(Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
                 );
             } else {
-                sugg_items.push(ListItem::new(format!("  {}", create_text)));
+                sugg_items.push(
+                    ListItem::new(format!("  {}", create_text))
+                        .style(Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                );
             }
         }
 
@@ -1295,10 +1298,13 @@ fn render_collection_popup(frame: &mut Frame, state: &AppState, area: Rect) {
             if state.selected_collection_index == filtered.len() {
                 items.push(
                     ListItem::new(format!("> {}", create_text))
-                        .style(Style::new().fg(Color::Green)),
+                        .style(Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
                 );
             } else {
-                items.push(ListItem::new(format!("  {}", create_text)));
+                items.push(
+                    ListItem::new(format!("  {}", create_text))
+                        .style(Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                );
             }
         }
 
