@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-REPO="${REPO:-ger4ik/ctrlr}"
+REPO="${REPO:-capydev42/ctrlr}"
 INSTALL_DIR="${INSTALL_DIR:-}"
 
 # Colors
@@ -32,7 +32,7 @@ EXAMPLES:
     curl -fsSL https://github.com/${REPO}/releases/download/v0.1.0/install.sh | bash
 
 ENVIRONMENT:
-    REPO        GitHub repository (default: ger4ik/ctrlr)
+    REPO        GitHub repository (default: capydev42/ctrlr)
     INSTALL_DIR Install directory (default: ask user)
 EOF
 }

@@ -63,22 +63,22 @@ ctrlr turns your shell history into a personal command palette.
 ### Quick Install (curl)
 
 ```bash
-curl -fsSL https://github.com/ger4ik/ctrlr/releases/latest/download/install.sh | bash
+curl -fsSL https://github.com/capydev42/ctrlr/releases/latest/download/install.sh | bash
 ```
 
 For a specific version:
 ```bash
-curl -fsSL https://github.com/ger4ik/ctrlr/releases/download/v0.1.0/install.sh | bash
+curl -fsSL https://github.com/capydev42/ctrlr/releases/download/v0.1.0/install.sh | bash
 ```
 
 To install to a custom location:
 ```bash
-curl -fsSL https://github.com/ger4ik/ctrlr/releases/latest/download/install.sh | bash -s -- --dir /usr/local/bin
+curl -fsSL https://github.com/capydev42/ctrlr/releases/latest/download/install.sh | bash -s -- --dir /usr/local/bin
 ```
 
 ### From Release (manual)
 
-1. Download from: https://github.com/ger4ik/ctrlr/releases
+1. Download from: https://github.com/capydev42/ctrlr/releases
 2. Extract the archive for your platform
 3. Move the binary to a location in your PATH
 
@@ -90,7 +90,7 @@ mv ctrlr ~/.local/bin/   # or /usr/local/bin/
 ### From Source
 
 ```bash
-git clone https://github.com/ger4ik/ctrlr.git
+git clone https://github.com/capydev42/ctrlr.git
 cd ctrlr
 cargo build --release
 mv target/release/ctrlr ~/.local/bin/
