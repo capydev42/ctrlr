@@ -25,6 +25,10 @@ fn main() -> color_eyre::Result<()> {
 }
 
 pub fn run_tui(output_file: Option<String>) -> color_eyre::Result<Option<String>> {
+    if !atty::is(atty::Stream::Stdout) {
+        eprintln!("Error: ctrlr must be run from a terminal. Not a TTY.");
+        return Ok(None);
+    }
     let mut terminal = ratatui::init();
     let result = app(&mut terminal, output_file.clone());
     ratatui::restore();
