@@ -42,7 +42,7 @@ Replaces your default reverse search with ctrlr.
 
 Default shell history search is:
 - Linear and hard to navigate
-- Not searchable in a meaningful way
+- Limited search capabilities
 - Impossible to organize
 
 ctrlr gives you:
@@ -172,8 +172,11 @@ Data is stored locally using SQLite:
 - [x] Favorites & tags
 - [x] Collections
 - [ ] Better ranking (recency + frequency)
-- [ ] Improved tagging UX
-- [ ] Command preview / details panel
+- [ ] Improved collections UX
+- [ ] Copy commands to clipboard
+- [ ] Import / export collections
+- [ ] Command preview / metadata
+- [ ] Vim-style navigation improvements
 - [ ] Plugin / extensibility ideas
 
 ---
@@ -181,3 +184,11 @@ Data is stored locally using SQLite:
 ## Contributing
 
 Ideas, feedback, and UX suggestions are very welcome.
+
+---
+
+## Built with ❤️
+
+- [ratatui](https://ratatui.rs/) – TUI framework
+- [crossterm](https://github.com/crossterm-rs/crossterm) – terminal I/O
+- [fuzzy-matcher](https://github.com/lotabout/fuzzy-matcher) – fuzzy search
