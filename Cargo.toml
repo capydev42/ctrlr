@@ -6,7 +6,7 @@ authors = ["Hermann Berket <ger4ik777@gmail.com>"]
 
 [dependencies]
 color-eyre = "0.6.5"
-crossterm = "0.29.0"
+crossterm = { version = "0.29.0", features = ["use-dev-tty"] }
 ratatui = "0.30.0"
 dirs = "6"
 rusqlite = { version = "0.32", features = ["bundled"] }
