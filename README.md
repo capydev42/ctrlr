@@ -3,7 +3,7 @@
 > Turn your shell history into a searchable command palette  
 > Stop googling commands you already used.
 
-<!-- TODO: Add demo gif -->
+![ctrlr demo](assets/demo.gif)
 
 ---
 
