@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use ratatui::widgets::ListState;
 
 use crate::storage::collections::Collection;
 
@@ -72,12 +73,42 @@ pub struct AppState {
     pub collection_input_mode: CollectionInputMode,
     pub collection_input_text: String,
     pub editing_collection_id: Option<String>,
+    pub list_state: ListState,
+    pub collection_list_state: ListState,
+    pub collection_items_list_state: ListState,
+    pub tag_popup_list_state: ListState,
+    pub collection_popup_list_state: ListState,
 }
 
 impl AppState {
     pub fn new(commands: Vec<Command>, db: Option<rusqlite::Connection>) -> Self {
         let filtered = commands.clone();
         let matched_indices = vec![None; filtered.len()];
+        let list_state = {
+            let mut s = ListState::default();
+            s.select(Some(0));
+            s
+        };
+        let collection_list_state = {
+            let mut s = ListState::default();
+            s.select(Some(0));
+            s
+        };
+        let collection_items_list_state = {
+            let mut s = ListState::default();
+            s.select(Some(0));
+            s
+        };
+        let tag_popup_list_state = {
+            let mut s = ListState::default();
+            s.select(Some(0));
+            s
+        };
+        let collection_popup_list_state = {
+            let mut s = ListState::default();
+            s.select(Some(0));
+            s
+        };
         Self {
             commands,
             filtered,
@@ -102,6 +133,11 @@ impl AppState {
             collection_input_mode: CollectionInputMode::None,
             collection_input_text: String::new(),
             editing_collection_id: None,
+            list_state,
+            collection_list_state,
+            collection_items_list_state,
+            tag_popup_list_state,
+            collection_popup_list_state,
         }
     }
 
