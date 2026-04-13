@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- `Action` enum for structured return values from input handlers (`None`, `Exit`, `Execute(String)`)
+- `app/` module containing application state and action types
+- `input/` module with separated input handlers (`normal.rs`, `tag.rs`, `collection.rs`)
+
+### Changed
+- `ListState` management moved from `main.rs` to `AppState` for centralized UI state
+- Input handling refactored into dedicated modules by `InputMode`
+- Simplified event loop with `match action { ... }` pattern instead of `Option<String>`
+
+### Refactored
+- Extracted `handle_key` into `input/` submodules (`tag::handle`, `collection::handle`, `normal::handle`)
+- Moved `state.rs` to `app/state.rs` with `app/` module as central location
+- All 5 `ListState` instances now live in `AppState` (avoids split-brain state issues)
+
+---
+
 ## [0.1.2] - 2026-04-10
 
 ### Added
