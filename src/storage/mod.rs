@@ -109,3 +109,24 @@ pub fn load_tags(conn: &Connection, text: &str) -> Vec<String> {
 
     tags
 }
+
+pub fn hydrate_commands(conn: &mut rusqlite::Connection, commands: &mut [crate::app::Command]) {
+    for cmd in commands {
+        if let Some(meta) = load_metadata(conn, &cmd.text) {
+            cmd.favorite = meta.favorite;
+            cmd.use_count = meta.use_count;
+            cmd.last_used = meta.last_used;
+        }
+
+        let tags = load_tags(conn, &cmd.text);
+        if !tags.is_empty() {
+            cmd.tags = tags;
+        }
+
+        let collections =
+            collections::get_collections_for_command(conn, &cmd.text).unwrap_or_default();
+        if !collections.is_empty() {
+            cmd.collection_ids = collections;
+        }
+    }
+}
