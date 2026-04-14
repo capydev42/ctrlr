@@ -677,10 +677,10 @@ impl AppState {
         };
         let col_id = col.id.clone();
 
-        if let Some(ref mut conn) = self.db
-            && let Err(e) =
-                crate::storage::collections::add_command_to_collection(conn, cmd_text, &col_id)
-        {
+        let db_result: Result<(), rusqlite::Error> = self.db.as_ref().map_or(Ok(()), |conn| {
+            crate::storage::collections::add_command_to_collection(conn, cmd_text, &col_id)
+        });
+        if let Err(e) = db_result {
             eprintln!("DB error adding to collection: {}", e);
             return;
         }

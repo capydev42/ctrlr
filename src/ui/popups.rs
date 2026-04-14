@@ -309,20 +309,14 @@ pub fn render_collection_popup(frame: &mut Frame, state: &mut AppState, area: Re
 pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
     let results = state.search_results_for_add_command();
     let search_text = state.collection_input_text.trim();
-    let search_lower = search_text.to_lowercase();
-    let exact_match = results
-        .iter()
-        .any(|c| c.text.to_lowercase() == search_lower);
-    let show_create = !search_text.is_empty() && !exact_match;
+    let has_search = !search_text.is_empty();
 
     let input_height = 3u16;
-    let sugg_count = results.len().min(5);
-    let create_line = if show_create { 1 } else { 0 };
-    let sugg_height = if !results.is_empty() || show_create {
-        (sugg_count + create_line) as u16 + 1
-    } else {
-        0
-    };
+    let results_count = results.len();
+    let create_row = if has_search { 1 } else { 0 };
+    let total_rows = results_count.max(3) + create_row;
+    let sugg_count = total_rows.min(5);
+    let sugg_height = sugg_count.max(3) as u16 + 1;
     let hint_height = 1u16;
     let popup_height = input_height + sugg_height + hint_height;
     let popup_width = 65u16;
@@ -353,7 +347,9 @@ pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: R
         chunks[0],
     );
 
-    if !results.is_empty() || show_create {
+    let results_count = results.len();
+
+    if total_rows > 0 {
         let mut items: Vec<ListItem> = results
             .iter()
             .take(5)
@@ -368,9 +364,10 @@ pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: R
             })
             .collect();
 
-        if show_create {
+        if has_search {
             let create_text = format!("+ Create \"{}\"", state.collection_input_text.trim());
-            if state.add_command_search_index == results.len() {
+            let create_idx = results_count;
+            if state.add_command_search_index == create_idx {
                 items.push(
                     ListItem::new(format!("> {}", create_text))
                         .style(Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
