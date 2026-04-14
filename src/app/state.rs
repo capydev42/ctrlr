@@ -35,6 +35,7 @@ pub enum CollectionInputMode {
     AddToCollection,
     NewCollection,
     EditCollection,
+    AddToCollectionSearch,
 }
 
 #[derive(Clone, Debug)]
@@ -78,6 +79,7 @@ pub struct AppState {
     pub collection_items_list_state: ListState,
     pub tag_popup_list_state: ListState,
     pub collection_popup_list_state: ListState,
+    pub add_command_search_index: usize,
 }
 
 impl AppState {
@@ -167,6 +169,7 @@ impl AppState {
             collection_items_list_state,
             tag_popup_list_state,
             collection_popup_list_state,
+            add_command_search_index: 0,
         }
     }
 
@@ -630,6 +633,80 @@ impl AppState {
             }
             Err(e) => eprintln!("DB error removing from collection: {}", e),
         }
+    }
+
+    pub fn search_results_for_add_command(&self) -> Vec<&Command> {
+        let query = self.collection_input_text.trim();
+        let col_id = self.selected_collection().map(|c| c.id.clone());
+
+        if query.is_empty() {
+            return self
+                .commands
+                .iter()
+                .filter(|c| {
+                    !c.collection_ids
+                        .contains(col_id.as_ref().unwrap_or(&"".to_string()))
+                })
+                .collect();
+        }
+
+        let _search_lower = query.to_lowercase();
+        let mut scored: Vec<(i64, &Command)> = self
+            .commands
+            .iter()
+            .filter(|c| {
+                !c.collection_ids
+                    .contains(col_id.as_ref().unwrap_or(&"".to_string()))
+            })
+            .filter_map(|cmd| {
+                self.matcher
+                    .fuzzy_indices(&cmd.text, query)
+                    .map(|(score, _)| (score, cmd))
+            })
+            .collect();
+
+        scored.sort_by(|a, b| b.0.cmp(&a.0));
+
+        scored.into_iter().map(|(_, cmd)| cmd).collect()
+    }
+
+    pub fn add_command_to_collection_by_text(&mut self, cmd_text: &str) {
+        let col = match self.selected_collection() {
+            Some(c) => c,
+            None => return,
+        };
+        let col_id = col.id.clone();
+
+        let db_result: Result<(), rusqlite::Error> = self.db.as_ref().map_or(Ok(()), |conn| {
+            crate::storage::collections::add_command_to_collection(conn, cmd_text, &col_id)
+        });
+        if let Err(e) = db_result {
+            eprintln!("DB error adding to collection: {}", e);
+            return;
+        }
+
+        if let Some(cmd) = self.commands.iter_mut().find(|c| c.text == cmd_text) {
+            if !cmd.collection_ids.contains(&col_id) {
+                cmd.collection_ids.push(col_id.clone());
+            }
+        } else {
+            let cmd_id = crate::storage::collections::hash_command(cmd_text);
+            self.commands.push(Command {
+                id: cmd_id,
+                text: cmd_text.to_string(),
+                tags: vec![],
+                collection_ids: vec![col_id.clone()],
+                favorite: false,
+                _context: vec![],
+                use_count: 0,
+                last_used: None,
+            });
+        }
+
+        self.status_message = Some(format!("Added: {}", cmd_text));
+        self.status_timestamp = Some(Instant::now());
+        self.load_collection_commands();
+        self.filter_commands();
     }
 
     pub fn filtered_collections(&self, search: &str) -> Vec<&Collection> {

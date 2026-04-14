@@ -9,7 +9,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
 };
 
-use crate::app::{AppState, InputMode, ViewMode};
+use crate::app::{AppState, CollectionInputMode, InputMode, ViewMode};
 
 pub fn render(frame: &mut Frame, state: &mut AppState) {
     let area = frame.area();
@@ -54,6 +54,13 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
     }
 
     if state.input_mode == InputMode::CollectionInput {
-        popups::render_collection_popup(frame, state, area);
+        match state.collection_input_mode {
+            CollectionInputMode::AddToCollectionSearch => {
+                popups::render_add_command_popup(frame, state, area);
+            }
+            _ => {
+                popups::render_collection_popup(frame, state, area);
+            }
+        }
     }
 }
