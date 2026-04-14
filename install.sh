@@ -91,23 +91,41 @@ DOWNLOAD_URL="${DOWNLOAD_BASE}/${ASSET_NAME}"
 
 # Determine install directory if not set
 if [[ -z "${INSTALL_DIR}" ]]; then
-    echo -e "${YELLOW}Where would you like to install ctrlr?${NC}"
-    echo "  1) ~/.local/bin (user, no sudo needed)"
-    echo "  2) /usr/local/bin (system-wide, requires sudo)"
-    echo "  3) Custom path"
-    read -p "Enter choice [1]: " choice
-    
-    case "${choice}" in
-        2)
-            INSTALL_DIR="/usr/local/bin"
-            ;;
-        3)
-            read -p "Enter custom path: " INSTALL_DIR
-            ;;
-        *)
-            INSTALL_DIR="${HOME}/.local/bin"
-            ;;
-    esac
+    # Check if stdin is a terminal
+    if [[ -t 0 ]]; then
+        echo -e "${YELLOW}Where would you like to install ctrlr?${NC}"
+        echo "  1) ~/.local/bin (user, no sudo needed)"
+        echo "  2) /usr/local/bin (system-wide, requires sudo)"
+        echo "  3) Custom path"
+        read -p "Enter choice [1]: " choice
+        
+        case "${choice}" in
+            2)
+                INSTALL_DIR="/usr/local/bin"
+                ;;
+            3)
+                read -p "Enter custom path: " INSTALL_DIR
+                ;;
+            *)
+                INSTALL_DIR="${HOME}/.local/bin"
+                ;;
+        esac
+    else
+        # Non-interactive: use default or fail with helpful message
+        if [[ -n "${INSTALL_DIR}" ]]; then
+            echo -e "${YELLOW}Using INSTALL_DIR=${INSTALL_DIR}${NC}"
+        else
+            echo -e "${RED}Error: Interactive input not available.${NC}"
+            echo ""
+            echo "When piping to bash, use INSTALL_DIR environment variable:"
+            echo "  INSTALL_DIR=~/.local/bin curl -fsSL ... | bash"
+            echo "  INSTALL_DIR=/usr/local/bin curl -fsSL ... | sudo bash"
+            echo ""
+            echo "Or download the script first and run it directly:"
+            echo "  curl -fsSL ... -o install.sh && chmod +x install.sh && ./install.sh"
+            exit 1
+        fi
+    fi
 fi
 
 # Resolve ~ in path
