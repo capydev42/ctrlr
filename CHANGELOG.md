@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.1.3] - 2026-04-14
 
 ### Added
 - `Action` enum for structured return values from input handlers (`None`, `Exit`, `Execute(String)`)
@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All 5 `ListState` instances now live in `AppState` (avoids split-brain state issues)
 - Render functions extracted into `ui/` module (`layout.rs`, `components.rs`, `history.rs`, `collections.rs`, `popups.rs`)
 - DB enrichment consolidated into `storage::hydrate_commands()`
+- `main.rs` reduced from 921 to 90 lines
 
 ---
 
