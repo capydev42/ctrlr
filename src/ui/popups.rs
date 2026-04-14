@@ -174,6 +174,7 @@ pub fn render_collection_popup(frame: &mut Frame, state: &mut AppState, area: Re
             "[Add to Collection]",
             "Type to filter | ↑/↓ Navigate | Enter: Select/Create | Esc: Cancel",
         ),
+        CollectionInputMode::AddToCollectionSearch => return,
         CollectionInputMode::None => return,
     };
 
@@ -302,5 +303,128 @@ pub fn render_collection_popup(frame: &mut Frame, state: &mut AppState, area: Re
             .style(Style::new().fg(Color::DarkGray))
             .alignment(Alignment::Center),
         chunks[3],
+    );
+}
+
+pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let results = state.search_results_for_add_command();
+    let search_text = state.collection_input_text.trim();
+    let search_lower = search_text.to_lowercase();
+    let exact_match = results
+        .iter()
+        .any(|c| c.text.to_lowercase() == search_lower);
+    let show_create = !search_text.is_empty() && !exact_match;
+
+    let input_height = 3u16;
+    let sugg_count = results.len().min(5);
+    let create_line = if show_create { 1 } else { 0 };
+    let sugg_height = if !results.is_empty() || show_create {
+        (sugg_count + create_line) as u16 + 1
+    } else {
+        0
+    };
+    let hint_height = 1u16;
+    let popup_height = input_height + sugg_height + hint_height;
+    let popup_width = 65u16;
+
+    let centered = center_rect(popup_width, popup_height, area);
+
+    frame.render_widget(Clear, centered);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(input_height),
+            Constraint::Length(sugg_height),
+            Constraint::Length(hint_height),
+        ])
+        .split(centered);
+
+    let search_display = format!("Search: {}{}", state.collection_input_text, "▋");
+    frame.render_widget(
+        Paragraph::new(search_display)
+            .style(Style::new().fg(Color::White))
+            .block(
+                Block::bordered()
+                    .title("[Add Command]")
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::new().fg(Color::Cyan)),
+            ),
+        chunks[0],
+    );
+
+    if !results.is_empty() || show_create {
+        let mut items: Vec<ListItem> = results
+            .iter()
+            .take(5)
+            .enumerate()
+            .map(|(i, cmd)| {
+                if i == state.add_command_search_index {
+                    ListItem::new(format!("> {}", cmd.text))
+                        .style(Style::new().bg(Color::Blue).fg(Color::White))
+                } else {
+                    ListItem::new(format!("  {}", cmd.text))
+                }
+            })
+            .collect();
+
+        if show_create {
+            let create_text = format!("+ Create \"{}\"", state.collection_input_text.trim());
+            if state.add_command_search_index == results.len() {
+                items.push(
+                    ListItem::new(format!("> {}", create_text))
+                        .style(Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                );
+            } else {
+                items.push(
+                    ListItem::new(format!("  {}", create_text))
+                        .style(Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                );
+            }
+        }
+
+        let total_items = items.len();
+        let list_area = Rect::new(
+            chunks[1].x,
+            chunks[1].y,
+            chunks[1].width - 1,
+            chunks[1].height,
+        );
+        let scrollbar_area = Rect::new(
+            chunks[1].x + chunks[1].width - 1,
+            chunks[1].y,
+            1,
+            chunks[1].height,
+        );
+
+        let visible_rows = 5usize;
+        let offset = state
+            .add_command_search_index
+            .saturating_sub(visible_rows / 2);
+        *state.collection_popup_list_state.offset_mut() = offset;
+        state
+            .collection_popup_list_state
+            .select(Some(state.add_command_search_index));
+
+        let list = List::new(items)
+            .block(Block::bordered().title("Commands"))
+            .highlight_style(Style::new().bg(Color::Blue).fg(Color::White));
+        frame.render_stateful_widget(list, list_area, &mut state.collection_popup_list_state);
+
+        if total_items > 3 {
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .style(Style::new().fg(Color::DarkGray));
+            let mut scrollbar_state = ratatui::widgets::ScrollbarState::new(total_items)
+                .position(state.add_command_search_index);
+            frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
+        }
+    }
+
+    let hint = "↑/↓ Navigate | Enter: Add/Create | Esc: Cancel";
+    frame.render_widget(
+        Paragraph::new(hint)
+            .style(Style::new().fg(Color::DarkGray))
+            .alignment(Alignment::Center),
+        chunks[2],
     );
 }

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- Fuzzy search popup to add commands to collections (press `a` in collection items view)
+
+### Changed
+- Search results now include all commands from history, not just non-contained ones
+
+---
+
 ## [0.1.3] - 2026-04-14
 
 ### Added

@@ -3,31 +3,47 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
     match (key.code, key.modifiers) {
-        (KeyCode::Char(c), KeyModifiers::NONE) => {
-            if state.collection_input_mode == CollectionInputMode::AddToCollection {
+        (KeyCode::Char(c), KeyModifiers::NONE) => match state.collection_input_mode {
+            CollectionInputMode::AddToCollection => {
                 state.collection_input_text.push(c);
                 state.collection_popup_index = 0;
-            } else {
+            }
+            CollectionInputMode::AddToCollectionSearch => {
+                state.collection_input_text.push(c);
+                state.add_command_search_index = 0;
+            }
+            _ => {
                 state.collection_input_text.push(c);
             }
-        }
-        (KeyCode::Backspace, _) => {
-            if state.collection_input_mode == CollectionInputMode::AddToCollection {
+        },
+        (KeyCode::Backspace, _) => match state.collection_input_mode {
+            CollectionInputMode::AddToCollection => {
                 if !state.collection_input_text.is_empty() {
                     state.collection_input_text.pop();
                     state.collection_popup_index = state.collection_popup_index.saturating_sub(1);
                 }
-            } else {
+            }
+            CollectionInputMode::AddToCollectionSearch => {
+                if !state.collection_input_text.is_empty() {
+                    state.collection_input_text.pop();
+                    state.add_command_search_index = 0;
+                }
+            }
+            _ => {
                 state.collection_input_text.pop();
             }
-        }
-        (KeyCode::Up, _) => {
-            if state.collection_input_mode == CollectionInputMode::AddToCollection {
+        },
+        (KeyCode::Up, _) => match state.collection_input_mode {
+            CollectionInputMode::AddToCollection => {
                 state.collection_popup_index = state.collection_popup_index.saturating_sub(1);
             }
-        }
-        (KeyCode::Down, _) => {
-            if state.collection_input_mode == CollectionInputMode::AddToCollection {
+            CollectionInputMode::AddToCollectionSearch => {
+                state.add_command_search_index = state.add_command_search_index.saturating_sub(1);
+            }
+            _ => {}
+        },
+        (KeyCode::Down, _) => match state.collection_input_mode {
+            CollectionInputMode::AddToCollection => {
                 let search_text = &state.collection_input_text;
                 let show_create = !search_text.is_empty()
                     && !state
@@ -43,7 +59,26 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 };
                 state.collection_popup_index = (state.collection_popup_index + 1).min(max_index);
             }
-        }
+            CollectionInputMode::AddToCollectionSearch => {
+                let results = state.search_results_for_add_command();
+                let search_text = state.collection_input_text.trim();
+                let search_lower = search_text.to_lowercase();
+                let exact_match = results
+                    .iter()
+                    .any(|c| c.text.to_lowercase() == search_lower);
+                let show_create = !search_text.is_empty() && !exact_match;
+
+                let results_count = results.len();
+                let max_index = if show_create {
+                    results_count
+                } else {
+                    results_count.saturating_sub(1)
+                };
+                state.add_command_search_index =
+                    (state.add_command_search_index + 1).min(max_index);
+            }
+            _ => {}
+        },
         (KeyCode::Enter, _) => {
             match state.collection_input_mode {
                 CollectionInputMode::NewCollection => {
@@ -82,18 +117,36 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                         }
                     }
                 }
+                CollectionInputMode::AddToCollectionSearch => {
+                    let search_text = state.collection_input_text.trim().to_string();
+                    let selected_idx = state.add_command_search_index;
+                    let results = state.search_results_for_add_command();
+                    let search_lower = search_text.to_lowercase();
+                    let exact_match = results
+                        .iter()
+                        .any(|c| c.text.to_lowercase() == search_lower);
+
+                    if selected_idx < results.len() {
+                        let cmd = results[selected_idx].text.clone();
+                        state.add_command_to_collection_by_text(&cmd);
+                    } else if !search_text.is_empty() && !exact_match {
+                        state.add_command_to_collection_by_text(&search_text);
+                    }
+                }
                 CollectionInputMode::None => {}
             }
             state.input_mode = InputMode::Normal;
             state.collection_input_mode = CollectionInputMode::None;
             state.collection_input_text.clear();
             state.editing_collection_id = None;
+            state.add_command_search_index = 0;
         }
         (KeyCode::Esc, _) => {
             state.input_mode = InputMode::Normal;
             state.collection_input_mode = CollectionInputMode::None;
             state.collection_input_text.clear();
             state.editing_collection_id = None;
+            state.add_command_search_index = 0;
         }
         _ => {}
     }

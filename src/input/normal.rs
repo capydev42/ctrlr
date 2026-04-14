@@ -164,6 +164,16 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             (KeyCode::Char('d'), KeyModifiers::NONE) => {
                 state.show_details = !state.show_details;
             }
+            (KeyCode::Char('a'), KeyModifiers::NONE) => {
+                if state.view_mode == ViewMode::Collections
+                    && state.active_pane == ActivePane::CollectionItems
+                {
+                    state.collection_input_mode = CollectionInputMode::AddToCollectionSearch;
+                    state.collection_input_text.clear();
+                    state.input_mode = InputMode::CollectionInput;
+                    state.add_command_search_index = 0;
+                }
+            }
             (KeyCode::Char('r'), KeyModifiers::NONE) => {
                 if let Some(cmd) = state.filtered.get(state.selected_index) {
                     let text = cmd.text.clone();
