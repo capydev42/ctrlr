@@ -1,5 +1,10 @@
 # ctrlr
 
+[![CI](https://github.com/capydev42/ctrlr/actions/workflows/ci.yml/badge.svg)](https://github.com/capydev42/ctrlr/actions)
+[![GitHub release](https://img.shields.io/github/v/release/capydev42/ctrlr)](https://github.com/capydev42/ctrlr/releases)
+[![License](https://img.shields.io/github/license/capydev42/ctrlr)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS-blue)
+
 > Turn your shell history into a searchable command palette  
 > Stop googling commands you already used.
 
