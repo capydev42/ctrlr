@@ -81,6 +81,35 @@ pub struct AppState {
 }
 
 impl AppState {
+    pub fn bootstrap() -> Self {
+        let mut db = match crate::storage::init_db() {
+            Ok(conn) => Some(conn),
+            Err(e) => {
+                eprintln!("Failed to initialize database: {}", e);
+                None
+            }
+        };
+
+        let mut commands = crate::history::load_history();
+        commands = crate::history::deduplicate(commands);
+        commands.reverse();
+
+        if let Some(ref mut conn) = db {
+            let cmd_refs: Vec<(&str, String)> = commands
+                .iter()
+                .map(|c| (c.text.as_str(), c.id.clone()))
+                .collect();
+            if let Err(e) = crate::storage::commands::ensure_commands_exist(conn, &cmd_refs) {
+                eprintln!("Failed to save commands: {}", e);
+            }
+            crate::storage::hydrate_commands(conn, &mut commands);
+        }
+
+        let mut state = AppState::new(commands, db);
+        state.load_collections();
+        state
+    }
+
     pub fn new(commands: Vec<Command>, db: Option<rusqlite::Connection>) -> Self {
         let filtered = commands.clone();
         let matched_indices = vec![None; filtered.len()];

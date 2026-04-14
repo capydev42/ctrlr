@@ -59,46 +59,7 @@ pub fn run_tui(output_file: Option<String>) -> color_eyre::Result<Option<String>
 }
 
 fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Result<Option<String>> {
-    let mut db = match storage::init_db() {
-        Ok(conn) => Some(conn),
-        Err(e) => {
-            eprintln!("Failed to initialize database: {}", e);
-            None
-        }
-    };
-    let mut commands = history::load_history();
-    commands = history::deduplicate(commands);
-    commands.reverse();
-
-    if let Some(ref mut conn) = db {
-        let cmd_refs: Vec<(&str, String)> = commands
-            .iter()
-            .map(|c| (c.text.as_str(), c.id.clone()))
-            .collect();
-        if let Err(e) = storage::commands::ensure_commands_exist(conn, &cmd_refs) {
-            eprintln!("Failed to save commands: {}", e);
-        }
-
-        for cmd in &mut commands {
-            if let Some(meta) = storage::load_metadata(conn, &cmd.text) {
-                cmd.favorite = meta.favorite;
-                cmd.use_count = meta.use_count;
-                cmd.last_used = meta.last_used;
-            }
-            let tags = storage::load_tags(conn, &cmd.text);
-            if !tags.is_empty() {
-                cmd.tags = tags;
-            }
-            let collections = storage::collections::get_collections_for_command(conn, &cmd.text)
-                .unwrap_or_default();
-            if !collections.is_empty() {
-                cmd.collection_ids = collections;
-            }
-        }
-    }
-
-    let mut state = AppState::new(commands, db);
-    state.load_collections();
+    let mut state = AppState::bootstrap();
 
     loop {
         if let Some(ts) = state.status_timestamp {
