@@ -13,16 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Action` enum for structured return values from input handlers (`None`, `Exit`, `Execute(String)`)
 - `app/` module containing application state and action types
 - `input/` module with separated input handlers (`normal.rs`, `tag.rs`, `collection.rs`)
+- `ui/` module with dedicated UI components
 
 ### Changed
 - `ListState` management moved from `main.rs` to `AppState` for centralized UI state
 - Input handling refactored into dedicated modules by `InputMode`
 - Simplified event loop with `match action { ... }` pattern instead of `Option<String>`
+- `highlight_text()` function extracted for reusable fuzzy match highlighting
 
 ### Refactored
 - Extracted `handle_key` into `input/` submodules (`tag::handle`, `collection::handle`, `normal::handle`)
 - Moved `state.rs` to `app/state.rs` with `app/` module as central location
 - All 5 `ListState` instances now live in `AppState` (avoids split-brain state issues)
+- Render functions extracted into `ui/` module (`layout.rs`, `components.rs`, `history.rs`, `collections.rs`, `popups.rs`)
+- `main.rs` reduced from 921 to 129 lines (-86%)
 
 ---
 

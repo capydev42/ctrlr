@@ -1,4 +1,4 @@
-use crate::Command;
+use crate::app::Command;
 
 mod bash;
 mod fish;
