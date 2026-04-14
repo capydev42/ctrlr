@@ -60,20 +60,24 @@ ctrlr turns your shell history into a personal command palette.
 
 ## Installation
 
-### Quick Install (curl)
+### Install (curl)
 
 ```bash
-curl -fsSL https://github.com/capydev42/ctrlr/releases/latest/download/install.sh | bash
+curl -fsSL https://github.com/capydev42/ctrlr/releases/latest/download/install.sh -o install.sh
+chmod +x install.sh
+./install.sh
 ```
 
 For a specific version:
 ```bash
-curl -fsSL https://github.com/capydev42/ctrlr/releases/download/v0.1.0/install.sh | bash
+curl -fsSL https://github.com/capydev42/ctrlr/releases/download/v0.1.0/install.sh -o install.sh
+chmod +x install.sh
+./install.sh
 ```
 
 To install to a custom location:
 ```bash
-curl -fsSL https://github.com/capydev42/ctrlr/releases/latest/download/install.sh | bash -s -- --dir /usr/local/bin
+INSTALL_DIR=/usr/local/bin ./install.sh
 ```
 
 ### From Release (manual)
