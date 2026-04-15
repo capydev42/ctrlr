@@ -58,6 +58,10 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
             CollectionInputMode::AddToCollectionSearch => {
                 popups::render_add_command_popup(frame, state, area);
             }
+            CollectionInputMode::ConfirmDeleteCollection
+            | CollectionInputMode::ConfirmDeleteCommand => {
+                popups::render_delete_confirm_popup(frame, state, area);
+            }
             _ => {
                 popups::render_collection_popup(frame, state, area);
             }

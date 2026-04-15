@@ -133,6 +133,15 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                         state.add_command_to_collection_by_text(&search_text);
                     }
                 }
+                CollectionInputMode::ConfirmDeleteCollection => {
+                    state.delete_collection_confirmed();
+                }
+                CollectionInputMode::ConfirmDeleteCommand => {
+                    if let Some(cmd) = state.filtered.get(state.selected_index) {
+                        let text = cmd.text.clone();
+                        state.remove_command_from_collection_confirmed(&text);
+                    }
+                }
                 CollectionInputMode::None => {}
             }
             state.input_mode = InputMode::Normal;
