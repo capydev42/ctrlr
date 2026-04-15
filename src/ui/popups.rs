@@ -25,13 +25,9 @@ pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
     let show_create = !state.tag_input.trim().is_empty() && !exact_match;
 
     let input_height = if tags.is_empty() { 3 } else { 4 };
-    let sugg_count = suggestions.len().min(5);
     let create_line = if show_create { 1 } else { 0 };
-    let sugg_height = if !suggestions.is_empty() || show_create {
-        (sugg_count + create_line) as u16 + 2
-    } else {
-        0
-    };
+    let results_count = suggestions.len() + create_line;
+    let sugg_height = 3.max(results_count) as u16 + 2;
     let hint_height = 1u16;
     let popup_height = input_height + sugg_height + hint_height;
     let popup_width = 60u16;
@@ -115,7 +111,6 @@ pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
         }
 
         let total_items = sugg_items.len();
-        let sugg_height = (total_items as u16 + 1).max(3);
         let sugg_area = Rect::new(chunks[1].x, chunks[1].y, chunks[1].width - 1, sugg_height);
         let scrollbar_area = Rect::new(
             chunks[1].x + chunks[1].width - 1,
@@ -312,11 +307,9 @@ pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: R
     let has_search = !search_text.is_empty();
 
     let input_height = 3u16;
-    let results_count = results.len();
     let create_row = if has_search { 1 } else { 0 };
-    let total_rows = results_count.max(3) + create_row;
-    let sugg_count = total_rows.min(5);
-    let sugg_height = sugg_count.max(3) as u16 + 1;
+    let total_rows = results.len() + create_row;
+    let sugg_height = (total_rows.min(5) as u16).max(3) + 1;
     let hint_height = 1u16;
     let popup_height = input_height + sugg_height + hint_height;
     let popup_width = 65u16;
@@ -347,12 +340,13 @@ pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: R
         chunks[0],
     );
 
-    let results_count = results.len();
+    let total_rows = results.len() + if has_search { 1 } else { 0 };
+    let take_count = 5.min(total_rows.saturating_sub(1));
 
-    if total_rows > 0 {
+    if !results.is_empty() || has_search {
         let mut items: Vec<ListItem> = results
             .iter()
-            .take(5)
+            .take(take_count)
             .enumerate()
             .map(|(i, cmd)| {
                 if i == state.add_command_search_index {
@@ -366,7 +360,7 @@ pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: R
 
         if has_search {
             let create_text = format!("+ Create \"{}\"", state.collection_input_text.trim());
-            let create_idx = results_count;
+            let create_idx = results.len();
             if state.add_command_search_index == create_idx {
                 items.push(
                     ListItem::new(format!("> {}", create_text))
