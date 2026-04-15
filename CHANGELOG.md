@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Search results now include all commands from history, not just non-contained ones
 
+### Fixed
+- Minimum height in tag and command popups ensures create option is always visible
+
 ---
 
 ## [0.1.3] - 2026-04-14
