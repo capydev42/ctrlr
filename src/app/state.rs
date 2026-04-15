@@ -36,6 +36,8 @@ pub enum CollectionInputMode {
     NewCollection,
     EditCollection,
     AddToCollectionSearch,
+    ConfirmDeleteCollection,
+    ConfirmDeleteCommand,
 }
 
 #[derive(Clone, Debug)]
@@ -80,6 +82,7 @@ pub struct AppState {
     pub tag_popup_list_state: ListState,
     pub collection_popup_list_state: ListState,
     pub add_command_search_index: usize,
+    pub delete_confirm_text: String,
 }
 
 impl AppState {
@@ -170,6 +173,7 @@ impl AppState {
             tag_popup_list_state,
             collection_popup_list_state,
             add_command_search_index: 0,
+            delete_confirm_text: String::new(),
         }
     }
 
@@ -527,6 +531,14 @@ impl AppState {
     }
 
     pub fn delete_collection(&mut self) {
+        if let Some(col) = self.selected_collection() {
+            self.delete_confirm_text = col.name.clone();
+        }
+        self.collection_input_mode = CollectionInputMode::ConfirmDeleteCollection;
+        self.input_mode = InputMode::CollectionInput;
+    }
+
+    pub fn delete_collection_confirmed(&mut self) {
         let col_id = self.selected_collection().map(|c| c.id.clone());
         let col_name = self.selected_collection().map(|c| c.name.clone());
         let (id, name) = match (col_id, col_name) {
@@ -553,6 +565,8 @@ impl AppState {
             }
             Err(e) => eprintln!("DB error deleting collection: {}", e),
         }
+        self.input_mode = InputMode::Normal;
+        self.collection_input_mode = CollectionInputMode::None;
     }
 
     pub fn add_command_to_collection(&mut self, cmd_text: &str, collection_id: &str) {
@@ -611,6 +625,12 @@ impl AppState {
     }
 
     pub fn remove_command_from_collection(&mut self, cmd_text: &str) {
+        self.delete_confirm_text = cmd_text.to_string();
+        self.collection_input_mode = CollectionInputMode::ConfirmDeleteCommand;
+        self.input_mode = InputMode::CollectionInput;
+    }
+
+    pub fn remove_command_from_collection_confirmed(&mut self, cmd_text: &str) {
         let col_name = self.selected_collection().map(|c| c.name.clone());
         let col_id = self.selected_collection().map(|c| c.id.clone());
         let (name, id) = match (col_name, col_id) {
@@ -633,6 +653,8 @@ impl AppState {
             }
             Err(e) => eprintln!("DB error removing from collection: {}", e),
         }
+        self.input_mode = InputMode::Normal;
+        self.collection_input_mode = CollectionInputMode::None;
     }
 
     pub fn search_results_for_add_command(&self) -> Vec<&Command> {

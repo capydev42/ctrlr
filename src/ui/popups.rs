@@ -170,6 +170,8 @@ pub fn render_collection_popup(frame: &mut Frame, state: &mut AppState, area: Re
             "Type to filter | ↑/↓ Navigate | Enter: Select/Create | Esc: Cancel",
         ),
         CollectionInputMode::AddToCollectionSearch => return,
+        CollectionInputMode::ConfirmDeleteCollection
+        | CollectionInputMode::ConfirmDeleteCommand => return,
         CollectionInputMode::None => return,
     };
 
@@ -415,6 +417,61 @@ pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: R
     frame.render_widget(
         Paragraph::new(hint)
             .style(Style::new().fg(Color::DarkGray))
+            .alignment(Alignment::Center),
+        chunks[2],
+    );
+}
+
+pub fn render_delete_confirm_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let message = match state.collection_input_mode {
+        CollectionInputMode::ConfirmDeleteCollection => {
+            format!("Delete collection '{}'?", state.delete_confirm_text)
+        }
+        CollectionInputMode::ConfirmDeleteCommand => {
+            format!("Remove '{}' from collection?", state.delete_confirm_text)
+        }
+        _ => return,
+    };
+
+    let popup_height = 10u16;
+    let popup_width = 55u16;
+    let centered = center_rect(popup_width, popup_height, area);
+
+    frame.render_widget(Clear, centered);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(centered);
+
+    frame.render_widget(
+        Paragraph::new(message)
+            .style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            .alignment(Alignment::Center)
+            .block(
+                Block::bordered()
+                    .title("[Confirm Delete]")
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::new().fg(Color::Yellow)),
+            ),
+        chunks[0],
+    );
+
+    frame.render_widget(
+        Paragraph::new("This action cannot be undone.")
+            .style(Style::new().fg(Color::DarkGray))
+            .alignment(Alignment::Center),
+        chunks[1],
+    );
+
+    frame.render_widget(
+        Paragraph::new("Enter: Delete  |  Esc: Cancel")
+            .style(Style::new().fg(Color::White))
             .alignment(Alignment::Center),
         chunks[2],
     );
