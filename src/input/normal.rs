@@ -170,12 +170,11 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.input_mode = InputMode::CollectionInput;
             }
             (KeyCode::Char('e'), KeyModifiers::NONE) => {
-                if state.selected_collection().is_some() {
-                    state.editing_collection_id = state.selected_collection().map(|c| c.id.clone());
-                    state.collection_input_text = state
-                        .selected_collection()
-                        .map(|c| c.name.clone())
-                        .unwrap_or_default();
+                if let Some(col) = state.selected_collection() {
+                    let col_id = col.id.clone();
+                    let col_name = col.name.clone();
+                    state.editing_collection_id = Some(col_id);
+                    state.collection_input_text = col_name;
                     state.collection_input_mode = CollectionInputMode::EditCollection;
                     state.input_mode = InputMode::CollectionInput;
                 }
@@ -205,14 +204,10 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.show_details = !state.show_details;
             }
             (KeyCode::Char('a'), KeyModifiers::NONE) => {
-                if state.view_mode == ViewMode::Collections
-                    && state.active_pane == ActivePane::CollectionItems
-                {
-                    state.collection_input_mode = CollectionInputMode::AddToCollectionSearch;
-                    state.collection_input_text.clear();
-                    state.input_mode = InputMode::CollectionInput;
-                    state.add_command_search_index = 0;
-                }
+                state.collection_input_mode = CollectionInputMode::AddToCollectionSearch;
+                state.collection_input_text.clear();
+                state.input_mode = InputMode::CollectionInput;
+                state.add_command_search_index = 0;
             }
             (KeyCode::Char('r'), KeyModifiers::NONE) => {
                 if let Some(cmd) = state.filtered.get(state.selected_index) {
