@@ -73,21 +73,55 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
 
     match (key.code, key.modifiers) {
         (KeyCode::Up, _) => {
+            state.clear_key_buffer();
             handle_navigation_up(state);
         }
         (KeyCode::Down, _) => {
+            state.clear_key_buffer();
             handle_navigation_down(state);
         }
         (KeyCode::PageDown, _) | (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+            state.clear_key_buffer();
             handle_page_down(state);
         }
         (KeyCode::PageUp, _) | (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+            state.clear_key_buffer();
             handle_page_up(state);
         }
+        (KeyCode::Char('g'), KeyModifiers::NONE) | (KeyCode::Char('g'), KeyModifiers::SHIFT) => {
+            if !matches!(
+                state.active_pane,
+                ActivePane::History | ActivePane::CollectionsList | ActivePane::CollectionItems
+            ) {
+                state.clear_key_buffer();
+            } else {
+                state.check_key_buffer_timeout();
+                if state.key_buffer == Some('g') {
+                    state.clear_key_buffer();
+                    handle_go_to_top(state);
+                } else {
+                    state.set_key_buffer('g');
+                }
+            }
+        }
+        (KeyCode::Char('G'), KeyModifiers::NONE) | (KeyCode::Char('G'), KeyModifiers::SHIFT) => {
+            if !matches!(
+                state.active_pane,
+                ActivePane::History | ActivePane::CollectionsList | ActivePane::CollectionItems
+            ) {
+                state.clear_key_buffer();
+            } else {
+                state.clear_key_buffer();
+                handle_go_to_bottom(state);
+            }
+        }
         (KeyCode::Esc, _) => {
+            state.clear_key_buffer();
             state.handle_esc();
         }
-        _ => {}
+        _ => {
+            state.clear_key_buffer();
+        }
     }
 
     match state.active_pane {
@@ -320,6 +354,56 @@ fn handle_page_up(state: &mut AppState) {
             }
             state.navigate_page_up();
             state.list_state.select(Some(state.selected_index));
+        }
+    }
+}
+
+fn handle_go_to_top(state: &mut AppState) {
+    match state.view_mode {
+        ViewMode::Collections => match state.active_pane {
+            ActivePane::CollectionsList => {
+                state.go_to_collection_top();
+            }
+            ActivePane::CollectionItems => {
+                state.go_to_top();
+            }
+            _ => {
+                if state.active_pane == ActivePane::Search {
+                    state.active_pane = ActivePane::History;
+                }
+                state.go_to_top();
+            }
+        },
+        _ => {
+            if state.active_pane == ActivePane::Search {
+                state.active_pane = ActivePane::History;
+            }
+            state.go_to_top();
+        }
+    }
+}
+
+fn handle_go_to_bottom(state: &mut AppState) {
+    match state.view_mode {
+        ViewMode::Collections => match state.active_pane {
+            ActivePane::CollectionsList => {
+                state.go_to_collection_bottom();
+            }
+            ActivePane::CollectionItems => {
+                state.go_to_bottom();
+            }
+            _ => {
+                if state.active_pane == ActivePane::Search {
+                    state.active_pane = ActivePane::History;
+                }
+                state.go_to_bottom();
+            }
+        },
+        _ => {
+            if state.active_pane == ActivePane::Search {
+                state.active_pane = ActivePane::History;
+            }
+            state.go_to_bottom();
         }
     }
 }

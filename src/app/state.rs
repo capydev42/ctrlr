@@ -84,6 +84,8 @@ pub struct AppState {
     pub add_command_search_index: usize,
     pub delete_confirm_text: String,
     pub terminal_height: u16,
+    pub key_buffer: Option<char>,
+    pub key_buffer_timestamp: Option<Instant>,
 }
 
 impl AppState {
@@ -176,11 +178,63 @@ impl AppState {
             add_command_search_index: 0,
             delete_confirm_text: String::new(),
             terminal_height: 24,
+            key_buffer: None,
+            key_buffer_timestamp: None,
         }
     }
 
     pub fn set_terminal_height(&mut self, height: u16) {
         self.terminal_height = height;
+    }
+
+    pub fn check_key_buffer_timeout(&mut self) {
+        let timed_out = self
+            .key_buffer_timestamp
+            .map(|t| t.elapsed().as_millis() > 500)
+            .unwrap_or(false);
+        if timed_out {
+            self.key_buffer = None;
+            self.key_buffer_timestamp = None;
+        }
+    }
+
+    pub fn set_key_buffer(&mut self, key: char) {
+        self.key_buffer = Some(key);
+        self.key_buffer_timestamp = Some(Instant::now());
+    }
+
+    pub fn clear_key_buffer(&mut self) {
+        self.key_buffer = None;
+        self.key_buffer_timestamp = None;
+    }
+
+    pub fn go_to_top(&mut self) {
+        self.selected_index = 0;
+        self.list_state.select(Some(0));
+    }
+
+    pub fn go_to_bottom(&mut self) {
+        if !self.filtered.is_empty() {
+            self.selected_index = self.filtered.len() - 1;
+            self.list_state.select(Some(self.selected_index));
+        }
+    }
+
+    pub fn go_to_collection_top(&mut self) {
+        self.selected_collection_index = 0;
+        self.collection_list_state.select(Some(0));
+        self.load_collection_commands();
+        self.filter_commands();
+    }
+
+    pub fn go_to_collection_bottom(&mut self) {
+        if !self.collections.is_empty() {
+            self.selected_collection_index = self.collections.len() - 1;
+            self.collection_list_state
+                .select(Some(self.selected_collection_index));
+            self.load_collection_commands();
+            self.filter_commands();
+        }
     }
 
     pub fn selected_command_tags(&self) -> Vec<String> {
