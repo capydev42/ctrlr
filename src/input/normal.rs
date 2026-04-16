@@ -78,6 +78,12 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
         (KeyCode::Down, _) => {
             handle_navigation_down(state);
         }
+        (KeyCode::PageDown, _) | (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+            handle_page_down(state);
+        }
+        (KeyCode::PageUp, _) | (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+            handle_page_up(state);
+        }
         (KeyCode::Esc, _) => {
             state.handle_esc();
         }
@@ -251,6 +257,68 @@ fn handle_navigation_down(state: &mut AppState) {
                 state.active_pane = ActivePane::History;
             }
             state.navigate_down();
+            state.list_state.select(Some(state.selected_index));
+        }
+    }
+}
+
+fn handle_page_down(state: &mut AppState) {
+    match state.view_mode {
+        ViewMode::Collections => match state.active_pane {
+            ActivePane::CollectionsList => {
+                state.navigate_collection_page_down();
+                state
+                    .collection_list_state
+                    .select(Some(state.selected_collection_index));
+            }
+            ActivePane::CollectionItems => {
+                state.navigate_page_down();
+                state.list_state.select(Some(state.selected_index));
+            }
+            _ => {
+                if state.active_pane == ActivePane::Search {
+                    state.active_pane = ActivePane::History;
+                }
+                state.navigate_page_down();
+                state.list_state.select(Some(state.selected_index));
+            }
+        },
+        _ => {
+            if state.active_pane == ActivePane::Search {
+                state.active_pane = ActivePane::History;
+            }
+            state.navigate_page_down();
+            state.list_state.select(Some(state.selected_index));
+        }
+    }
+}
+
+fn handle_page_up(state: &mut AppState) {
+    match state.view_mode {
+        ViewMode::Collections => match state.active_pane {
+            ActivePane::CollectionsList => {
+                state.navigate_collection_page_up();
+                state
+                    .collection_list_state
+                    .select(Some(state.selected_collection_index));
+            }
+            ActivePane::CollectionItems => {
+                state.navigate_page_up();
+                state.list_state.select(Some(state.selected_index));
+            }
+            _ => {
+                if state.active_pane == ActivePane::Search {
+                    state.active_pane = ActivePane::History;
+                }
+                state.navigate_page_up();
+                state.list_state.select(Some(state.selected_index));
+            }
+        },
+        _ => {
+            if state.active_pane == ActivePane::Search {
+                state.active_pane = ActivePane::History;
+            }
+            state.navigate_page_up();
             state.list_state.select(Some(state.selected_index));
         }
     }

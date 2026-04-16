@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Fuzzy search popup to add commands to collections (press `a` in collection items view)
 - Delete confirmation popup for collections and commands (Enter: Delete, Esc: Cancel)
+- Page up/down navigation with Ctrl+D/U or PageUp/PageDown keys
 
 ### Changed
 - Search results now include all commands from history, not just non-contained ones

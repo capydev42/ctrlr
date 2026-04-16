@@ -83,6 +83,7 @@ pub struct AppState {
     pub collection_popup_list_state: ListState,
     pub add_command_search_index: usize,
     pub delete_confirm_text: String,
+    pub terminal_height: u16,
 }
 
 impl AppState {
@@ -174,7 +175,12 @@ impl AppState {
             collection_popup_list_state,
             add_command_search_index: 0,
             delete_confirm_text: String::new(),
+            terminal_height: 24,
         }
+    }
+
+    pub fn set_terminal_height(&mut self, height: u16) {
+        self.terminal_height = height;
     }
 
     pub fn selected_command_tags(&self) -> Vec<String> {
@@ -276,6 +282,19 @@ impl AppState {
 
     pub fn navigate_down(&mut self) {
         self.selected_index = (self.selected_index + 1) % self.filtered.len().max(1);
+    }
+
+    pub fn navigate_page_down(&mut self) {
+        if self.filtered.is_empty() {
+            return;
+        }
+        let page_size = (self.terminal_height.saturating_sub(4) / 2).max(5) as usize;
+        self.selected_index = (self.selected_index + page_size).min(self.filtered.len() - 1);
+    }
+
+    pub fn navigate_page_up(&mut self) {
+        let page_size = (self.terminal_height.saturating_sub(4) / 2).max(5) as usize;
+        self.selected_index = self.selected_index.saturating_sub(page_size);
     }
 
     pub fn add_to_search(&mut self, c: char) {
@@ -754,6 +773,27 @@ impl AppState {
             self.load_collection_commands();
             self.filter_commands();
         }
+    }
+
+    pub fn navigate_collection_page_down(&mut self) {
+        if self.collections.is_empty() {
+            return;
+        }
+        let page_size = (self.terminal_height.saturating_sub(4) / 2).max(5) as usize;
+        self.selected_collection_index =
+            (self.selected_collection_index + page_size).min(self.collections.len() - 1);
+        self.load_collection_commands();
+        self.filter_commands();
+    }
+
+    pub fn navigate_collection_page_up(&mut self) {
+        if self.collections.is_empty() {
+            return;
+        }
+        let page_size = (self.terminal_height.saturating_sub(4) / 2).max(5) as usize;
+        self.selected_collection_index = self.selected_collection_index.saturating_sub(page_size);
+        self.load_collection_commands();
+        self.filter_commands();
     }
 }
 
