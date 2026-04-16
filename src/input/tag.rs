@@ -51,13 +51,14 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             state.tag_input.push(c);
         }
         (KeyCode::Tab, _) => {
-            if state.tag_cursor_index.is_none() {
-                let suggestions = state.filtered_tags();
-                if !suggestions.is_empty() && state.tag_selected_index < suggestions.len() {
-                    let tag = suggestions[state.tag_selected_index].clone();
-                    state.apply_selected_tag(tag);
-                    state.tag_selected_index = 0;
-                }
+            let no_cursor = state.tag_cursor_index.is_none();
+            let suggestions = state.filtered_tags();
+            let has_valid = !suggestions.is_empty() && state.tag_selected_index < suggestions.len();
+
+            if no_cursor && has_valid {
+                let tag = suggestions[state.tag_selected_index].clone();
+                state.apply_selected_tag(tag);
+                state.tag_selected_index = 0;
             }
         }
         (KeyCode::Up, _) => {

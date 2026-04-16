@@ -73,21 +73,55 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
 
     match (key.code, key.modifiers) {
         (KeyCode::Up, _) => {
+            state.clear_key_buffer();
             handle_navigation_up(state);
         }
         (KeyCode::Down, _) => {
+            state.clear_key_buffer();
             handle_navigation_down(state);
         }
         (KeyCode::PageDown, _) | (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+            state.clear_key_buffer();
             handle_page_down(state);
         }
         (KeyCode::PageUp, _) | (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+            state.clear_key_buffer();
             handle_page_up(state);
         }
+        (KeyCode::Char('g'), KeyModifiers::NONE) | (KeyCode::Char('g'), KeyModifiers::SHIFT) => {
+            if !matches!(
+                state.active_pane,
+                ActivePane::History | ActivePane::CollectionsList | ActivePane::CollectionItems
+            ) {
+                state.clear_key_buffer();
+            } else {
+                state.check_key_buffer_timeout();
+                if state.key_buffer == Some('g') {
+                    state.clear_key_buffer();
+                    handle_go_to_top(state);
+                } else {
+                    state.set_key_buffer('g');
+                }
+            }
+        }
+        (KeyCode::Char('G'), KeyModifiers::NONE) | (KeyCode::Char('G'), KeyModifiers::SHIFT) => {
+            if !matches!(
+                state.active_pane,
+                ActivePane::History | ActivePane::CollectionsList | ActivePane::CollectionItems
+            ) {
+                state.clear_key_buffer();
+            } else {
+                state.clear_key_buffer();
+                handle_go_to_bottom(state);
+            }
+        }
         (KeyCode::Esc, _) => {
+            state.clear_key_buffer();
             state.handle_esc();
         }
-        _ => {}
+        _ => {
+            state.clear_key_buffer();
+        }
     }
 
     match state.active_pane {
@@ -136,12 +170,11 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.input_mode = InputMode::CollectionInput;
             }
             (KeyCode::Char('e'), KeyModifiers::NONE) => {
-                if state.selected_collection().is_some() {
-                    state.editing_collection_id = state.selected_collection().map(|c| c.id.clone());
-                    state.collection_input_text = state
-                        .selected_collection()
-                        .map(|c| c.name.clone())
-                        .unwrap_or_default();
+                if let Some(col) = state.selected_collection() {
+                    let col_id = col.id.clone();
+                    let col_name = col.name.clone();
+                    state.editing_collection_id = Some(col_id);
+                    state.collection_input_text = col_name;
                     state.collection_input_mode = CollectionInputMode::EditCollection;
                     state.input_mode = InputMode::CollectionInput;
                 }
@@ -171,14 +204,10 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.show_details = !state.show_details;
             }
             (KeyCode::Char('a'), KeyModifiers::NONE) => {
-                if state.view_mode == ViewMode::Collections
-                    && state.active_pane == ActivePane::CollectionItems
-                {
-                    state.collection_input_mode = CollectionInputMode::AddToCollectionSearch;
-                    state.collection_input_text.clear();
-                    state.input_mode = InputMode::CollectionInput;
-                    state.add_command_search_index = 0;
-                }
+                state.collection_input_mode = CollectionInputMode::AddToCollectionSearch;
+                state.collection_input_text.clear();
+                state.input_mode = InputMode::CollectionInput;
+                state.add_command_search_index = 0;
             }
             (KeyCode::Char('r'), KeyModifiers::NONE) => {
                 if let Some(cmd) = state.filtered.get(state.selected_index) {
@@ -320,6 +349,56 @@ fn handle_page_up(state: &mut AppState) {
             }
             state.navigate_page_up();
             state.list_state.select(Some(state.selected_index));
+        }
+    }
+}
+
+fn handle_go_to_top(state: &mut AppState) {
+    match state.view_mode {
+        ViewMode::Collections => match state.active_pane {
+            ActivePane::CollectionsList => {
+                state.go_to_collection_top();
+            }
+            ActivePane::CollectionItems => {
+                state.go_to_top();
+            }
+            _ => {
+                if state.active_pane == ActivePane::Search {
+                    state.active_pane = ActivePane::History;
+                }
+                state.go_to_top();
+            }
+        },
+        _ => {
+            if state.active_pane == ActivePane::Search {
+                state.active_pane = ActivePane::History;
+            }
+            state.go_to_top();
+        }
+    }
+}
+
+fn handle_go_to_bottom(state: &mut AppState) {
+    match state.view_mode {
+        ViewMode::Collections => match state.active_pane {
+            ActivePane::CollectionsList => {
+                state.go_to_collection_bottom();
+            }
+            ActivePane::CollectionItems => {
+                state.go_to_bottom();
+            }
+            _ => {
+                if state.active_pane == ActivePane::Search {
+                    state.active_pane = ActivePane::History;
+                }
+                state.go_to_bottom();
+            }
+        },
+        _ => {
+            if state.active_pane == ActivePane::Search {
+                state.active_pane = ActivePane::History;
+            }
+            state.go_to_bottom();
         }
     }
 }
