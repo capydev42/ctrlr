@@ -13,6 +13,7 @@ use crate::app::{AppState, CollectionInputMode, InputMode, ViewMode};
 
 pub fn render(frame: &mut Frame, state: &mut AppState) {
     let area = frame.area();
+    state.set_terminal_height(area.height);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
