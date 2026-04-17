@@ -26,6 +26,22 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             state.filter_commands();
             return Action::None;
         }
+        (KeyCode::Char('j'), KeyModifiers::CONTROL) => {
+            state.pane_down();
+            return Action::None;
+        }
+        (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
+            state.pane_up();
+            return Action::None;
+        }
+        (KeyCode::Char('h'), KeyModifiers::CONTROL) => {
+            state.pane_left();
+            return Action::None;
+        }
+        (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
+            state.pane_right();
+            return Action::None;
+        }
         (KeyCode::Char('c'), KeyModifiers::NONE) => {
             if state.active_pane == ActivePane::Search {
                 state.add_to_search('c');
