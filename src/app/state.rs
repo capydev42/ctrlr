@@ -326,6 +326,54 @@ impl AppState {
         };
     }
 
+    pub fn pane_down(&mut self) {
+        if self.view_mode == ViewMode::Collections {
+            self.active_pane = match self.active_pane {
+                ActivePane::Search => ActivePane::CollectionsList,
+                ActivePane::CollectionsList => ActivePane::Search,
+                ActivePane::CollectionItems => ActivePane::CollectionsList,
+                _ => ActivePane::Search,
+            };
+        } else {
+            self.active_pane = match self.active_pane {
+                ActivePane::Search => ActivePane::History,
+                _ => ActivePane::Search,
+            };
+        }
+    }
+
+    pub fn pane_up(&mut self) {
+        if self.view_mode == ViewMode::Collections {
+            self.active_pane = match self.active_pane {
+                ActivePane::Search => ActivePane::CollectionsList,
+                ActivePane::CollectionsList => ActivePane::Search,
+                ActivePane::CollectionItems => ActivePane::CollectionsList,
+                _ => ActivePane::Search,
+            };
+        } else {
+            self.active_pane = match self.active_pane {
+                ActivePane::History => ActivePane::Search,
+                _ => ActivePane::History,
+            };
+        }
+    }
+
+    pub fn pane_left(&mut self) {
+        if self.view_mode == ViewMode::Collections
+            && self.active_pane == ActivePane::CollectionItems
+        {
+            self.active_pane = ActivePane::CollectionsList;
+        }
+    }
+
+    pub fn pane_right(&mut self) {
+        if self.view_mode == ViewMode::Collections
+            && self.active_pane == ActivePane::CollectionsList
+        {
+            self.active_pane = ActivePane::CollectionItems;
+        }
+    }
+
     pub fn navigate_up(&mut self) {
         self.selected_index = if self.selected_index == 0 {
             self.filtered.len().saturating_sub(1)
