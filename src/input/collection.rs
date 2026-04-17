@@ -33,7 +33,9 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.collection_input_text.pop();
             }
         },
-        (KeyCode::Up, _) => match state.collection_input_mode {
+        (KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => match state
+            .collection_input_mode
+        {
             CollectionInputMode::AddToCollection => {
                 state.collection_popup_index = state.collection_popup_index.saturating_sub(1);
             }
@@ -42,7 +44,9 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             }
             _ => {}
         },
-        (KeyCode::Down, _) => match state.collection_input_mode {
+        (KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => match state
+            .collection_input_mode
+        {
             CollectionInputMode::AddToCollection => {
                 let search_text = &state.collection_input_text;
                 let show_create = !search_text.is_empty()
