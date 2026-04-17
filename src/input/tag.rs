@@ -61,10 +61,10 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.tag_selected_index = 0;
             }
         }
-        (KeyCode::Up, _) => {
+        (KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
             state.tag_selected_index = state.tag_selected_index.saturating_sub(1);
         }
-        (KeyCode::Down, _) => {
+        (KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
             let suggestions = state.filtered_tags();
             let show_create = !state.tag_input.trim().is_empty()
                 && !suggestions

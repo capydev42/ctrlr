@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Delete confirmation popup for collections and commands (Enter: Delete, Esc: Cancel)
 - Page up/down navigation with Ctrl+D/U or PageUp/PageDown keys
 - Go to top/bottom navigation with gg/G (vim-style, 500ms timeout)
+- Ctrl+N/Ctrl+P for popup navigation (vim-style suggestions)
 
 ### Changed
 - Search results now include all commands from history, not just non-contained ones
