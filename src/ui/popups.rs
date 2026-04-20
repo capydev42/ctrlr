@@ -2,7 +2,7 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::Span,
+    text::{Line, Span},
     widgets::{
         Block, BorderType, Clear, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation,
     },
@@ -11,6 +11,8 @@ use ratatui::{
 use crate::app::{AppState, CollectionInputMode};
 
 use super::layout::center_rect;
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
     let tags = state.selected_command_tags();
@@ -474,5 +476,133 @@ pub fn render_delete_confirm_popup(frame: &mut Frame, state: &mut AppState, area
             .style(Style::new().fg(Color::White))
             .alignment(Alignment::Center),
         chunks[2],
+    );
+}
+
+pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let shortcuts = &state.help_filtered_shortcuts;
+    let selected_index = state.help_selected_index;
+
+    let search_height = 3u16;
+    let hint_height = 1u16;
+    let list_height = (area.height.saturating_sub(8)).max(5);
+    let popup_height = search_height + list_height + hint_height;
+    let popup_width = (area.width - 4).clamp(50, 90);
+
+    let centered = center_rect(popup_width, popup_height, area);
+
+    frame.render_widget(Clear, centered);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(search_height),
+            Constraint::Length(list_height),
+            Constraint::Length(hint_height),
+        ])
+        .split(centered);
+
+    let search_display = format!("Search: {}{}", state.help_search_query, "▋");
+    frame.render_widget(
+        Paragraph::new(search_display)
+            .style(Style::new().fg(Color::White))
+            .block(
+                Block::bordered()
+                    .title("[Help]")
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::new().fg(Color::Cyan)),
+            ),
+        chunks[0],
+    );
+
+    if !shortcuts.is_empty() {
+        let keys_width = 12u16;
+        let name_width = 18u16;
+        let items: Vec<ListItem> = shortcuts
+            .iter()
+            .enumerate()
+            .map(|(idx, sc)| {
+                let keys_str = sc.keys.join(", ");
+                let line = Line::from(vec![
+                    Span::styled(
+                        format!("{:width$}", keys_str, width = keys_width as usize),
+                        Style::new().fg(Color::Yellow),
+                    ),
+                    Span::raw(" "),
+                    Span::styled(
+                        format!("{:width$}", sc.action_name, width = name_width as usize),
+                        Style::new().fg(Color::White).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" "),
+                    Span::styled(sc.description, Style::new().fg(Color::DarkGray)),
+                ]);
+                let style = if idx == selected_index {
+                    Style::new().bg(Color::Blue).fg(Color::White)
+                } else {
+                    Style::new()
+                };
+                ListItem::new(line).style(style)
+            })
+            .collect();
+
+        let total_items = items.len();
+        let list_area = Rect::new(
+            chunks[1].x,
+            chunks[1].y,
+            chunks[1].width - 1,
+            chunks[1].height,
+        );
+        let scrollbar_area = Rect::new(
+            chunks[1].x + chunks[1].width - 1,
+            chunks[1].y,
+            1,
+            chunks[1].height,
+        );
+
+        let visible_rows = list_height as usize;
+        let offset = selected_index.saturating_sub(visible_rows / 2);
+        *state.help_list_state.offset_mut() = offset;
+        state.help_list_state.select(Some(selected_index));
+
+        let list = List::new(items)
+            .block(Block::bordered().title("Shortcuts"))
+            .highlight_style(Style::new().bg(Color::Blue).fg(Color::White));
+        frame.render_stateful_widget(list, list_area, &mut state.help_list_state);
+
+        if total_items > visible_rows {
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .style(Style::new().fg(Color::DarkGray));
+            let mut scrollbar_state =
+                ratatui::widgets::ScrollbarState::new(total_items).position(selected_index);
+            frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
+        }
+    } else {
+        frame.render_widget(
+            Paragraph::new("No matching shortcuts")
+                .style(Style::new().fg(Color::DarkGray))
+                .alignment(Alignment::Center),
+            chunks[1],
+        );
+    }
+
+    frame.render_widget(
+        Paragraph::new("↑/↓ Navigate | Enter: Execute | Esc: Close")
+            .style(Style::new().fg(Color::DarkGray))
+            .alignment(Alignment::Center),
+        chunks[2],
+    );
+
+    let version_text = format!("v{}", VERSION);
+    let version_area = Rect::new(
+        centered.x + centered.width.saturating_sub(version_text.len() as u16 + 1),
+        centered.y + 1,
+        version_text.len() as u16,
+        1,
+    );
+    frame.render_widget(
+        Paragraph::new(version_text)
+            .style(Style::new().fg(Color::DarkGray))
+            .alignment(Alignment::Right),
+        version_area,
     );
 }

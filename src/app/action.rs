@@ -5,4 +5,6 @@ pub enum Action {
     #[allow(dead_code)]
     Exit,
     Execute(String),
+    CloseHelp,
+    ExecuteHelpShortcut(String),
 }

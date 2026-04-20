@@ -5,6 +5,7 @@ use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::widgets::ListState;
 
+use crate::input::help::GroupedShortcut;
 use crate::storage::collections::Collection;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -86,6 +87,11 @@ pub struct AppState {
     pub terminal_height: u16,
     pub key_buffer: Option<char>,
     pub key_buffer_timestamp: Option<Instant>,
+    pub help_open: bool,
+    pub help_search_query: String,
+    pub help_filtered_shortcuts: Vec<GroupedShortcut>,
+    pub help_selected_index: usize,
+    pub help_list_state: ListState,
 }
 
 impl AppState {
@@ -146,6 +152,11 @@ impl AppState {
             s.select(Some(0));
             s
         };
+        let help_list_state = {
+            let mut s = ListState::default();
+            s.select(Some(0));
+            s
+        };
         Self {
             commands,
             filtered,
@@ -180,6 +191,11 @@ impl AppState {
             terminal_height: 24,
             key_buffer: None,
             key_buffer_timestamp: None,
+            help_open: false,
+            help_search_query: String::new(),
+            help_filtered_shortcuts: Vec::new(),
+            help_selected_index: 0,
+            help_list_state,
         }
     }
 

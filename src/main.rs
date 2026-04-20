@@ -9,6 +9,7 @@ mod storage;
 mod ui;
 
 use app::{Action, AppState, InputMode};
+use input::help;
 use std::io;
 use std::time::Duration;
 
@@ -70,6 +71,7 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
         terminal.draw(|f| ui::render(f, &mut state))?;
         if let Event::Key(key) = crossterm::event::read()? {
             if key.code == crossterm::event::KeyCode::Esc
+                && !state.help_open
                 && state.input_mode != InputMode::TagInput
                 && state.input_mode != InputMode::CollectionInput
                 && state.handle_esc()
@@ -79,6 +81,17 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
             match input::handle(&mut state, key) {
                 Action::Execute(cmd) => break Ok(Some(cmd)),
                 Action::Exit => break Ok(None),
+                Action::CloseHelp => {
+                    state.help_open = false;
+                    state.help_search_query.clear();
+                }
+                Action::ExecuteHelpShortcut(action_id) => {
+                    match help::execute_help_action(&mut state, &action_id) {
+                        Action::Execute(cmd) => break Ok(Some(cmd)),
+                        Action::Exit => break Ok(None),
+                        _ => {}
+                    }
+                }
                 Action::None => {}
             }
         }

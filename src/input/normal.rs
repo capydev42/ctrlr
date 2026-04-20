@@ -1,4 +1,5 @@
 use crate::app::{Action, ActivePane, AppState, CollectionInputMode, InputMode, ViewMode};
+use crate::input::help;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
@@ -40,6 +41,14 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
         }
         (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
             state.pane_right();
+            return Action::None;
+        }
+        (KeyCode::Char('?'), KeyModifiers::NONE) => {
+            state.help_open = true;
+            state.help_search_query.clear();
+            state.help_filtered_shortcuts = help::get_shortcuts_for_context(state);
+            state.help_selected_index = 0;
+            state.help_list_state.select(Some(0));
             return Action::None;
         }
         (KeyCode::Char('c'), KeyModifiers::NONE) => {
