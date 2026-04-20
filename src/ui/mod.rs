@@ -68,4 +68,8 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
             }
         }
     }
+
+    if state.help_open {
+        popups::render_help_popup(frame, state, area);
+    }
 }

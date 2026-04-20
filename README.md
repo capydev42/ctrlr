@@ -57,9 +57,7 @@ ctrlr gives you:
 
 ### Motivation
 
-I kept forgetting useful commands and re-googling them.
-
-ctrlr turns your shell history into a personal command palette.
+I wasted a lot of time re-googling commands i used already. 
 
 ---
 
