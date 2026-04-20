@@ -483,11 +483,9 @@ pub fn execute_help_action(state: &mut AppState, action_id: &str) -> Action {
             state.tag_selected_index = 0;
             state.tag_cursor_index = None;
         }
-        "add_to_collection" => {
-            if !state.filtered.is_empty() {
-                state.collection_input_mode = crate::app::CollectionInputMode::AddToCollection;
-                state.input_mode = InputMode::CollectionInput;
-            }
+        "add_to_collection" if !state.filtered.is_empty() => {
+            state.collection_input_mode = crate::app::CollectionInputMode::AddToCollection;
+            state.input_mode = InputMode::CollectionInput;
         }
         "toggle_details" => {
             state.show_details = !state.show_details;

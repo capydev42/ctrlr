@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Help panel with fuzzy search (press `?` to open)
+  - Context-aware shortcuts filtered by current view/pane
+  - Shortcut descriptions explain what each key does
+  - Execute shortcuts directly with Enter key
+  - Version displayed in top-right corner
+
 ---
 
 ## [0.1.4] - 2026-04-18
