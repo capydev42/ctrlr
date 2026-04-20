@@ -370,14 +370,14 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             state.help_search_query.clear();
             return Action::CloseHelp;
         }
-        (KeyCode::Up, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
+        (KeyCode::Up, _) => {
             state.help_selected_index = state.help_selected_index.saturating_sub(1);
             state
                 .help_list_state
                 .select(Some(state.help_selected_index));
             return Action::None;
         }
-        (KeyCode::Down, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
+        (KeyCode::Down, _) => {
             let max = state.help_filtered_shortcuts.len().saturating_sub(1);
             state.help_selected_index = (state.help_selected_index + 1).min(max);
             state
@@ -402,13 +402,16 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 .select(Some(state.help_selected_index));
             return Action::None;
         }
-        (KeyCode::Char('g'), KeyModifiers::NONE) => {
-            state.help_selected_index = 0;
-            state.help_list_state.select(Some(0));
+        (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+            state.help_selected_index = state.help_selected_index.saturating_sub(1);
+            state
+                .help_list_state
+                .select(Some(state.help_selected_index));
             return Action::None;
         }
-        (KeyCode::Char('G'), KeyModifiers::NONE) => {
-            state.help_selected_index = state.help_filtered_shortcuts.len().saturating_sub(1);
+        (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+            let max = state.help_filtered_shortcuts.len().saturating_sub(1);
+            state.help_selected_index = (state.help_selected_index + 1).min(max);
             state
                 .help_list_state
                 .select(Some(state.help_selected_index));
