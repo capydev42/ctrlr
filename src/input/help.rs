@@ -406,6 +406,9 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             return Action::None;
         }
         (KeyCode::Down, _) => {
+            if state.help_filtered_shortcuts.is_empty() {
+                return Action::None;
+            }
             let max = state.help_filtered_shortcuts.len() - 1;
             if state.help_selected_index < max {
                 state.help_selected_index += 1;
