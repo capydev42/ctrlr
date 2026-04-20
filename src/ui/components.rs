@@ -42,7 +42,7 @@ pub fn render_search_bar(
     } else {
         ""
     };
-    let search_text = format!("Search: {}{}", state.search_query, cursor);
+    let search_text = format!("{}{}", state.search_query, cursor);
     let search_border_color = if state.active_pane == ActivePane::Search {
         Color::Yellow
     } else {

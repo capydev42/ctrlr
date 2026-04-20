@@ -33,9 +33,9 @@ pub fn render_history_list(frame: &mut Frame, state: &mut AppState, area: Rect) 
                     .collect::<Vec<_>>()
                     .join(" ");
 
-                let favorite_str = if cmd.favorite { "⭐" } else { " " };
+                let favorite_str = if cmd.favorite { "* " } else { "  " };
 
-                let mut line = Line::from(vec![Span::raw(format!("{:<2} ", favorite_str))]);
+                let mut line = Line::from(vec![Span::raw(favorite_str)]);
 
                 if let Some(Some(indices)) = state.matched_indices.get(idx) {
                     let highlighted = highlight_text(&cmd.text, indices);
@@ -44,7 +44,9 @@ pub fn render_history_list(frame: &mut Frame, state: &mut AppState, area: Rect) 
                     line.spans.push(Span::raw(&cmd.text));
                 }
 
-                line.spans.push(Span::raw(format!(" {}", tags)));
+                if !tags.is_empty() {
+                    line.spans.push(Span::raw(format!(" {}", tags)));
+                }
 
                 ListItem::new(line)
             })
@@ -157,7 +159,7 @@ pub fn render_details(frame: &mut Frame, state: &mut AppState, area: Rect) {
     lines.push(Line::from(""));
 
     lines.push(section("Favorite"));
-    let fav_text = if cmd.favorite { "⭐ yes" } else { "○ no" };
+    let fav_text = if cmd.favorite { "* yes" } else { "○ no" };
     let fav_style = if cmd.favorite {
         Style::new().fg(Color::Yellow)
     } else {
