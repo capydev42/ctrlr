@@ -117,10 +117,10 @@ pub fn render_footer(
             ViewMode::History | ViewMode::Favorites => {
                 match state.active_pane {
                     ActivePane::Search => {
-                        " 1: History | 2: Favorites | 3: Collections | /: Search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ".into()
+                        "? Help | 1: History | 2: Favorites | 3: Collections | /: Search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ".into()
                     }
                     ActivePane::History => {
-                        " 1: History | 2: Favorites | 3: Collections | c: Add to Collection | /: Search | d: Details | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ".into()
+                        "? Help | 1: History | 2: Favorites | 3: Collections | c: Add to Collection | /: Search | d: Details | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ".into()
                     }
                     _ => "".into(),
                 }
@@ -128,16 +128,16 @@ pub fn render_footer(
             ViewMode::Collections => {
                 match state.active_pane {
                     ActivePane::CollectionsList => {
-                        " j/k or ↑/↓: Navigate | Enter: Show commands | n: New | e: Edit | d: Delete | Tab: Switch pane ".into()
+                        "? Help | j/k or ↑/↓: Navigate | Enter: Show commands | n: New | e: Edit | d: Delete | Tab: Switch pane ".into()
                     }
                     ActivePane::CollectionItems => {
-                        " j/k or ↑/↓: Navigate | Enter: Select | c: Add | d: Details | r: Remove | Tab: Switch pane ".into()
+                        "? Help | j/k or ↑/↓: Navigate | Enter: Select | c: Add | d: Details | r: Remove | Tab: Switch pane ".into()
                     }
                     ActivePane::Search => {
-                        " j/k: Navigate | Backspace: Delete | Enter: Select | 1/2/3: Switch view ".into()
+                        "? Help | j/k: Navigate | Backspace: Delete | Enter: Select | 1/2/3: Switch view ".into()
                     }
                     ActivePane::History => {
-                        " j/k: Navigate | Enter: Select | 1/2/3: Switch view ".into()
+                        "? Help | j/k: Navigate | Enter: Select | 1/2/3: Switch view ".into()
                     }
                 }
             }
