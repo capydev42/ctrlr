@@ -509,6 +509,7 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
             .block(
                 Block::bordered()
                     .title("[Help]")
+                    .title(format!("[ctrlr v{}]", VERSION))
                     .border_type(BorderType::Rounded)
                     .border_style(Style::new().fg(Color::Cyan)),
             ),
@@ -590,19 +591,5 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
             .style(Style::new().fg(Color::DarkGray))
             .alignment(Alignment::Center),
         chunks[2],
-    );
-
-    let version_text = format!("v{}", VERSION);
-    let version_area = Rect::new(
-        centered.x + centered.width.saturating_sub(version_text.len() as u16 + 1),
-        centered.y + 1,
-        version_text.len() as u16,
-        1,
-    );
-    frame.render_widget(
-        Paragraph::new(version_text)
-            .style(Style::new().fg(Color::DarkGray))
-            .alignment(Alignment::Right),
-        version_area,
     );
 }
