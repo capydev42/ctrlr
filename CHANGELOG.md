@@ -7,14 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.2.0] - 2026-04-20
 
 ### Added
 - Help panel with fuzzy search (press `?` to open)
   - Context-aware shortcuts filtered by current view/pane
   - Shortcut descriptions explain what each key does
   - Execute shortcuts directly with Enter key
-  - Version displayed in top-right corner
+  - Version displayed in title bar
+  - Key formatting as chips [Key] for better UX
+  - Category grouping (Navigation, Actions, Views, Panels, Collections)
+  - `? Help` shortcut in main footer hints
+
+### Fixed
+- Search field character input in help popup
+- Category selection highlighting
+- Favorite marker border alignment (use ASCII instead of emoji)
+- Search bar duplicate "Search" label
 
 ---
 
