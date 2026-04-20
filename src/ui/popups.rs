@@ -523,7 +523,20 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
             .iter()
             .enumerate()
             .map(|(idx, sc)| {
-                let keys_str = sc.keys.join(", ");
+                let keys_str: String = sc
+                    .keys
+                    .iter()
+                    .map(|&k| match k {
+                        "PageDown" => "[PgDn]".to_owned(),
+                        "PageUp" => "[PgUp]".to_owned(),
+                        "Backspace" => "[BkSp]".to_owned(),
+                        "Delete" => "[Del]".to_owned(),
+                        "Escape" => "[Esc]".to_owned(),
+                        "Return" => "[Ent]".to_owned(),
+                        _ => format!("[{}]", k),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 let line = Line::from(vec![
                     Span::styled(
                         format!("{:width$}", keys_str, width = keys_width as usize),
