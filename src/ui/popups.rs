@@ -517,13 +517,26 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
     );
 
     if !shortcuts.is_empty() {
+        let rendered_selected = {
+            let mut headers = 0;
+            let mut prev: Option<&str> = None;
+            for (i, sc) in shortcuts.iter().enumerate() {
+                if i <= selected_index {
+                    if prev != Some(sc.category) {
+                        headers += 1;
+                    }
+                    prev = Some(sc.category);
+                }
+            }
+            selected_index + headers
+        };
+
+        let mut current_category: Option<&str> = None;
+        let mut rendered_items: Vec<ListItem> = Vec::new();
         let keys_width = 12u16;
         let name_width = 18u16;
 
-        let mut items: Vec<ListItem> = Vec::new();
-        let mut current_category: Option<&str> = None;
-
-        for (shortcut_idx, sc) in shortcuts.iter().enumerate() {
+        for sc in shortcuts {
             if current_category != Some(sc.category) {
                 current_category = Some(sc.category);
                 let header = Line::from(vec![Span::styled(
@@ -533,10 +546,9 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
                         .add_modifier(Modifier::UNDERLINED)
                         .add_modifier(Modifier::BOLD),
                 )]);
-                items.push(ListItem::new(header).style(Style::new().bg(Color::Rgb(30, 30, 30))));
+                rendered_items
+                    .push(ListItem::new(header).style(Style::new().bg(Color::Rgb(30, 30, 30))));
             }
-
-            let is_selected = shortcut_idx == selected_index;
 
             let keys_str: String = sc
                 .keys
@@ -565,15 +577,10 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
                 Span::raw(" "),
                 Span::styled(sc.description, Style::new().fg(Color::DarkGray)),
             ]);
-            let style = if is_selected {
-                Style::new().bg(Color::Blue).fg(Color::White)
-            } else {
-                Style::new()
-            };
-            items.push(ListItem::new(line).style(style));
+            rendered_items.push(ListItem::new(line));
         }
 
-        let total_items = items.len();
+        let total_items = rendered_items.len();
         let list_area = Rect::new(
             chunks[1].x,
             chunks[1].y,
@@ -588,21 +595,13 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
         );
 
         let visible_rows = list_height as usize;
-
-        let mut header_count = 0usize;
-        let mut prev_category: Option<&str> = None;
-        for sc in shortcuts[..selected_index].iter() {
-            if prev_category != Some(sc.category) {
-                header_count += 1;
-                prev_category = Some(sc.category);
-            }
-        }
-        let rendered_selected = selected_index + header_count;
         let offset = rendered_selected.saturating_sub(visible_rows / 2);
         *state.help_list_state.offset_mut() = offset;
         state.help_list_state.select(Some(rendered_selected));
 
-        let list = List::new(items).block(Block::bordered().title("Shortcuts"));
+        let list = List::new(rendered_items)
+            .block(Block::bordered().title("Shortcuts"))
+            .highlight_style(Style::new().bg(Color::Blue).fg(Color::White));
         frame.render_stateful_widget(list, list_area, &mut state.help_list_state);
 
         if total_items > visible_rows {
