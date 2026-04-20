@@ -485,7 +485,8 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
 
     let search_height = 3u16;
     let hint_height = 1u16;
-    let list_height = (area.height.saturating_sub(8)).max(5);
+    let page_size = area.height.saturating_sub(8).max(5);
+    let list_height = page_size;
     let popup_height = search_height + list_height + hint_height;
     let popup_width = (area.width - 4).clamp(50, 90);
 
@@ -531,10 +532,12 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
             selected_index + headers
         };
 
+        let area = chunks[1];
+        let keys_width = (area.width / 6).max(10);
+        let name_width = (area.width / 4).max(15);
+
         let mut current_category: Option<&str> = None;
         let mut rendered_items: Vec<ListItem> = Vec::new();
-        let keys_width = 12u16;
-        let name_width = 18u16;
 
         for sc in shortcuts {
             if current_category != Some(sc.category) {
@@ -621,7 +624,7 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
     }
 
     frame.render_widget(
-        Paragraph::new("↑/↓ Navigate | Enter: Execute | Esc: Close")
+        Paragraph::new("? Help | ↑/↓ Navigate | Enter: Execute | Esc: Close")
             .style(Style::new().fg(Color::DarkGray))
             .alignment(Alignment::Center),
         chunks[2],
