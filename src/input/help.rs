@@ -9,159 +9,185 @@ pub struct GroupedShortcut {
     pub action_name: &'static str,
     pub description: &'static str,
     pub keys: Vec<&'static str>,
+    pub category: &'static str,
 }
 
 pub fn get_all_shortcuts() -> Vec<GroupedShortcut> {
     vec![
         GroupedShortcut {
-            action_id: "execute",
-            action_name: "Execute Command",
-            description: "Runs selected command in terminal",
-            keys: vec!["Enter"],
-        },
-        GroupedShortcut {
             action_id: "navigate_down",
             action_name: "Navigate Down",
             description: "Move selection one item down",
             keys: vec!["j", "↓"],
+            category: "Navigation",
         },
         GroupedShortcut {
             action_id: "navigate_up",
             action_name: "Navigate Up",
             description: "Move selection one item up",
             keys: vec!["k", "↑"],
+            category: "Navigation",
         },
         GroupedShortcut {
             action_id: "page_down",
             action_name: "Page Down",
             description: "Scroll down ~50% of list",
             keys: vec!["Ctrl+d", "PageDown"],
+            category: "Navigation",
         },
         GroupedShortcut {
             action_id: "page_up",
             action_name: "Page Up",
             description: "Scroll up ~50% of list",
             keys: vec!["Ctrl+u", "PageUp"],
+            category: "Navigation",
         },
         GroupedShortcut {
             action_id: "go_to_top",
             action_name: "Go to Top",
             description: "Jump to first item (press gg)",
             keys: vec!["g", "gg"],
+            category: "Navigation",
         },
         GroupedShortcut {
             action_id: "go_to_bottom",
             action_name: "Go to Bottom",
             description: "Jump to last item",
             keys: vec!["G"],
+            category: "Navigation",
+        },
+        GroupedShortcut {
+            action_id: "execute",
+            action_name: "Execute Command",
+            description: "Runs selected command in terminal",
+            keys: vec!["Enter"],
+            category: "Actions",
         },
         GroupedShortcut {
             action_id: "toggle_favorite",
             action_name: "Toggle Favorite",
             description: "Mark/unmark as favorite",
             keys: vec!["f"],
+            category: "Actions",
         },
         GroupedShortcut {
             action_id: "edit_tags",
             action_name: "Edit Tags",
             description: "Add/remove tags from command",
             keys: vec!["t"],
+            category: "Actions",
         },
         GroupedShortcut {
             action_id: "add_to_collection",
             action_name: "Add to Collection",
             description: "Add command to collection",
             keys: vec!["c"],
+            category: "Actions",
         },
         GroupedShortcut {
             action_id: "toggle_details",
             action_name: "Toggle Details",
             description: "Show/hide details panel",
             keys: vec!["d"],
+            category: "Actions",
         },
         GroupedShortcut {
             action_id: "focus_search",
             action_name: "Focus Search",
             description: "Move cursor to search field",
             keys: vec!["/"],
+            category: "Actions",
         },
         GroupedShortcut {
             action_id: "switch_pane",
             action_name: "Switch Pane",
             description: "Cycle through panes",
             keys: vec!["Tab"],
+            category: "Panels",
         },
         GroupedShortcut {
             action_id: "pane_down",
             action_name: "Pane Down",
             description: "Focus pane below",
             keys: vec!["Ctrl+j"],
+            category: "Panels",
         },
         GroupedShortcut {
             action_id: "pane_up",
             action_name: "Pane Up",
             description: "Focus pane above",
             keys: vec!["Ctrl+k"],
+            category: "Panels",
         },
         GroupedShortcut {
             action_id: "pane_left",
             action_name: "Pane Left",
             description: "Focus pane on left",
             keys: vec!["Ctrl+h"],
+            category: "Panels",
         },
         GroupedShortcut {
             action_id: "pane_right",
             action_name: "Pane Right",
             description: "Focus pane on right",
             keys: vec!["Ctrl+l"],
+            category: "Panels",
         },
         GroupedShortcut {
             action_id: "view_history",
             action_name: "History View",
             description: "Show all commands",
             keys: vec!["1"],
+            category: "Views",
         },
         GroupedShortcut {
             action_id: "view_favorites",
             action_name: "Favorites View",
             description: "Show favorites only",
             keys: vec!["2"],
+            category: "Views",
         },
         GroupedShortcut {
             action_id: "view_collections",
             action_name: "Collections View",
             description: "Show collections",
             keys: vec!["3"],
+            category: "Views",
         },
         GroupedShortcut {
             action_id: "new_collection",
             action_name: "New Collection",
             description: "Create new collection",
             keys: vec!["n"],
+            category: "Collections",
         },
         GroupedShortcut {
             action_id: "edit_collection",
             action_name: "Edit Collection",
             description: "Rename collection",
             keys: vec!["e"],
+            category: "Collections",
         },
         GroupedShortcut {
             action_id: "delete_collection",
             action_name: "Delete Collection",
             description: "Delete selected collection",
             keys: vec!["d"],
+            category: "Collections",
         },
         GroupedShortcut {
             action_id: "search_collection",
             action_name: "Search to Add",
             description: "Search commands to add",
             keys: vec!["a"],
+            category: "Collections",
         },
         GroupedShortcut {
             action_id: "remove_from_collection",
             action_name: "Remove from Collection",
             description: "Remove command from collection",
             keys: vec!["r"],
+            category: "Collections",
         },
     ]
 }
@@ -371,15 +397,19 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             return Action::CloseHelp;
         }
         (KeyCode::Up, _) => {
-            state.help_selected_index = state.help_selected_index.saturating_sub(1);
+            if state.help_selected_index > 0 {
+                state.help_selected_index -= 1;
+            }
             state
                 .help_list_state
                 .select(Some(state.help_selected_index));
             return Action::None;
         }
         (KeyCode::Down, _) => {
-            let max = state.help_filtered_shortcuts.len().saturating_sub(1);
-            state.help_selected_index = (state.help_selected_index + 1).min(max);
+            let max = state.help_filtered_shortcuts.len() - 1;
+            if state.help_selected_index < max {
+                state.help_selected_index += 1;
+            }
             state
                 .help_list_state
                 .select(Some(state.help_selected_index));
