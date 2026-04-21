@@ -268,7 +268,7 @@ mod tests {
         let input = vec![cmd1, cmd2];
         let result = deduplicate(input);
         assert_eq!(result.len(), 1);
-        assert!(result[0].tags.len() >= 1);
+        assert!(!result[0].tags.is_empty());
         assert_eq!(result[0].text, "LS");
     }
 

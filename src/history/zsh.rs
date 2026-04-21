@@ -24,6 +24,30 @@ pub fn read_history(path: &Path) -> Vec<HistoryEntry> {
     entries
 }
 
+fn parse_zsh_line(line: &str) -> Option<HistoryEntry> {
+    if !line.starts_with(':') {
+        return Some(HistoryEntry {
+            command: line.to_string(),
+            timestamp: None,
+        });
+    }
+
+    let parts: Vec<&str> = line.splitn(2, ';').collect();
+    if parts.len() != 2 {
+        return Some(HistoryEntry {
+            command: line.to_string(),
+            timestamp: None,
+        });
+    }
+
+    let header = parts[0];
+    let command = parts[1].to_string();
+
+    let timestamp = header.split(':').nth(1).and_then(|t| t.parse::<i64>().ok());
+
+    Some(HistoryEntry { command, timestamp })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,28 +131,4 @@ mod tests {
         let entries = read_history(std::path::Path::new("/nonexistent/path"));
         assert!(entries.is_empty());
     }
-}
-
-fn parse_zsh_line(line: &str) -> Option<HistoryEntry> {
-    if !line.starts_with(':') {
-        return Some(HistoryEntry {
-            command: line.to_string(),
-            timestamp: None,
-        });
-    }
-
-    let parts: Vec<&str> = line.splitn(2, ';').collect();
-    if parts.len() != 2 {
-        return Some(HistoryEntry {
-            command: line.to_string(),
-            timestamp: None,
-        });
-    }
-
-    let header = parts[0];
-    let command = parts[1].to_string();
-
-    let timestamp = header.split(':').nth(1).and_then(|t| t.parse::<i64>().ok());
-
-    Some(HistoryEntry { command, timestamp })
 }
