@@ -1,7 +1,6 @@
 use super::HistoryEntry;
 use std::path::Path;
 
-// need to test this some day ..
 pub fn read_history(path: &Path) -> Vec<HistoryEntry> {
     let mut entries = Vec::new();
 
@@ -76,4 +75,76 @@ fn parse_fish_yaml_line(line: &str) -> Option<HistoryEntry> {
         command: cmd,
         timestamp,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_fish_line_quoted() {
+        let entry = parse_fish_line("cmd \"git status\"").unwrap();
+        assert_eq!(entry.command, "git status");
+        assert!(entry.timestamp.is_none());
+    }
+
+    #[test]
+    fn test_parse_fish_line_unquoted() {
+        let entry = parse_fish_line("cmd ls -la");
+        assert!(entry.is_some());
+        assert_eq!(entry.unwrap().command, "ls -la");
+    }
+
+    #[test]
+    fn test_parse_fish_line_empty_after_strip() {
+        let entry = parse_fish_line("cmd \"\"");
+        assert!(entry.is_none());
+    }
+
+    #[test]
+    fn test_parse_fish_line_no_prefix() {
+        let entry = parse_fish_line("ls -la");
+        assert!(entry.is_none());
+    }
+
+    #[test]
+    fn test_parse_fish_yaml_line() {
+        let entry = parse_fish_yaml_line("cmd \"docker ps\"\nwhen 1700000000").unwrap();
+        assert_eq!(entry.command, "docker ps");
+        assert_eq!(entry.timestamp, Some(1700000000));
+    }
+
+    #[test]
+    fn test_parse_fish_yaml_multiline() {
+        let yaml = "cmd \"echo hello\"\nwhen 1700000001\ncmd \"echo world\"\nwhen 1700000002";
+        let entry = parse_fish_yaml_line(yaml).unwrap();
+        assert_eq!(entry.command, "echo world");
+        assert_eq!(entry.timestamp, Some(1700000002));
+    }
+
+    #[test]
+    fn test_parse_fish_yaml_missing_cmd() {
+        let entry = parse_fish_yaml_line("when 1700000000");
+        assert!(entry.is_none());
+    }
+
+    #[test]
+    fn test_parse_fish_yaml_empty() {
+        let entry = parse_fish_yaml_line("");
+        assert!(entry.is_none());
+    }
+
+    #[test]
+    fn test_parse_fish_yaml_without_quotes() {
+        let entry = parse_fish_yaml_line("cmd docker ps\nwhen 1700000000");
+        assert!(entry.is_none());
+    }
+
+    #[test]
+    fn test_parse_fish_yaml_whitespace_handling() {
+        let yaml = "  cmd \"echo test\"  \n    when 1700000000  ";
+        let entry = parse_fish_yaml_line(yaml).unwrap();
+        assert_eq!(entry.command, "echo test");
+        assert_eq!(entry.timestamp, Some(1700000000));
+    }
 }
