@@ -169,3 +169,147 @@ pub fn detect_shell() -> &'static str {
         })
         .unwrap_or("bash")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{deduplicate, hash_command, normalize};
+    use crate::app::Command as AppCommand;
+
+    fn make_cmd(text: &str, use_count: i32, tags: Vec<String>, favorite: bool) -> AppCommand {
+        AppCommand {
+            id: hash_command(text),
+            text: text.to_string(),
+            tags,
+            collection_ids: vec![],
+            favorite,
+            _context: vec![],
+            use_count,
+            last_used: None,
+        }
+    }
+
+    #[test]
+    fn test_normalize_trims_and_lowercases() {
+        assert_eq!(normalize("  LS  "), "ls");
+        assert_eq!(normalize("Git Status"), "git status");
+        assert_eq!(normalize("\t\techo\n"), "echo");
+    }
+
+    #[test]
+    fn test_normalize_case_insensitive() {
+        assert_eq!(normalize("GIT"), normalize("git"));
+        assert_eq!(normalize("Git"), normalize("GIT"));
+    }
+
+    #[test]
+    fn test_hash_command_deterministic() {
+        let hash1 = hash_command("ls");
+        let hash2 = hash_command("ls");
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_hash_command_different_inputs() {
+        let hash1 = hash_command("ls");
+        let hash2 = hash_command("ls -la");
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_hash_command_sha1_format() {
+        let hash = hash_command("test");
+        assert_eq!(hash.len(), 40);
+        assert!(hash.chars().all(|c: char| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_deduplicate_empty() {
+        let input: Vec<AppCommand> = vec![];
+        let result = deduplicate(input);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_deduplicate_single() {
+        let cmd = make_cmd("ls", 1, vec![], false);
+        let input = vec![cmd];
+        let result = deduplicate(input);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_deduplicate_merges_use_count() {
+        let cmd1 = make_cmd("ls", 5, vec![], false);
+        let cmd2 = make_cmd("LS", 3, vec![], false);
+        let input = vec![cmd1, cmd2];
+        let result = deduplicate(input);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].use_count >= 3);
+        assert_eq!(result[0].text, "LS");
+    }
+
+    #[test]
+    fn test_deduplicate_preserves_order() {
+        let cmd1 = make_cmd("ls", 1, vec![], false);
+        let cmd2 = make_cmd("pwd", 2, vec![], false);
+        let cmd3 = make_cmd("git", 3, vec![], false);
+        let input = vec![cmd1, cmd2, cmd3];
+        let result = deduplicate(input);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].text, "ls");
+        assert_eq!(result[1].text, "pwd");
+        assert_eq!(result[2].text, "git");
+    }
+
+    #[test]
+    fn test_deduplicate_merges_tags() {
+        let cmd1 = make_cmd("ls", 1, vec!["bash".to_string()], false);
+        let cmd2 = make_cmd("LS", 1, vec!["linux".to_string()], false);
+        let input = vec![cmd1, cmd2];
+        let result = deduplicate(input);
+        assert_eq!(result.len(), 1);
+        assert!(!result[0].tags.is_empty());
+        assert_eq!(result[0].text, "LS");
+    }
+
+    #[test]
+    fn test_deduplicate_takes_favorite() {
+        let cmd1 = make_cmd("ls", 1, vec![], false);
+        let cmd2 = make_cmd("LS", 1, vec![], true);
+        let input = vec![cmd1, cmd2];
+        let result = deduplicate(input);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].favorite);
+    }
+
+    #[test]
+    fn test_deduplicate_takes_later_last_used() {
+        let mut cmd1 = make_cmd("ls", 1, vec![], false);
+        cmd1.last_used = Some(100);
+        let mut cmd2 = make_cmd("LS", 1, vec![], false);
+        cmd2.last_used = Some(200);
+        let input = vec![cmd1, cmd2];
+        let result = deduplicate(input);
+        assert_eq!(result[0].last_used, Some(200));
+    }
+
+    #[test]
+    fn test_deduplicate_no_false_positives() {
+        let cmd1 = make_cmd("ls", 1, vec![], false);
+        let cmd2 = make_cmd("ls -la", 1, vec![], false);
+        let input = vec![cmd1, cmd2];
+        let result = deduplicate(input);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_deduplicate_complex_command() {
+        let cmd1 = make_cmd("git commit -m 'fix'", 1, vec!["vcs".to_string()], true);
+        let cmd2 = make_cmd("GIT COMMIT -M 'FIX'", 2, vec!["git".to_string()], false);
+        let input = vec![cmd1, cmd2];
+        let result = deduplicate(input);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].use_count >= 2);
+        assert_eq!(result[0].text, "GIT COMMIT -M 'FIX'");
+    }
+}
