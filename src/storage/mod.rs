@@ -18,7 +18,11 @@ pub fn get_db_path() -> PathBuf {
 pub fn init_db() -> rusqlite::Result<Connection> {
     let db_path = get_db_path();
     let conn = Connection::open(&db_path)?;
-    // maybe ORM in future?
+    init_db_with_conn(&conn)?;
+    Ok(conn)
+}
+
+pub fn init_db_with_conn(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS commands (
@@ -58,8 +62,7 @@ pub fn init_db() -> rusqlite::Result<Connection> {
         CREATE INDEX IF NOT EXISTS idx_command_collections_collection ON command_collections(collection_id);
         ",
     )?;
-
-    Ok(conn)
+    Ok(())
 }
 
 #[derive(Debug, Clone)]

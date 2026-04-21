@@ -140,3 +140,98 @@ pub fn hash_command(text: &str) -> String {
     hasher.update(text.as_bytes());
     format!("{:x}", hasher.finalize())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(test)]
+    fn test_conn() -> Connection {
+        use crate::storage::init_db_with_conn;
+        let conn = Connection::open_in_memory().unwrap();
+        init_db_with_conn(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_create_collection() {
+        let conn = test_conn();
+        let id = create_collection(&conn, "work").unwrap();
+        assert!(!id.is_empty());
+    }
+
+    #[test]
+    fn test_get_all_collections() {
+        let conn = test_conn();
+        create_collection(&conn, "work").unwrap();
+        create_collection(&conn, "personal").unwrap();
+
+        let all = get_all_collections(&conn).unwrap();
+        assert_eq!(all.len(), 2);
+        assert!(all.iter().any(|c| c.name == "work"));
+        assert!(all.iter().any(|c| c.name == "personal"));
+    }
+
+    #[test]
+    fn test_rename_collection() {
+        let conn = test_conn();
+        let id = create_collection(&conn, "old").unwrap();
+        rename_collection(&conn, &id, "new").unwrap();
+
+        let all = get_all_collections(&conn).unwrap();
+        assert!(all.iter().any(|c| c.name == "new"));
+        assert!(!all.iter().any(|c| c.name == "old"));
+    }
+
+    #[test]
+    fn test_delete_collection() {
+        let mut conn = test_conn();
+        let id = create_collection(&conn, "temp").unwrap();
+        delete_collection(&mut conn, &id).unwrap();
+
+        let all = get_all_collections(&conn).unwrap();
+        assert!(all.is_empty());
+    }
+
+    #[test]
+    fn test_add_command_to_collection() {
+        let conn = test_conn();
+        let col_id = create_collection(&conn, "work").unwrap();
+        add_command_to_collection(&conn, "cargo build", &col_id).unwrap();
+
+        assert!(command_in_collection(&conn, "cargo build", &col_id));
+    }
+
+    #[test]
+    fn test_remove_command_from_collection() {
+        let conn = test_conn();
+        let col_id = create_collection(&conn, "work").unwrap();
+        add_command_to_collection(&conn, "cargo build", &col_id).unwrap();
+        remove_command_from_collection(&conn, "cargo build", &col_id).unwrap();
+
+        assert!(!command_in_collection(&conn, "cargo build", &col_id));
+    }
+
+    #[test]
+    fn test_get_command_ids_in_collection() {
+        let conn = test_conn();
+        let col_id = create_collection(&conn, "work").unwrap();
+        add_command_to_collection(&conn, "cmd1", &col_id).unwrap();
+        add_command_to_collection(&conn, "cmd2", &col_id).unwrap();
+
+        let ids = get_command_ids_in_collection(&conn, &col_id).unwrap();
+        assert_eq!(ids.len(), 2);
+    }
+
+    #[test]
+    fn test_get_collections_for_command() {
+        let conn = test_conn();
+        let col1 = create_collection(&conn, "work").unwrap();
+        let col2 = create_collection(&conn, "personal").unwrap();
+        add_command_to_collection(&conn, "ls", &col1).unwrap();
+        add_command_to_collection(&conn, "ls", &col2).unwrap();
+
+        let cols = get_collections_for_command(&conn, "ls").unwrap();
+        assert_eq!(cols.len(), 2);
+    }
+}
