@@ -51,3 +51,108 @@ pub fn increment_use_count(conn: &Connection, text: &str) -> rusqlite::Result<()
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(test)]
+    fn test_conn() -> Connection {
+        use crate::storage::init_db_with_conn;
+        let conn = Connection::open_in_memory().unwrap();
+        init_db_with_conn(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_hash_command_deterministic() {
+        let h1 = hash_command("ls -la");
+        let h2 = hash_command("ls -la");
+        assert_eq!(h1, h2);
+        assert_eq!(h1.len(), 40);
+    }
+
+    #[test]
+    fn test_hash_command_different_inputs() {
+        let h1 = hash_command("ls -la");
+        let h2 = hash_command("ls -la ");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_ensure_commands_exist() {
+        let mut conn = test_conn();
+        let cmds: Vec<(&str, String)> = vec![
+            ("echo hello", "abc123".to_string()),
+            ("ls", "def456".to_string()),
+        ];
+        ensure_commands_exist(&mut conn, &cmds).unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM commands", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_update_favorite_toggle_on() {
+        let conn = test_conn();
+        update_favorite(&conn, "test cmd", true).unwrap();
+
+        let favorite: i32 = conn
+            .query_row(
+                "SELECT favorite FROM commands WHERE id = ?",
+                [hash_command("test cmd")],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(favorite, 1);
+    }
+
+    #[test]
+    fn test_update_favorite_toggle_off() {
+        let conn = test_conn();
+        update_favorite(&conn, "test cmd", true).unwrap();
+        update_favorite(&conn, "test cmd", false).unwrap();
+
+        let favorite: i32 = conn
+            .query_row(
+                "SELECT favorite FROM commands WHERE id = ?",
+                [hash_command("test cmd")],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(favorite, 0);
+    }
+
+    #[test]
+    fn test_increment_use_count() {
+        let conn = test_conn();
+        increment_use_count(&conn, "test cmd").unwrap();
+        increment_use_count(&conn, "test cmd").unwrap();
+
+        let count: i32 = conn
+            .query_row(
+                "SELECT use_count FROM commands WHERE id = ?",
+                [hash_command("test cmd")],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_increment_creates_command() {
+        let conn = test_conn();
+        increment_use_count(&conn, "new cmd").unwrap();
+
+        let text: String = conn
+            .query_row(
+                "SELECT text FROM commands WHERE id = ?",
+                [hash_command("new cmd")],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(text, "new cmd");
+    }
+}

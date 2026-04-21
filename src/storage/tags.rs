@@ -68,3 +68,119 @@ pub fn set_tags_for_command(
     tx.commit()?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(test)]
+    fn test_conn() -> Connection {
+        use crate::storage::init_db_with_conn;
+        let conn = Connection::open_in_memory().unwrap();
+        init_db_with_conn(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_add_tag() {
+        let conn = test_conn();
+        let id = add_tag(&conn, "rust").unwrap();
+        assert!(id > 0);
+    }
+
+    #[test]
+    fn test_add_tag_duplicate_returns_same_id() {
+        let conn = test_conn();
+        let id1 = add_tag(&conn, "rust").unwrap();
+        let id2 = add_tag(&conn, "rust").unwrap();
+        assert_eq!(id1, id2);
+    }
+
+    #[test]
+    fn test_set_tags_for_command_adds_tags() {
+        let mut conn = test_conn();
+        set_tags_for_command(
+            &mut conn,
+            "cargo run",
+            &["rust".to_string(), "dev".to_string()],
+        )
+        .unwrap();
+
+        let tags: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT t.name FROM tags t 
+                     JOIN command_tags ct ON t.id = ct.tag_id 
+                     JOIN commands c ON ct.command_id = c.id 
+                     WHERE c.text = ?",
+                )
+                .unwrap();
+            stmt.query_map(["cargo run"], |row| row.get(0))
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect()
+        };
+
+        assert_eq!(tags.len(), 2);
+        assert!(tags.contains(&"rust".to_string()));
+    }
+
+    #[test]
+    fn test_set_tags_for_command_replaces_tags() {
+        let mut conn = test_conn();
+        set_tags_for_command(&mut conn, "cargo run", &["rust".to_string()]).unwrap();
+        set_tags_for_command(
+            &mut conn,
+            "cargo run",
+            &["rust".to_string(), "db".to_string()],
+        )
+        .unwrap();
+
+        let tags: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT t.name FROM tags t 
+                     JOIN command_tags ct ON t.id = ct.tag_id 
+                     JOIN commands c ON ct.command_id = c.id 
+                     WHERE c.text = ?",
+                )
+                .unwrap();
+            stmt.query_map(["cargo run"], |row| row.get(0))
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect()
+        };
+
+        assert_eq!(tags.len(), 2);
+    }
+
+    #[test]
+    fn test_set_tags_for_command_removes_tags() {
+        let mut conn = test_conn();
+        set_tags_for_command(
+            &mut conn,
+            "cargo run",
+            &["rust".to_string(), "db".to_string()],
+        )
+        .unwrap();
+        set_tags_for_command(&mut conn, "cargo run", &["rust".to_string()]).unwrap();
+
+        let tags: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT t.name FROM tags t 
+                     JOIN command_tags ct ON t.id = ct.tag_id 
+                     JOIN commands c ON ct.command_id = c.id 
+                     WHERE c.text = ?",
+                )
+                .unwrap();
+            stmt.query_map(["cargo run"], |row| row.get(0))
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect()
+        };
+
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0], "rust");
+    }
+}
