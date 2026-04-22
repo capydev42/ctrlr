@@ -117,8 +117,12 @@ pub fn hydrate_commands(conn: &mut rusqlite::Connection, commands: &mut [crate::
     for cmd in commands {
         if let Some(meta) = load_metadata(conn, &cmd.text) {
             cmd.favorite = meta.favorite;
-            cmd.use_count = meta.use_count;
-            cmd.last_used = meta.last_used;
+            if meta.use_count > cmd.use_count {
+                cmd.use_count = meta.use_count;
+            }
+            if meta.last_used > cmd.last_used {
+                cmd.last_used = meta.last_used;
+            }
         }
 
         let tags = load_tags(conn, &cmd.text);
