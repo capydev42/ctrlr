@@ -40,6 +40,7 @@ fn parse_fish_line(line: &str) -> Option<HistoryEntry> {
             return Some(HistoryEntry {
                 command: cmd,
                 timestamp: None,
+                use_count: 1,
             });
         }
     }
@@ -74,6 +75,7 @@ fn parse_fish_yaml_line(line: &str) -> Option<HistoryEntry> {
     command.map(|cmd| HistoryEntry {
         command: cmd,
         timestamp,
+        use_count: 1,
     })
 }
 
@@ -86,6 +88,7 @@ mod tests {
         let entry = parse_fish_line("cmd \"git status\"").unwrap();
         assert_eq!(entry.command, "git status");
         assert!(entry.timestamp.is_none());
+        assert_eq!(entry.use_count, 1);
     }
 
     #[test]
@@ -112,6 +115,7 @@ mod tests {
         let entry = parse_fish_yaml_line("cmd \"docker ps\"\nwhen 1700000000").unwrap();
         assert_eq!(entry.command, "docker ps");
         assert_eq!(entry.timestamp, Some(1700000000));
+        assert_eq!(entry.use_count, 1);
     }
 
     #[test]
@@ -120,6 +124,7 @@ mod tests {
         let entry = parse_fish_yaml_line(yaml).unwrap();
         assert_eq!(entry.command, "echo world");
         assert_eq!(entry.timestamp, Some(1700000002));
+        assert_eq!(entry.use_count, 1);
     }
 
     #[test]
@@ -146,5 +151,6 @@ mod tests {
         let entry = parse_fish_yaml_line(yaml).unwrap();
         assert_eq!(entry.command, "echo test");
         assert_eq!(entry.timestamp, Some(1700000000));
+        assert_eq!(entry.use_count, 1);
     }
 }

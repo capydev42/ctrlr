@@ -1,20 +1,30 @@
 use super::HistoryEntry;
+use std::collections::HashMap;
 use std::path::Path;
 
 pub fn read_history(path: &Path) -> Vec<HistoryEntry> {
-    let mut entries = Vec::new();
+    let mut entries: Vec<HistoryEntry> = Vec::new();
+    let mut seen: HashMap<String, usize> = HashMap::new();
 
-    if !path.exists() {
-        return entries;
-    }
-
-    if let Ok(content) = std::fs::read_to_string(path) {
+    if path.exists()
+        && let Ok(content) = std::fs::read_to_string(path)
+    {
         for line in content.lines() {
             let trimmed = line.trim();
-            if !trimmed.is_empty() {
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let key = trimmed.to_lowercase();
+            if let Some(idx) = seen.get(&key) {
+                entries[*idx].use_count += 1;
+            } else {
+                let idx = entries.len();
+                seen.insert(key, idx);
                 entries.push(HistoryEntry {
                     command: trimmed.to_string(),
                     timestamp: None,
+                    use_count: 1,
                 });
             }
         }
@@ -49,6 +59,32 @@ mod tests {
         let entries = read_history(file.path());
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].command, "git status");
+        assert_eq!(entries[0].use_count, 1);
+    }
+
+    #[test]
+    fn test_read_history_counts_duplicates() {
+        let content = "ls -la\nls\nls -la\npwd";
+        let file = create_temp_file(content);
+        let entries = read_history(file.path());
+        assert_eq!(entries.len(), 3);
+
+        let ls_entry = entries.iter().find(|e| e.command == "ls").unwrap();
+        assert_eq!(ls_entry.use_count, 1);
+
+        let lsla_entry = entries.iter().find(|e| e.command == "ls -la").unwrap();
+        assert_eq!(lsla_entry.use_count, 2);
+    }
+
+    #[test]
+    fn test_read_history_preserves_newest_first() {
+        let content = "echo hello\necho world\necho test";
+        let file = create_temp_file(content);
+        let entries = read_history(file.path());
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].command, "echo hello");
+        assert_eq!(entries[1].command, "echo world");
+        assert_eq!(entries[2].command, "echo test");
     }
 
     #[test]

@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 pub struct HistoryEntry {
     pub command: String,
     pub timestamp: Option<i64>,
+    pub use_count: i32,
 }
 
 pub fn flush_history() {
@@ -65,8 +66,8 @@ pub fn load_history() -> Vec<Command> {
                     collection_ids: vec![],
                     favorite: false,
                     _context: vec!["shell:bash".to_string()],
-                    use_count: 0,
-                    last_used: None,
+                    use_count: entry.use_count,
+                    last_used: entry.timestamp,
                 });
             }
         }
@@ -81,8 +82,8 @@ pub fn load_history() -> Vec<Command> {
                     collection_ids: vec![],
                     favorite: false,
                     _context: vec!["shell:zsh".to_string()],
-                    use_count: 0,
-                    last_used: None,
+                    use_count: entry.use_count,
+                    last_used: entry.timestamp,
                 });
             }
         }
@@ -97,8 +98,8 @@ pub fn load_history() -> Vec<Command> {
                     collection_ids: vec![],
                     favorite: false,
                     _context: vec!["shell:fish".to_string()],
-                    use_count: 0,
-                    last_used: None,
+                    use_count: entry.use_count,
+                    last_used: entry.timestamp,
                 });
             }
         }
@@ -259,6 +260,20 @@ mod tests {
         assert_eq!(result[0].text, "ls");
         assert_eq!(result[1].text, "pwd");
         assert_eq!(result[2].text, "git");
+    }
+
+    #[test]
+    fn test_deduplicate_newest_first_with_duplicates() {
+        let cmd1 = make_cmd("ifconfig", 2, vec![], false);
+        let cmd2 = make_cmd("cargo clippy", 1, vec![], false);
+        let cmd3 = make_cmd("cargo fmt", 1, vec![], false);
+        let cmd4 = make_cmd("ifconfig", 1, vec![], false);
+        let input = vec![cmd1, cmd2, cmd3, cmd4];
+        let result = deduplicate(input);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].text, "cargo clippy");
+        assert_eq!(result[1].text, "cargo fmt");
+        assert_eq!(result[2].text, "ifconfig");
     }
 
     #[test]

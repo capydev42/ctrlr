@@ -29,6 +29,7 @@ fn parse_zsh_line(line: &str) -> Option<HistoryEntry> {
         return Some(HistoryEntry {
             command: line.to_string(),
             timestamp: None,
+            use_count: 1,
         });
     }
 
@@ -37,6 +38,7 @@ fn parse_zsh_line(line: &str) -> Option<HistoryEntry> {
         return Some(HistoryEntry {
             command: line.to_string(),
             timestamp: None,
+            use_count: 1,
         });
     }
 
@@ -45,7 +47,11 @@ fn parse_zsh_line(line: &str) -> Option<HistoryEntry> {
 
     let timestamp = header.split(':').nth(1).and_then(|t| t.parse::<i64>().ok());
 
-    Some(HistoryEntry { command, timestamp })
+    Some(HistoryEntry {
+        command,
+        timestamp,
+        use_count: 1,
+    })
 }
 
 #[cfg(test)]
@@ -59,6 +65,7 @@ mod tests {
         let entry = parse_zsh_line("ls -la").unwrap();
         assert_eq!(entry.command, "ls -la");
         assert!(entry.timestamp.is_none());
+        assert_eq!(entry.use_count, 1);
     }
 
     #[test]
@@ -66,6 +73,7 @@ mod tests {
         let entry = parse_zsh_line(":1700000000;git commit -m 'fix'").unwrap();
         assert_eq!(entry.command, "git commit -m 'fix'");
         assert_eq!(entry.timestamp, Some(1700000000));
+        assert_eq!(entry.use_count, 1);
     }
 
     #[test]
@@ -73,6 +81,7 @@ mod tests {
         let entry = parse_zsh_line(":abc;ls").unwrap();
         assert_eq!(entry.command, "ls");
         assert!(entry.timestamp.is_none());
+        assert_eq!(entry.use_count, 1);
     }
 
     #[test]
@@ -80,6 +89,7 @@ mod tests {
         let entry = parse_zsh_line(":1700000000").unwrap();
         assert_eq!(entry.command, ":1700000000");
         assert!(entry.timestamp.is_none());
+        assert_eq!(entry.use_count, 1);
     }
 
     #[test]
@@ -87,6 +97,7 @@ mod tests {
         let entry = parse_zsh_line(":1700000000;").unwrap();
         assert_eq!(entry.command, "");
         assert_eq!(entry.timestamp, Some(1700000000));
+        assert_eq!(entry.use_count, 1);
     }
 
     #[test]
@@ -94,6 +105,7 @@ mod tests {
         let entry = parse_zsh_line(":1700000000;;ls").unwrap();
         assert_eq!(entry.command, ";ls");
         assert_eq!(entry.timestamp, Some(1700000000));
+        assert_eq!(entry.use_count, 1);
     }
 
     #[test]
@@ -101,6 +113,7 @@ mod tests {
         let entry = parse_zsh_line(":1700000000;echo $HOME/.config").unwrap();
         assert_eq!(entry.command, "echo $HOME/.config");
         assert_eq!(entry.timestamp, Some(1700000000));
+        assert_eq!(entry.use_count, 1);
     }
 
     #[test]
