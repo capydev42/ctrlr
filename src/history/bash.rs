@@ -6,27 +6,27 @@ pub fn read_history(path: &Path) -> Vec<HistoryEntry> {
     let mut entries: Vec<HistoryEntry> = Vec::new();
     let mut seen: HashMap<String, usize> = HashMap::new();
 
-    if path.exists()
-        && let Ok(content) = std::fs::read_to_string(path)
-    {
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return entries;
+    };
 
-            let key = trimmed.to_lowercase();
-            if let Some(idx) = seen.get(&key) {
-                entries[*idx].use_count += 1;
-            } else {
-                let idx = entries.len();
-                seen.insert(key, idx);
-                entries.push(HistoryEntry {
-                    command: trimmed.to_string(),
-                    timestamp: None,
-                    use_count: 1,
-                });
-            }
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let key = trimmed.to_lowercase();
+        if let Some(idx) = seen.get(&key) {
+            entries[*idx].use_count += 1;
+        } else {
+            let idx = entries.len();
+            seen.insert(key, idx);
+            entries.push(HistoryEntry {
+                command: trimmed.to_string(),
+                timestamp: None,
+                use_count: 1,
+            });
         }
     }
 
