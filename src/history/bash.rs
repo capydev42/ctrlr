@@ -10,7 +10,7 @@ pub fn read_history(path: &Path) -> Vec<HistoryEntry> {
         return entries;
     };
 
-    for line in content.lines() {
+    for line in content.lines().rev() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -82,9 +82,9 @@ mod tests {
         let file = create_temp_file(content);
         let entries = read_history(file.path());
         assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0].command, "echo hello");
+        assert_eq!(entries[0].command, "echo test"); // newest first (reversed)
         assert_eq!(entries[1].command, "echo world");
-        assert_eq!(entries[2].command, "echo test");
+        assert_eq!(entries[2].command, "echo hello");
     }
 
     #[test]
@@ -93,9 +93,9 @@ mod tests {
         let file = create_temp_file(content);
         let entries = read_history(file.path());
         assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0].command, "ls -la");
+        assert_eq!(entries[0].command, "git log"); // newest first (reversed)
         assert_eq!(entries[1].command, "pwd");
-        assert_eq!(entries[2].command, "git log");
+        assert_eq!(entries[2].command, "ls -la");
     }
 
     #[test]
@@ -104,8 +104,8 @@ mod tests {
         let file = create_temp_file(content);
         let entries = read_history(file.path());
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].command, "ls");
-        assert_eq!(entries[1].command, "pwd");
+        assert_eq!(entries[0].command, "pwd"); // newest first (reversed)
+        assert_eq!(entries[1].command, "ls");
     }
 
     #[test]

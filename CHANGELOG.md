@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- Unit tests for shell history parsers (bash, zsh, fish)
+- Unit tests for storage modules (commands, tags, collections)
+
+### Fixed
+- History now displays newest commands at top (chronological order)
+- Executed commands move to top of list for better UX
+- use_count populated from shell history instead of starting at 0
+
+---
+
 ## [0.2.0] - 2026-04-20
 
 ### Added
