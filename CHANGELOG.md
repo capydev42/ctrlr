@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- History now displays newest commands at top (chronological order)
+- Executed commands move to top of list for better UX
+
+---
+
 ## [0.2.0] - 2026-04-20
 
 ### Added

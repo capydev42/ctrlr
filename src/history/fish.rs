@@ -9,7 +9,7 @@ pub fn read_history(path: &Path) -> Vec<HistoryEntry> {
     }
 
     if let Ok(content) = std::fs::read_to_string(path) {
-        for line in content.lines() {
+        for line in content.lines().rev() {
             let line = line.trim();
             if line.is_empty() {
                 continue;

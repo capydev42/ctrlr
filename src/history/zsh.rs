@@ -9,7 +9,7 @@ pub fn read_history(path: &Path) -> Vec<HistoryEntry> {
     }
 
     if let Ok(content) = std::fs::read_to_string(path) {
-        for line in content.lines() {
+        for line in content.lines().rev() {
             let line = line.trim();
             if line.is_empty() {
                 continue;
@@ -133,10 +133,10 @@ mod tests {
         fs::write(&path, content).unwrap();
         let entries = read_history(&path);
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].command, "ls");
-        assert_eq!(entries[0].timestamp, Some(1700000000));
-        assert_eq!(entries[1].command, "pwd");
-        assert_eq!(entries[1].timestamp, Some(1700000001));
+        assert_eq!(entries[0].command, "pwd"); // newest first (reversed)
+        assert_eq!(entries[0].timestamp, Some(1700000001));
+        assert_eq!(entries[1].command, "ls");
+        assert_eq!(entries[1].timestamp, Some(1700000000));
     }
 
     #[test]

@@ -106,7 +106,6 @@ impl AppState {
 
         let mut commands = crate::history::load_history();
         commands = crate::history::deduplicate(commands);
-        commands.reverse();
 
         if let Some(ref mut conn) = db {
             let cmd_refs: Vec<(&str, String)> = commands
@@ -540,8 +539,9 @@ impl AppState {
 
     pub fn mark_executed(&mut self) {
         let selected_id = self.filtered.get(self.selected_index).map(|c| c.id.clone());
-        let cmd = selected_id.and_then(|id| self.commands.iter_mut().find(|c| c.id == id));
-        if let Some(cmd) = cmd {
+        let cmd_idx = selected_id.and_then(|id| self.commands.iter().position(|c| c.id == id));
+        if let Some(idx) = cmd_idx {
+            let cmd = &mut self.commands[idx];
             cmd.use_count += 1;
             cmd.last_used = Some(
                 std::time::SystemTime::now()
@@ -556,11 +556,21 @@ impl AppState {
                     eprintln!("DB error updating use count: {}", e);
                 }
             }
+
+            if idx > 0 {
+                let cmd = self.commands.remove(idx);
+                self.commands.insert(0, cmd);
+            }
+            self.filter_commands();
+            self.selected_index = 0;
+            self.list_state.select(Some(0));
         }
     }
 
     pub fn mark_executed_for_text(&mut self, text: &str) {
-        if let Some(cmd) = self.commands.iter_mut().find(|c| c.text == text) {
+        let cmd_idx = self.commands.iter().position(|c| c.text == text);
+        if let Some(idx) = cmd_idx {
+            let cmd = &mut self.commands[idx];
             cmd.use_count += 1;
             cmd.last_used = Some(
                 std::time::SystemTime::now()
@@ -575,6 +585,14 @@ impl AppState {
                     eprintln!("DB error updating use count: {}", e);
                 }
             }
+
+            if idx > 0 {
+                let cmd = self.commands.remove(idx);
+                self.commands.insert(0, cmd);
+            }
+            self.filter_commands();
+            self.selected_index = 0;
+            self.list_state.select(Some(0));
         }
     }
 

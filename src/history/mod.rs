@@ -110,13 +110,13 @@ pub fn load_history() -> Vec<Command> {
 }
 
 pub fn deduplicate(commands: Vec<Command>) -> Vec<Command> {
-    let mut seen: HashMap<String, Command> = HashMap::new();
-    let mut result: Vec<Command> = Vec::new();
+    let mut first_occurrence: HashMap<String, usize> = HashMap::new();
+    let mut merged: HashMap<String, Command> = HashMap::new();
 
-    for cmd in commands.into_iter().rev() {
+    for (i, cmd) in commands.into_iter().enumerate() {
         let key = normalize(&cmd.text);
 
-        if let Some(existing) = seen.get_mut(&key) {
+        if let Some(existing) = merged.get_mut(&key) {
             existing.use_count += cmd.use_count;
 
             let mut tags_set: HashSet<String> = existing.tags.drain(..).collect();
@@ -136,13 +136,18 @@ pub fn deduplicate(commands: Vec<Command>) -> Vec<Command> {
                 }
             }
         } else {
-            seen.insert(key.clone(), cmd.clone());
-            result.push(cmd);
+            merged.insert(key.clone(), cmd.clone());
+            first_occurrence.insert(key, i);
         }
     }
 
-    result.reverse();
-    result
+    let mut merged: Vec<(usize, Command)> = merged
+        .into_iter()
+        .map(|(k, v)| (first_occurrence[&k], v))
+        .collect();
+    merged.sort_by_key(|(i, _)| *i);
+
+    merged.into_iter().map(|(_, c)| c).collect()
 }
 
 fn normalize(s: &str) -> String {
@@ -245,8 +250,8 @@ mod tests {
         let input = vec![cmd1, cmd2];
         let result = deduplicate(input);
         assert_eq!(result.len(), 1);
-        assert!(result[0].use_count >= 3);
-        assert_eq!(result[0].text, "LS");
+        assert!(result[0].use_count >= 8); // 5 + 3
+        assert_eq!(result[0].text, "ls"); // first occurrence kept
     }
 
     #[test]
@@ -271,9 +276,9 @@ mod tests {
         let input = vec![cmd1, cmd2, cmd3, cmd4];
         let result = deduplicate(input);
         assert_eq!(result.len(), 3);
-        assert_eq!(result[0].text, "cargo clippy");
-        assert_eq!(result[1].text, "cargo fmt");
-        assert_eq!(result[2].text, "ifconfig");
+        assert_eq!(result[0].text, "ifconfig"); // first occurrence
+        assert_eq!(result[1].text, "cargo clippy");
+        assert_eq!(result[2].text, "cargo fmt");
     }
 
     #[test]
@@ -284,7 +289,7 @@ mod tests {
         let result = deduplicate(input);
         assert_eq!(result.len(), 1);
         assert!(!result[0].tags.is_empty());
-        assert_eq!(result[0].text, "LS");
+        assert_eq!(result[0].text, "ls"); // first occurrence kept
     }
 
     #[test]
@@ -294,7 +299,7 @@ mod tests {
         let input = vec![cmd1, cmd2];
         let result = deduplicate(input);
         assert_eq!(result.len(), 1);
-        assert!(result[0].favorite);
+        assert!(result[0].favorite); // should still be true after merge
     }
 
     #[test]
@@ -305,7 +310,7 @@ mod tests {
         cmd2.last_used = Some(200);
         let input = vec![cmd1, cmd2];
         let result = deduplicate(input);
-        assert_eq!(result[0].last_used, Some(200));
+        assert_eq!(result[0].last_used, Some(200)); // takes later value on merge
     }
 
     #[test]
@@ -324,7 +329,7 @@ mod tests {
         let input = vec![cmd1, cmd2];
         let result = deduplicate(input);
         assert_eq!(result.len(), 1);
-        assert!(result[0].use_count >= 2);
-        assert_eq!(result[0].text, "GIT COMMIT -M 'FIX'");
+        assert!(result[0].use_count >= 3); // 1 + 2
+        assert_eq!(result[0].text, "git commit -m 'fix'"); // first occurrence kept
     }
 }
