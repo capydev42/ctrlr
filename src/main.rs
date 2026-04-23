@@ -57,6 +57,7 @@ pub fn run_tui(output_file: Option<String>) -> color_eyre::Result<Option<String>
 
 fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Result<Option<String>> {
     let mut state = AppState::bootstrap();
+    let mut result = Ok(None);
 
     loop {
         if let Some(ts) = state.status_timestamp {
@@ -76,19 +77,29 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
                 && state.input_mode != InputMode::CollectionInput
                 && state.handle_esc()
             {
-                break Ok(None);
+                break;
             }
             match input::handle(&mut state, key) {
-                Action::Execute(cmd) => break Ok(Some(cmd)),
-                Action::Exit => break Ok(None),
+                Action::Execute(cmd) => {
+                    result = Ok(Some(cmd));
+                    break;
+                }
+                Action::Exit => {
+                    break;
+                }
                 Action::CloseHelp => {
                     state.help_open = false;
                     state.help_search_query.clear();
                 }
                 Action::ExecuteHelpShortcut(action_id) => {
                     match help::execute_help_action(&mut state, &action_id) {
-                        Action::Execute(cmd) => break Ok(Some(cmd)),
-                        Action::Exit => break Ok(None),
+                        Action::Execute(cmd) => {
+                            result = Ok(Some(cmd));
+                            break;
+                        }
+                        Action::Exit => {
+                            break;
+                        }
                         _ => {}
                     }
                 }
@@ -96,4 +107,6 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
             }
         }
     }
+
+    result
 }

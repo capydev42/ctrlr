@@ -1,6 +1,7 @@
 use crate::app::{Action, ActivePane, AppState, CollectionInputMode, InputMode, ViewMode};
 use crate::input::help;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::time::Instant;
 
 pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
     match (key.code, key.modifiers) {
@@ -184,6 +185,21 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             (KeyCode::Char('f'), KeyModifiers::NONE) => {
                 state.toggle_favorite();
             }
+            (KeyCode::Char('y'), KeyModifiers::NONE) => {
+                let text = state
+                    .filtered
+                    .get(state.selected_index)
+                    .map(|c| c.text.clone());
+                if let Some(text) = text {
+                    let (success, msg) = crate::app::clipboard::copy_to_clipboard(&text);
+                    if success {
+                        state.status_message = Some("📋 Copied to clipboard".into());
+                    } else if let Some(msg) = msg {
+                        state.status_message = Some(msg);
+                    }
+                    state.status_timestamp = Some(Instant::now());
+                }
+            }
             (KeyCode::Char('d'), KeyModifiers::NONE) => {
                 state.show_details = !state.show_details;
             }
@@ -250,6 +266,21 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 if let Some(cmd) = state.filtered.get(state.selected_index) {
                     let text = cmd.text.clone();
                     state.remove_command_from_collection(&text);
+                }
+            }
+            (KeyCode::Char('y'), KeyModifiers::NONE) => {
+                let text = state
+                    .filtered
+                    .get(state.selected_index)
+                    .map(|c| c.text.clone());
+                if let Some(text) = text {
+                    let (success, msg) = crate::app::clipboard::copy_to_clipboard(&text);
+                    if success {
+                        state.status_message = Some("📋 Copied to clipboard".into());
+                    } else if let Some(msg) = msg {
+                        state.status_message = Some(msg);
+                    }
+                    state.status_timestamp = Some(Instant::now());
                 }
             }
             (KeyCode::Char('j'), KeyModifiers::NONE) => {
