@@ -955,3 +955,5 @@ fn compute_ranking_score(cmd: &Command, fuzzy: i64, now: i64) -> i64 {
 
     fuzzy * 10 + usage + recency + favorite
 }
+
+impl AppState {}

@@ -1,4 +1,5 @@
 pub mod action;
+pub mod clipboard;
 pub mod state;
 
 pub use action::Action;
