@@ -56,7 +56,6 @@ pub fn increment_use_count(conn: &Connection, text: &str) -> rusqlite::Result<()
 mod tests {
     use super::*;
 
-    #[cfg(test)]
     fn test_conn() -> Connection {
         use crate::storage::init_db_with_conn;
         let conn = Connection::open_in_memory().unwrap();
