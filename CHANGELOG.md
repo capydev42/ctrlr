@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Unit tests for shell history parsers (bash, zsh, fish)
 - Unit tests for storage modules (commands, tags, collections)
+- Copy to clipboard with `y` key (History, Favorites, CollectionItems)
+  - Cross-platform support: xclip → wl-copy → arboard fallback
+  - Toast notification "📋 Copied to clipboard"
+  - Error message if clipboard tools unavailable
+
+### Changed
+- Backspace in History/Favorites/Collections switches to Search and removes character
 
 ### Fixed
 - History now displays newest commands at top (chronological order)
