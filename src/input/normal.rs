@@ -160,6 +160,10 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             _ => {}
         },
         ActivePane::History => match (key.code, key.modifiers) {
+            (KeyCode::Backspace, _) => {
+                state.active_pane = ActivePane::Search;
+                state.remove_from_search();
+            }
             (KeyCode::Char('/'), KeyModifiers::NONE) => {
                 state.active_pane = ActivePane::Search;
             }
@@ -186,6 +190,10 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             _ => {}
         },
         ActivePane::CollectionsList => match (key.code, key.modifiers) {
+            (KeyCode::Backspace, _) => {
+                state.active_pane = ActivePane::Search;
+                state.remove_from_search();
+            }
             (KeyCode::Char('/'), KeyModifiers::NONE) => {
                 state.active_pane = ActivePane::Search;
             }
@@ -222,6 +230,10 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             _ => {}
         },
         ActivePane::CollectionItems => match (key.code, key.modifiers) {
+            (KeyCode::Backspace, _) => {
+                state.active_pane = ActivePane::Search;
+                state.remove_from_search();
+            }
             (KeyCode::Char('/'), KeyModifiers::NONE) => {
                 state.active_pane = ActivePane::Search;
             }
