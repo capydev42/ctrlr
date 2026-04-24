@@ -14,6 +14,10 @@ use super::layout::center_rect;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+const TAG_BG: Color = Color::Rgb(60, 65, 75);
+const TAG_FG: Color = Color::Rgb(180, 185, 190);
+const TAG_BG_SELECTED: Color = Color::Rgb(100, 150, 100);
+
 pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
     let tags = state.selected_command_tags();
     let suggestions = if state.tag_cursor_index.is_none() {
@@ -53,14 +57,14 @@ pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
     for (i, tag) in tags.iter().enumerate() {
         if Some(i) == state.tag_cursor_index {
             spans.push(Span::styled(
-                format!("[ {} ]", tag),
-                Style::default().fg(Color::Black).bg(Color::Yellow),
+                format!("[{}]", tag),
+                Style::default().fg(Color::Black).bg(TAG_BG_SELECTED),
             ));
             spans.push(Span::raw(" "));
         } else {
             spans.push(Span::styled(
-                format!(" {} ", tag),
-                Style::default().fg(Color::White).bg(Color::DarkGray),
+                format!("[{}]", tag),
+                Style::default().fg(TAG_FG).bg(TAG_BG),
             ));
             spans.push(Span::raw(" "));
         }

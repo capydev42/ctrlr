@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+- Tag display with chip style `[tag]` and right-alignment
+  - Max 3 tags visible, overflow shown as "+N more"
+  - Consistent colors (dark gray bg, light gray fg)
+  - Command text truncated when needed to make room for tags
+- Favorites use `*` instead of ⭐ emoji for consistency
+
+---
+
 ## [0.3.0] - 2026-04-23
 
 ### Added
