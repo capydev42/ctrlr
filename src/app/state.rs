@@ -610,9 +610,9 @@ impl AppState {
             }
 
             self.status_message = Some(if cmd.favorite {
-                format!("⭐ Favorited: {}", cmd.text)
+                format!("* Favorited: {}", cmd.text)
             } else {
-                format!("⭐ Unfavorited: {}", cmd.text)
+                format!("* Unfavorited: {}", cmd.text)
             });
             self.status_timestamp = Some(Instant::now());
         }

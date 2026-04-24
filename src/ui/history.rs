@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::app::{ActivePane, AppState, ViewMode};
 
-use super::components::highlight_text;
+use super::components::{command_with_right_tags, tag_span};
 
 pub fn section(title: &str) -> Line<'_> {
     Line::from(Span::styled(
@@ -21,36 +21,17 @@ pub fn render_history_list(frame: &mut Frame, state: &mut AppState, area: Rect) 
     let items: Vec<ListItem> = if state.filtered.is_empty() {
         vec![ListItem::new("No results found")]
     } else {
-        state
-            .filtered
-            .iter()
-            .enumerate()
-            .map(|(idx, cmd)| {
-                let tags = cmd
-                    .tags
-                    .iter()
-                    .map(|t| format!("#{}", t))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-
-                let favorite_str = if cmd.favorite { "* " } else { "  " };
-
-                let mut line = Line::from(vec![Span::raw(favorite_str)]);
-
-                if let Some(Some(indices)) = state.matched_indices.get(idx) {
-                    let highlighted = highlight_text(&cmd.text, indices);
-                    line.spans.extend(highlighted.spans);
-                } else {
-                    line.spans.push(Span::raw(&cmd.text));
-                }
-
-                if !tags.is_empty() {
-                    line.spans.push(Span::raw(format!(" {}", tags)));
-                }
-
-                ListItem::new(line)
-            })
-            .collect()
+        let width = area.width.saturating_sub(4);
+        let mut result = std::vec::Vec::new();
+        for (i, c) in state.filtered.iter().enumerate() {
+            let favorite_str = if c.favorite { "* " } else { "  " };
+            let mut line = Line::from(ratatui::text::Span::raw(favorite_str));
+            let idx = state.matched_indices.get(i).and_then(|m| m.as_ref());
+            let cmd_line = command_with_right_tags(&c.text, idx, &c.tags, width);
+            line.spans.extend(cmd_line.spans);
+            result.push(ratatui::widgets::ListItem::new(line));
+        }
+        result
     };
 
     let history_border_color = if state.active_pane == ActivePane::History {
@@ -122,7 +103,7 @@ pub fn render_details(frame: &mut Frame, state: &mut AppState, area: Rect) {
     if !cmd.tags.is_empty() {
         lines.push(section("Tags"));
         for tag in &cmd.tags {
-            lines.push(Line::from(format!("#{}", tag)));
+            lines.push(Line::from(vec![tag_span(tag)]));
         }
         lines.push(Line::from(""));
     }

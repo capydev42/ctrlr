@@ -2,13 +2,13 @@ use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    text::{Line, Span},
+    text::Line,
     widgets::{Block, BorderType, List, ListItem},
 };
 
 use crate::app::{ActivePane, AppState};
 
-use super::components::highlight_text;
+use super::components::command_with_right_tags;
 
 pub fn render_collections_view(frame: &mut Frame, state: &mut AppState, area: Rect) {
     if state.active_pane == ActivePane::CollectionItems && state.show_details {
@@ -95,29 +95,17 @@ pub fn render_collection_commands(frame: &mut Frame, state: &mut AppState, area:
     } else if state.selected_collection().is_some() && state.filtered.is_empty() {
         vec![ListItem::new("No commands match search")]
     } else if state.selected_collection().is_some() {
-        state
-            .filtered
-            .iter()
-            .enumerate()
-            .map(|(idx, cmd)| {
-                let tags = cmd
-                    .tags
-                    .iter()
-                    .map(|t| format!("#{}", t))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                let fav = if cmd.favorite { "⭐" } else { " " };
-                let text = if let Some(Some(indices)) = state.matched_indices.get(idx) {
-                    highlight_text(&cmd.text, indices)
-                } else {
-                    Line::raw(&cmd.text)
-                };
-                let mut line = Line::from(vec![Span::raw(format!("{} ", fav))]);
-                line.spans.extend(text.spans);
-                line.spans.push(Span::raw(format!(" {}", tags)));
-                ListItem::new(line)
-            })
-            .collect()
+        let width = area.width.saturating_sub(4);
+        let mut result = std::vec::Vec::new();
+        for (i, c) in state.filtered.iter().enumerate() {
+            let fav = if c.favorite { "* " } else { "  " };
+            let mut line = Line::from(ratatui::text::Span::raw(fav));
+            let indices = state.matched_indices.get(i).and_then(|m| m.as_ref());
+            let line_with_tags = command_with_right_tags(&c.text, indices, &c.tags, width);
+            line.spans.extend(line_with_tags.spans);
+            result.push(ratatui::widgets::ListItem::new(line));
+        }
+        result
     } else {
         vec![ListItem::new("Select a collection")]
     };

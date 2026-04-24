@@ -9,25 +9,94 @@ use ratatui::{
 
 use crate::app::{ActivePane, ViewMode};
 
-pub fn highlight_text<'a>(text: &'a str, indices: &HashSet<usize>) -> Line<'a> {
-    let chars: Vec<char> = text.chars().collect();
-    let mut spans = Vec::new();
-    let mut in_match = false;
-    for (i, c) in chars.iter().enumerate() {
-        if indices.contains(&i) {
-            spans.push(Span::styled(
-                c.to_string(),
-                Style::new().fg(Color::Yellow).bold(),
-            ));
-            in_match = true;
-        } else if in_match {
-            spans.push(Span::raw(c.to_string()));
-            in_match = false;
+const TAG_BG: Color = Color::Rgb(60, 65, 75);
+const TAG_FG: Color = Color::Rgb(180, 185, 190);
+const MAX_VISIBLE_TAGS: usize = 3;
+
+pub fn tag_span(tag: &str) -> Span<'_> {
+    Span::styled(format!("[{}]", tag), Style::new().fg(TAG_FG).bg(TAG_BG))
+}
+
+pub fn tags_overflow_span(overflow: usize) -> Span<'static> {
+    Span::styled(
+        format!("+{} more", overflow),
+        Style::new().fg(Color::DarkGray).italic(),
+    )
+}
+
+pub fn command_with_right_tags<'a>(
+    cmd_text: &'a str,
+    cmd_indices: Option<&HashSet<usize>>,
+    tags: &'a [String],
+    available_width: u16,
+) -> Line<'a> {
+    let tags_width: usize = tags
+        .iter()
+        .take(MAX_VISIBLE_TAGS)
+        .map(|t| t.len() + 4)
+        .sum::<usize>()
+        + if tags.len() > MAX_VISIBLE_TAGS {
+            format!("+{} more", tags.len() - MAX_VISIBLE_TAGS).len() + 1
         } else {
-            spans.push(Span::raw(c.to_string()));
+            0
+        };
+
+    let cmd_width = available_width as isize - tags_width as isize - 1;
+    let cmd_width = cmd_width.max(5) as u16;
+
+    let mut line = Line::default();
+
+    if let Some(indices) = cmd_indices {
+        let truncated: String = cmd_text.chars().take(cmd_width as usize).collect();
+        let chars: Vec<char> = truncated.chars().collect();
+        let mut char_idx = 0;
+
+        for c in chars {
+            let idx_in_truncated = indices
+                .iter()
+                .any(|&i| i >= char_idx && i < char_idx + c.len_utf8());
+
+            if idx_in_truncated {
+                line.spans.push(Span::styled(
+                    c.to_string(),
+                    Style::new().fg(Color::Yellow).bold(),
+                ));
+            } else {
+                line.spans.push(Span::raw(c.to_string()));
+            }
+            char_idx += c.len_utf8();
+        }
+
+        if cmd_text.chars().count() > cmd_width as usize {
+            line.spans.push(Span::raw("…"));
+        }
+    } else {
+        let truncated: String = cmd_text.chars().take(cmd_width as usize).collect();
+        line.spans.push(Span::raw(truncated));
+        if cmd_text.chars().count() > cmd_width as usize {
+            line.spans.push(Span::raw("…"));
         }
     }
-    Line::from(spans)
+
+    let actual_cmd_len = line.spans.iter().fold(0usize, |acc, s| acc + s.width());
+    let right_padding = (available_width as usize).saturating_sub(tags_width + actual_cmd_len + 1);
+    if right_padding > 0 {
+        for _ in 0..right_padding {
+            line.spans.push(Span::raw(" "));
+        }
+    }
+
+    for tag in tags.iter().take(MAX_VISIBLE_TAGS) {
+        line.spans.push(tag_span(tag));
+        line.spans.push(Span::raw(" "));
+    }
+
+    if tags.len() > MAX_VISIBLE_TAGS {
+        let overflow = tags.len() - MAX_VISIBLE_TAGS;
+        line.spans.push(tags_overflow_span(overflow));
+    }
+
+    line
 }
 
 pub fn render_search_bar(
