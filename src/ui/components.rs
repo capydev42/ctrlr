@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use ratatui::{
     layout::Alignment,
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -12,6 +12,9 @@ use crate::app::{ActivePane, ViewMode};
 const TAG_BG: Color = Color::Rgb(60, 65, 75);
 const TAG_FG: Color = Color::Rgb(180, 185, 190);
 const MAX_VISIBLE_TAGS: usize = 3;
+
+const TAB_ACTIVE_FG: Color = Color::Rgb(203, 166, 247);
+const TAB_INACTIVE_FG: Color = Color::Rgb(166, 173, 200);
 
 pub fn tag_span(tag: &str) -> Span<'_> {
     Span::styled(format!("[{}]", tag), Style::new().fg(TAG_FG).bg(TAG_BG))
@@ -140,36 +143,36 @@ pub fn render_tabs(
 ) {
     use ratatui::widgets::Paragraph;
 
-    let history_tab = if state.view_mode == ViewMode::History {
-        Span::styled(
-            "● History ",
-            Style::new().fg(Color::Yellow).bg(Color::Blue).bold(),
-        )
-    } else {
-        Span::raw("○ History ")
-    };
+    let history_count = state.commands.len();
+    let favorites_count = state.commands.iter().filter(|c| c.favorite).count();
+    let collections_count = state.collections.len();
 
-    let favorites_tab = if state.view_mode == ViewMode::Favorites {
-        Span::styled(
-            "● Favorites ",
-            Style::new().fg(Color::Yellow).bg(Color::Blue).bold(),
-        )
-    } else {
-        Span::raw("○ Favorites ")
-    };
+    let tab_history = format!("1 History ({})", history_count);
+    let tab_favorites = format!("2 Favorites ({})", favorites_count);
+    let tab_collections = format!("3 Collections ({})", collections_count);
 
-    let collections_tab = if state.view_mode == ViewMode::Collections {
-        Span::styled(
-            "● Collections",
-            Style::new().fg(Color::Yellow).bg(Color::Blue).bold(),
-        )
-    } else {
-        Span::raw("○ Collections")
-    };
-
-    let line = Line::from(vec![history_tab, favorites_tab, collections_tab]);
+    let line = Line::from(vec![
+        tab(&tab_history, state.view_mode == ViewMode::History),
+        Span::raw("   "),
+        tab(&tab_favorites, state.view_mode == ViewMode::Favorites),
+        Span::raw("   "),
+        tab(&tab_collections, state.view_mode == ViewMode::Collections),
+    ]);
 
     frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
+}
+
+fn tab(label: &str, active: bool) -> Span<'_> {
+    if active {
+        Span::styled(
+            format!(" {} ", label),
+            Style::new()
+                .fg(TAB_ACTIVE_FG)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        )
+    } else {
+        Span::styled(format!(" {} ", label), Style::new().fg(TAB_INACTIVE_FG))
+    }
 }
 
 pub fn render_footer(
