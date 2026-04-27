@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Tab display with counter showing item counts per view
+  - Format: "1 History (124)" with spacing between tabs
+  - Active tab: lilac color + bold + underlined
+  - Inactive tab: muted gray
 - Tag display with chip style `[tag]` and right-alignment
   - Max 3 tags visible, overflow shown as "+N more"
   - Consistent colors (dark gray bg, light gray fg)
