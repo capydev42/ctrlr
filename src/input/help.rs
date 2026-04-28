@@ -2,6 +2,7 @@ use crate::app::{Action, ActivePane, AppState, InputMode, ViewMode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
+use std::time::Instant;
 
 #[derive(Clone, Debug)]
 pub struct GroupedShortcut {
@@ -68,6 +69,13 @@ pub fn get_all_shortcuts() -> Vec<GroupedShortcut> {
             action_name: "Toggle Favorite",
             description: "Mark/unmark as favorite",
             keys: vec!["f"],
+            category: "Actions",
+        },
+        GroupedShortcut {
+            action_id: "copy_to_clipboard",
+            action_name: "Copy to Clipboard",
+            description: "Copy command to clipboard",
+            keys: vec!["y"],
             category: "Actions",
         },
         GroupedShortcut {
@@ -258,26 +266,23 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
         (ViewMode::History, ActivePane::History, InputMode::Normal) => all
             .into_iter()
             .filter(|sc| {
-                matches!(
-                    sc.action_id,
-                    "execute"
-                        | "navigate_down"
-                        | "navigate_up"
-                        | "page_down"
-                        | "page_up"
-                        | "go_to_top"
-                        | "go_to_bottom"
-                        | "toggle_favorite"
-                        | "edit_tags"
-                        | "add_to_collection"
-                        | "toggle_details"
-                        | "focus_search"
-                        | "switch_pane"
-                        | "view_favorites"
-                        | "view_collections"
-                        | "pane_down"
-                        | "pane_up"
-                )
+                matches!(sc.action_id, |"execute"| "navigate_down"
+                    | "navigate_up"
+                    | "page_down"
+                    | "page_up"
+                    | "go_to_top"
+                    | "go_to_bottom"
+                    | "toggle_favorite"
+                    | "copy_to_clipboard"
+                    | "edit_tags"
+                    | "add_to_collection"
+                    | "toggle_details"
+                    | "focus_search"
+                    | "switch_pane"
+                    | "view_favorites"
+                    | "view_collections"
+                    | "pane_down"
+                    | "pane_up")
             })
             .collect(),
         (ViewMode::Favorites, ActivePane::Search, InputMode::Normal) => all
@@ -303,26 +308,23 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
         (ViewMode::Favorites, ActivePane::History, InputMode::Normal) => all
             .into_iter()
             .filter(|sc| {
-                matches!(
-                    sc.action_id,
-                    "execute"
-                        | "navigate_down"
-                        | "navigate_up"
-                        | "page_down"
-                        | "page_up"
-                        | "go_to_top"
-                        | "go_to_bottom"
-                        | "toggle_favorite"
-                        | "edit_tags"
-                        | "add_to_collection"
-                        | "toggle_details"
-                        | "focus_search"
-                        | "switch_pane"
-                        | "view_history"
-                        | "view_collections"
-                        | "pane_down"
-                        | "pane_up"
-                )
+                matches!(sc.action_id, |"execute"| "navigate_down"
+                    | "navigate_up"
+                    | "page_down"
+                    | "page_up"
+                    | "go_to_top"
+                    | "go_to_bottom"
+                    | "toggle_favorite"
+                    | "copy_to_clipboard"
+                    | "edit_tags"
+                    | "add_to_collection"
+                    | "toggle_details"
+                    | "focus_search"
+                    | "switch_pane"
+                    | "view_history"
+                    | "view_collections"
+                    | "pane_down"
+                    | "pane_up")
             })
             .collect(),
         (ViewMode::Collections, ActivePane::Search, InputMode::Normal) => all
@@ -365,24 +367,21 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
         (ViewMode::Collections, ActivePane::CollectionItems, InputMode::Normal) => all
             .into_iter()
             .filter(|sc| {
-                matches!(
-                    sc.action_id,
-                    "execute"
-                        | "navigate_down"
-                        | "navigate_up"
-                        | "page_down"
-                        | "page_up"
-                        | "go_to_top"
-                        | "go_to_bottom"
-                        | "toggle_details"
-                        | "search_collection"
-                        | "remove_from_collection"
-                        | "focus_search"
-                        | "switch_pane"
-                        | "pane_left"
-                        | "view_history"
-                        | "view_favorites"
-                )
+                matches!(sc.action_id, |"execute"| "navigate_down"
+                    | "navigate_up"
+                    | "page_down"
+                    | "page_up"
+                    | "go_to_top"
+                    | "go_to_bottom"
+                    | "copy_to_clipboard"
+                    | "toggle_details"
+                    | "search_collection"
+                    | "remove_from_collection"
+                    | "focus_search"
+                    | "switch_pane"
+                    | "pane_left"
+                    | "view_history"
+                    | "view_favorites")
             })
             .collect(),
         _ => all,
@@ -512,6 +511,21 @@ pub fn execute_help_action(state: &mut AppState, action_id: &str) -> Action {
         }
         "toggle_favorite" => {
             state.toggle_favorite();
+        }
+        "copy_to_clipboard" => {
+            if let Some(text) = state
+                .filtered
+                .get(state.selected_index)
+                .map(|c| c.text.clone())
+            {
+                let (success, msg) = crate::app::clipboard::copy_to_clipboard(&text);
+                if success {
+                    state.status_message = Some("📋 Copied to clipboard".into());
+                } else if let Some(msg) = msg {
+                    state.status_message = Some(msg);
+                }
+                state.status_timestamp = Some(Instant::now());
+            }
         }
         "edit_tags" => {
             state.input_mode = InputMode::TagInput;
