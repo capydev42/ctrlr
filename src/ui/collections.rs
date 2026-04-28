@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::app::{ActivePane, AppState};
 
-use super::components::command_with_right_tags;
+use super::components::{FOCUS_BORDER, UNFOCUS_BORDER, command_with_right_tags};
 
 pub fn render_collections_view(frame: &mut Frame, state: &mut AppState, area: Rect) {
     if state.active_pane == ActivePane::CollectionItems && state.show_details {
@@ -54,16 +54,21 @@ pub fn render_collection_list(frame: &mut Frame, state: &mut AppState, area: Rec
             .collect()
     };
 
-    let border_color = if state.active_pane == ActivePane::CollectionsList {
-        Color::Yellow
+    let is_focused = state.active_pane == ActivePane::CollectionsList;
+    let border_color = if is_focused {
+        FOCUS_BORDER
     } else {
-        Color::DarkGray
+        UNFOCUS_BORDER
     };
 
     let list = List::new(items)
         .block(
             Block::bordered()
-                .title("[Collections]")
+                .title(if is_focused {
+                    "[Collections]"
+                } else {
+                    "Collections"
+                })
                 .border_type(BorderType::Rounded)
                 .border_style(Style::new().fg(border_color)),
         )
@@ -76,16 +81,21 @@ pub fn render_collection_list(frame: &mut Frame, state: &mut AppState, area: Rec
 }
 
 pub fn render_collection_commands(frame: &mut Frame, state: &mut AppState, area: Rect) {
-    let border_color = if state.active_pane == ActivePane::CollectionItems {
-        Color::Yellow
+    let is_focused = state.active_pane == ActivePane::CollectionItems;
+    let border_color = if is_focused {
+        FOCUS_BORDER
     } else {
-        Color::DarkGray
+        UNFOCUS_BORDER
     };
 
     let title = if state.collections.is_empty() {
         "Commands".to_string()
     } else if let Some(col) = state.selected_collection() {
-        col.name.clone()
+        if is_focused {
+            format!("[{}]", col.name)
+        } else {
+            col.name.clone()
+        }
     } else {
         "Commands".to_string()
     };

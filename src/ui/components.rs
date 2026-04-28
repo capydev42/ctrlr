@@ -16,6 +16,9 @@ const MAX_VISIBLE_TAGS: usize = 3;
 const TAB_ACTIVE_FG: Color = Color::Rgb(203, 166, 247);
 const TAB_INACTIVE_FG: Color = Color::Rgb(166, 173, 200);
 
+pub const FOCUS_BORDER: Color = Color::Rgb(203, 166, 247);
+pub const UNFOCUS_BORDER: Color = Color::DarkGray;
+
 pub fn tag_span(tag: &str) -> Span<'_> {
     Span::styled(format!("[{}]", tag), Style::new().fg(TAG_FG).bg(TAG_BG))
 }
@@ -116,9 +119,9 @@ pub fn render_search_bar(
     };
     let search_text = format!("{}{}", state.search_query, cursor);
     let search_border_color = if state.active_pane == ActivePane::Search {
-        Color::Yellow
+        FOCUS_BORDER
     } else {
-        Color::DarkGray
+        UNFOCUS_BORDER
     };
 
     frame.render_widget(
