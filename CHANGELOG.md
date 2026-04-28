@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Panel borders with focus indicators
+  - Focused: purple border + [PanelName] title
+  - Unfocused: dark gray border + PanelName title
+  - Affected: Search, Commands, Details, Collections, Collection Items
 - Tab display with counter showing item counts per view
   - Format: "1 History (124)" with spacing between tabs
   - Active tab: lilac color + bold + underlined

@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::app::{ActivePane, AppState, ViewMode};
 
-use super::components::{command_with_right_tags, tag_span};
+use super::components::{FOCUS_BORDER, UNFOCUS_BORDER, command_with_right_tags, tag_span};
 
 pub fn section(title: &str) -> Line<'_> {
     Line::from(Span::styled(
@@ -34,25 +34,19 @@ pub fn render_history_list(frame: &mut Frame, state: &mut AppState, area: Rect) 
         result
     };
 
-    let history_border_color = if state.active_pane == ActivePane::History {
-        Color::Yellow
-    } else {
-        Color::DarkGray
-    };
-
     let list_title = match state.view_mode {
         ViewMode::History => {
             if state.active_pane == ActivePane::History {
-                "History".to_string()
-            } else {
                 "[History]".to_string()
+            } else {
+                "History".to_string()
             }
         }
         ViewMode::Favorites => {
             if state.active_pane == ActivePane::History {
-                "Favorites".to_string()
-            } else {
                 "[Favorites]".to_string()
+            } else {
+                "Favorites".to_string()
             }
         }
         ViewMode::Collections => state
@@ -61,12 +55,19 @@ pub fn render_history_list(frame: &mut Frame, state: &mut AppState, area: Rect) 
             .unwrap_or_else(|| "Commands".to_string()),
     };
 
+    let is_focused = state.active_pane == ActivePane::History;
+    let border_color = if is_focused {
+        FOCUS_BORDER
+    } else {
+        UNFOCUS_BORDER
+    };
+
     let list = List::new(items)
         .block(
             Block::bordered()
                 .title(list_title.as_str())
                 .border_type(BorderType::Rounded)
-                .border_style(Style::new().fg(history_border_color)),
+                .border_style(Style::new().fg(border_color)),
         )
         .highlight_style(Style::default().bg(Color::Blue).fg(Color::White))
         .highlight_symbol("> ");
@@ -80,10 +81,21 @@ pub fn render_details(frame: &mut Frame, state: &mut AppState, area: Rect) {
     }
 
     if state.filtered.is_empty() {
+        let is_focused = state.active_pane == ActivePane::History;
+        let border_color = if is_focused {
+            FOCUS_BORDER
+        } else {
+            UNFOCUS_BORDER
+        };
         frame.render_widget(
             Paragraph::new("No command selected")
                 .alignment(Alignment::Center)
-                .block(Block::bordered().title("Details")),
+                .block(
+                    Block::bordered()
+                        .title(if is_focused { "[Details]" } else { "Details" })
+                        .border_type(BorderType::Rounded)
+                        .border_style(Style::new().fg(border_color)),
+                ),
             area,
         );
         return;
