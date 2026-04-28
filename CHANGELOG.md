@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- `y` shortcut to copy command to clipboard (shown in help popup)
 - Panel borders with focus indicators
   - Focused: purple border + [PanelName] title
   - Unfocused: dark gray border + PanelName title
