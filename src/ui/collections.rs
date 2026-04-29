@@ -1,14 +1,14 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::Style,
     text::Line,
     widgets::{Block, BorderType, List, ListItem},
 };
 
 use crate::app::{ActivePane, AppState};
 
-use super::components::{FOCUS_BORDER, UNFOCUS_BORDER, command_with_right_tags};
+use super::components::command_with_right_tags;
 
 pub fn render_collections_view(frame: &mut Frame, state: &mut AppState, area: Rect) {
     if state.active_pane == ActivePane::CollectionItems && state.show_details {
@@ -36,6 +36,7 @@ pub fn render_collections_view(frame: &mut Frame, state: &mut AppState, area: Re
 }
 
 pub fn render_collection_list(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.current_theme;
     let items: Vec<ListItem> = if state.collections.is_empty() {
         vec![ListItem::new("No collections yet")]
     } else {
@@ -56,9 +57,9 @@ pub fn render_collection_list(frame: &mut Frame, state: &mut AppState, area: Rec
 
     let is_focused = state.active_pane == ActivePane::CollectionsList;
     let border_color = if is_focused {
-        FOCUS_BORDER
+        theme.focus_border
     } else {
-        UNFOCUS_BORDER
+        theme.unfocus_border
     };
 
     let list = List::new(items)
@@ -72,7 +73,11 @@ pub fn render_collection_list(frame: &mut Frame, state: &mut AppState, area: Rec
                 .border_type(BorderType::Rounded)
                 .border_style(Style::new().fg(border_color)),
         )
-        .highlight_style(Style::default().bg(Color::Blue).fg(Color::White));
+        .highlight_style(
+            Style::default()
+                .bg(theme.highlight_bg)
+                .fg(theme.highlight_fg),
+        );
 
     state
         .collection_list_state
@@ -81,11 +86,12 @@ pub fn render_collection_list(frame: &mut Frame, state: &mut AppState, area: Rec
 }
 
 pub fn render_collection_commands(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.current_theme;
     let is_focused = state.active_pane == ActivePane::CollectionItems;
     let border_color = if is_focused {
-        FOCUS_BORDER
+        theme.focus_border
     } else {
-        UNFOCUS_BORDER
+        theme.unfocus_border
     };
 
     let title = if state.collections.is_empty() {
@@ -111,7 +117,7 @@ pub fn render_collection_commands(frame: &mut Frame, state: &mut AppState, area:
             let fav = if c.favorite { "* " } else { "  " };
             let mut line = Line::from(ratatui::text::Span::raw(fav));
             let indices = state.matched_indices.get(i).and_then(|m| m.as_ref());
-            let line_with_tags = command_with_right_tags(&c.text, indices, &c.tags, width);
+            let line_with_tags = command_with_right_tags(&c.text, indices, &c.tags, width, theme);
             line.spans.extend(line_with_tags.spans);
             result.push(ratatui::widgets::ListItem::new(line));
         }
@@ -127,7 +133,11 @@ pub fn render_collection_commands(frame: &mut Frame, state: &mut AppState, area:
                 .border_type(BorderType::Rounded)
                 .border_style(Style::new().fg(border_color)),
         )
-        .highlight_style(Style::default().bg(Color::Blue).fg(Color::White))
+        .highlight_style(
+            Style::default()
+                .bg(theme.highlight_bg)
+                .fg(theme.highlight_fg),
+        )
         .highlight_symbol("> ");
 
     state

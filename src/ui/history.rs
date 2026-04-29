@@ -1,23 +1,24 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, BorderType, List, ListItem, Paragraph, Wrap},
 };
 
 use crate::app::{ActivePane, AppState, ViewMode};
 
-use super::components::{FOCUS_BORDER, UNFOCUS_BORDER, command_with_right_tags, tag_span};
+use super::components::{command_with_right_tags, tag_span};
 
-pub fn section(title: &str) -> Line<'_> {
+pub fn section<'a>(title: &str, theme: &crate::ui::theme::Theme) -> Line<'a> {
     Line::from(Span::styled(
         format!("─ {} ─", title),
-        Style::new().fg(Color::Blue).bold(),
+        Style::new().fg(theme.section_fg).bold(),
     ))
 }
 
 pub fn render_history_list(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.current_theme;
     let items: Vec<ListItem> = if state.filtered.is_empty() {
         vec![ListItem::new("No results found")]
     } else {
@@ -27,7 +28,7 @@ pub fn render_history_list(frame: &mut Frame, state: &mut AppState, area: Rect) 
             let favorite_str = if c.favorite { "* " } else { "  " };
             let mut line = Line::from(ratatui::text::Span::raw(favorite_str));
             let idx = state.matched_indices.get(i).and_then(|m| m.as_ref());
-            let cmd_line = command_with_right_tags(&c.text, idx, &c.tags, width);
+            let cmd_line = command_with_right_tags(&c.text, idx, &c.tags, width, theme);
             line.spans.extend(cmd_line.spans);
             result.push(ratatui::widgets::ListItem::new(line));
         }
@@ -57,9 +58,9 @@ pub fn render_history_list(frame: &mut Frame, state: &mut AppState, area: Rect) 
 
     let is_focused = state.active_pane == ActivePane::History;
     let border_color = if is_focused {
-        FOCUS_BORDER
+        theme.focus_border
     } else {
-        UNFOCUS_BORDER
+        theme.unfocus_border
     };
 
     let list = List::new(items)
@@ -69,7 +70,11 @@ pub fn render_history_list(frame: &mut Frame, state: &mut AppState, area: Rect) 
                 .border_type(BorderType::Rounded)
                 .border_style(Style::new().fg(border_color)),
         )
-        .highlight_style(Style::default().bg(Color::Blue).fg(Color::White))
+        .highlight_style(
+            Style::default()
+                .bg(theme.highlight_bg)
+                .fg(theme.highlight_fg),
+        )
         .highlight_symbol("> ");
 
     frame.render_stateful_widget(list, area, &mut state.list_state);
@@ -80,12 +85,14 @@ pub fn render_details(frame: &mut Frame, state: &mut AppState, area: Rect) {
         return;
     }
 
+    let theme = &state.current_theme;
+
     if state.filtered.is_empty() {
         let is_focused = state.active_pane == ActivePane::History;
         let border_color = if is_focused {
-            FOCUS_BORDER
+            theme.focus_border
         } else {
-            UNFOCUS_BORDER
+            theme.unfocus_border
         };
         frame.render_widget(
             Paragraph::new("No command selected")
@@ -108,20 +115,20 @@ pub fn render_details(frame: &mut Frame, state: &mut AppState, area: Rect) {
 
     let mut lines: Vec<Line> = Vec::new();
 
-    lines.push(section("Command"));
+    lines.push(section("Command", theme));
     lines.push(Line::from(cmd.text.clone()));
     lines.push(Line::from(""));
 
     if !cmd.tags.is_empty() {
-        lines.push(section("Tags"));
+        lines.push(section("Tags", theme));
         for tag in &cmd.tags {
-            lines.push(Line::from(vec![tag_span(tag)]));
+            lines.push(Line::from(vec![tag_span(tag, theme)]));
         }
         lines.push(Line::from(""));
     }
 
     if !cmd.collection_ids.is_empty() {
-        lines.push(section("Collections"));
+        lines.push(section("Collections", theme));
         for col_id in &cmd.collection_ids {
             if let Some(col) = state.collections.iter().find(|c| &c.id == col_id) {
                 lines.push(Line::from(format!("- {}", col.name)));
@@ -130,7 +137,7 @@ pub fn render_details(frame: &mut Frame, state: &mut AppState, area: Rect) {
         lines.push(Line::from(""));
     }
 
-    lines.push(section("Usage"));
+    lines.push(section("Usage", theme));
     lines.push(Line::from(format!("Used: {}x", cmd.use_count)));
     if let Some(ts) = cmd.last_used {
         let now = std::time::SystemTime::now()
@@ -151,10 +158,10 @@ pub fn render_details(frame: &mut Frame, state: &mut AppState, area: Rect) {
     }
     lines.push(Line::from(""));
 
-    lines.push(section("Favorite"));
+    lines.push(section("Favorite", theme));
     let fav_text = if cmd.favorite { "* yes" } else { "○ no" };
     let fav_style = if cmd.favorite {
-        Style::new().fg(Color::Yellow)
+        Style::new().fg(theme.favorite_fg)
     } else {
         Style::new()
     };
@@ -163,7 +170,7 @@ pub fn render_details(frame: &mut Frame, state: &mut AppState, area: Rect) {
     let block = Block::bordered()
         .title("Details")
         .border_type(BorderType::Rounded)
-        .border_style(Style::new().fg(Color::DarkGray));
+        .border_style(Style::new().fg(theme.unfocus_border));
 
     frame.render_widget(
         Paragraph::new(lines).block(block).wrap(Wrap { trim: true }),

@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{
         Block, BorderType, Clear, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation,
@@ -9,16 +9,14 @@ use ratatui::{
 };
 
 use crate::app::{AppState, CollectionInputMode};
+use crate::ui::theme::CatppuccinFlavor;
 
 use super::layout::center_rect;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-const TAG_BG: Color = Color::Rgb(60, 65, 75);
-const TAG_FG: Color = Color::Rgb(180, 185, 190);
-const TAG_BG_SELECTED: Color = Color::Rgb(100, 150, 100);
-
 pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.current_theme;
     let tags = state.selected_command_tags();
     let suggestions = if state.tag_cursor_index.is_none() {
         state.filtered_tags()
@@ -58,13 +56,15 @@ pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
         if Some(i) == state.tag_cursor_index {
             spans.push(Span::styled(
                 format!("[{}]", tag),
-                Style::default().fg(Color::Black).bg(TAG_BG_SELECTED),
+                Style::default()
+                    .fg(theme.highlight_fg)
+                    .bg(theme.tag_selected_bg),
             ));
             spans.push(Span::raw(" "));
         } else {
             spans.push(Span::styled(
                 format!("[{}]", tag),
-                Style::default().fg(TAG_FG).bg(TAG_BG),
+                Style::default().fg(theme.tag_fg).bg(theme.tag_bg),
             ));
             spans.push(Span::raw(" "));
         }
@@ -73,7 +73,7 @@ pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
     if state.tag_cursor_index.is_none() || tags.is_empty() {
         spans.push(Span::styled(
             format!("{}▋", state.tag_input),
-            Style::default().fg(Color::White),
+            Style::default().fg(theme.input_text),
         ));
     }
 
@@ -82,7 +82,7 @@ pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
             Block::bordered()
                 .title("[Edit Tags]")
                 .border_type(BorderType::Rounded)
-                .border_style(Style::new().fg(Color::Yellow)),
+                .border_style(Style::new().fg(theme.tag_popup_border)),
         ),
         chunks[0],
     );
@@ -94,7 +94,7 @@ pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
             .map(|(i, tag)| {
                 if i == state.tag_selected_index {
                     ListItem::new(format!("> {}", tag))
-                        .style(Style::new().bg(Color::Blue).fg(Color::Black))
+                        .style(Style::new().bg(theme.highlight_bg).fg(theme.highlight_fg))
                 } else {
                     ListItem::new(format!("  {}", tag))
                 }
@@ -105,13 +105,19 @@ pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
             let create_text = format!("+ Create \"{}\"", state.tag_input.trim());
             if state.tag_selected_index == suggestions.len() {
                 sugg_items.push(
-                    ListItem::new(format!("> {}", create_text))
-                        .style(Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    ListItem::new(format!("> {}", create_text)).style(
+                        Style::new()
+                            .fg(theme.create_fg)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 );
             } else {
                 sugg_items.push(
-                    ListItem::new(format!("  {}", create_text))
-                        .style(Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    ListItem::new(format!("  {}", create_text)).style(
+                        Style::new()
+                            .fg(theme.create_fg)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 );
             }
         }
@@ -134,12 +140,12 @@ pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
 
         let sugg_list = List::new(sugg_items)
             .block(Block::bordered().title("Suggestions"))
-            .highlight_style(Style::new().bg(Color::Blue).fg(Color::Black));
+            .highlight_style(Style::new().bg(theme.highlight_bg).fg(theme.highlight_fg));
         frame.render_stateful_widget(sugg_list, sugg_area, &mut state.tag_popup_list_state);
 
         if total_items > 3 {
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                .style(Style::new().fg(Color::DarkGray));
+                .style(Style::new().fg(theme.scrollbar_fg));
             let mut scrollbar_state = ratatui::widgets::ScrollbarState::new(total_items)
                 .position(state.tag_selected_index);
             frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
@@ -149,13 +155,14 @@ pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
     let hint = "↑/↓: Navigate | Type: Filter | Enter: Select/Create | Esc: Cancel";
     frame.render_widget(
         Paragraph::new(hint)
-            .style(Style::new().fg(Color::DarkGray))
+            .style(Style::new().fg(theme.hint_fg))
             .alignment(Alignment::Center),
         chunks[2],
     );
 }
 
 pub fn render_collection_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.current_theme;
     let popup_height = 8u16;
     let popup_width = 45u16;
     let centered = center_rect(popup_width, popup_height, area);
@@ -193,7 +200,7 @@ pub fn render_collection_popup(frame: &mut Frame, state: &mut AppState, area: Re
 
     let search_text = format!("Search: {}{}", state.collection_input_text, "▋");
     frame.render_widget(
-        Paragraph::new(search_text).style(Style::new().fg(Color::Yellow)),
+        Paragraph::new(search_text).style(Style::new().fg(theme.input_text)),
         chunks[0],
     );
 
@@ -220,7 +227,7 @@ pub fn render_collection_popup(frame: &mut Frame, state: &mut AppState, area: Re
                 };
                 if idx == state.collection_popup_index {
                     ListItem::new(format!("> {}{}", prefix, col.name))
-                        .style(Style::new().bg(Color::Blue).fg(Color::Black))
+                        .style(Style::new().bg(theme.highlight_bg).fg(theme.highlight_fg))
                 } else {
                     ListItem::new(format!("  {}{}", prefix, col.name))
                 }
@@ -231,13 +238,19 @@ pub fn render_collection_popup(frame: &mut Frame, state: &mut AppState, area: Re
             let create_text = format!("+ Create \"{}\"", state.collection_input_text);
             if state.collection_popup_index == filtered.len() {
                 items.push(
-                    ListItem::new(format!("> {}", create_text))
-                        .style(Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    ListItem::new(format!("> {}", create_text)).style(
+                        Style::new()
+                            .fg(theme.create_fg)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 );
             } else {
                 items.push(
-                    ListItem::new(format!("  {}", create_text))
-                        .style(Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    ListItem::new(format!("  {}", create_text)).style(
+                        Style::new()
+                            .fg(theme.create_fg)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 );
             }
         }
@@ -270,14 +283,14 @@ pub fn render_collection_popup(frame: &mut Frame, state: &mut AppState, area: Re
                 Block::bordered()
                     .title(title)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::new().fg(Color::Yellow)),
+                    .border_style(Style::new().fg(theme.popup_border)),
             )
-            .highlight_style(Style::new().bg(Color::Blue).fg(Color::White));
+            .highlight_style(Style::new().bg(theme.highlight_bg).fg(theme.highlight_fg));
         frame.render_stateful_widget(list, list_area, &mut state.collection_popup_list_state);
 
         if total_items > 3 {
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                .style(Style::new().fg(Color::DarkGray));
+                .style(Style::new().fg(theme.scrollbar_fg));
             let mut scrollbar_state = ratatui::widgets::ScrollbarState::new(total_items)
                 .position(state.collection_popup_index);
             frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
@@ -290,12 +303,12 @@ pub fn render_collection_popup(frame: &mut Frame, state: &mut AppState, area: Re
         };
         frame.render_widget(
             Paragraph::new(input_display)
-                .style(Style::new().fg(Color::White))
+                .style(Style::new().fg(theme.input_text))
                 .block(
                     Block::bordered()
                         .title(title)
                         .border_type(BorderType::Rounded)
-                        .border_style(Style::new().fg(Color::Yellow)),
+                        .border_style(Style::new().fg(theme.popup_border)),
                 ),
             chunks[2],
         );
@@ -303,13 +316,14 @@ pub fn render_collection_popup(frame: &mut Frame, state: &mut AppState, area: Re
 
     frame.render_widget(
         Paragraph::new(hint)
-            .style(Style::new().fg(Color::DarkGray))
+            .style(Style::new().fg(theme.hint_fg))
             .alignment(Alignment::Center),
         chunks[3],
     );
 }
 
 pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.current_theme;
     let results = state.search_results_for_add_command();
     let search_text = state.collection_input_text.trim();
     let has_search = !search_text.is_empty();
@@ -338,12 +352,12 @@ pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: R
     let search_display = format!("Search: {}{}", state.collection_input_text, "▋");
     frame.render_widget(
         Paragraph::new(search_display)
-            .style(Style::new().fg(Color::White))
+            .style(Style::new().fg(theme.input_text))
             .block(
                 Block::bordered()
                     .title("[Add Command]")
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::new().fg(Color::Cyan)),
+                    .border_style(Style::new().fg(theme.popup_border)),
             ),
         chunks[0],
     );
@@ -359,7 +373,7 @@ pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: R
             .map(|(i, cmd)| {
                 if i == state.add_command_search_index {
                     ListItem::new(format!("> {}", cmd.text))
-                        .style(Style::new().bg(Color::Blue).fg(Color::White))
+                        .style(Style::new().bg(theme.highlight_bg).fg(theme.highlight_fg))
                 } else {
                     ListItem::new(format!("  {}", cmd.text))
                 }
@@ -371,13 +385,19 @@ pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: R
             let create_idx = results.len();
             if state.add_command_search_index == create_idx {
                 items.push(
-                    ListItem::new(format!("> {}", create_text))
-                        .style(Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    ListItem::new(format!("> {}", create_text)).style(
+                        Style::new()
+                            .fg(theme.create_fg)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 );
             } else {
                 items.push(
-                    ListItem::new(format!("  {}", create_text))
-                        .style(Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    ListItem::new(format!("  {}", create_text)).style(
+                        Style::new()
+                            .fg(theme.create_fg)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 );
             }
         }
@@ -407,12 +427,12 @@ pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: R
 
         let list = List::new(items)
             .block(Block::bordered().title("Commands"))
-            .highlight_style(Style::new().bg(Color::Blue).fg(Color::White));
+            .highlight_style(Style::new().bg(theme.highlight_bg).fg(theme.highlight_fg));
         frame.render_stateful_widget(list, list_area, &mut state.collection_popup_list_state);
 
         if total_items > 3 {
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                .style(Style::new().fg(Color::DarkGray));
+                .style(Style::new().fg(theme.scrollbar_fg));
             let mut scrollbar_state = ratatui::widgets::ScrollbarState::new(total_items)
                 .position(state.add_command_search_index);
             frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
@@ -422,13 +442,14 @@ pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: R
     let hint = "↑/↓ Navigate | Enter: Add/Create | Esc: Cancel";
     frame.render_widget(
         Paragraph::new(hint)
-            .style(Style::new().fg(Color::DarkGray))
+            .style(Style::new().fg(theme.hint_fg))
             .alignment(Alignment::Center),
         chunks[2],
     );
 }
 
 pub fn render_delete_confirm_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.current_theme;
     let message = match state.collection_input_mode {
         CollectionInputMode::ConfirmDeleteCollection => {
             format!("Delete collection '{}'?", state.delete_confirm_text)
@@ -457,33 +478,38 @@ pub fn render_delete_confirm_popup(frame: &mut Frame, state: &mut AppState, area
 
     frame.render_widget(
         Paragraph::new(message)
-            .style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+            .style(
+                Style::new()
+                    .fg(theme.favorite_fg)
+                    .add_modifier(Modifier::BOLD),
+            )
             .alignment(Alignment::Center)
             .block(
                 Block::bordered()
                     .title("[Confirm Delete]")
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::new().fg(Color::Yellow)),
+                    .border_style(Style::new().fg(theme.popup_border)),
             ),
         chunks[0],
     );
 
     frame.render_widget(
         Paragraph::new("This action cannot be undone.")
-            .style(Style::new().fg(Color::DarkGray))
+            .style(Style::new().fg(theme.hint_fg))
             .alignment(Alignment::Center),
         chunks[1],
     );
 
     frame.render_widget(
         Paragraph::new("Enter: Delete  |  Esc: Cancel")
-            .style(Style::new().fg(Color::White))
+            .style(Style::new().fg(theme.input_text))
             .alignment(Alignment::Center),
         chunks[2],
     );
 }
 
 pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.current_theme;
     let shortcuts = &state.help_filtered_shortcuts;
     let selected_index = state.help_selected_index;
 
@@ -510,13 +536,13 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
     let search_display = format!("Search: {}{}", state.help_search_query, "▋");
     frame.render_widget(
         Paragraph::new(search_display)
-            .style(Style::new().fg(Color::White))
+            .style(Style::new().fg(theme.input_text))
             .block(
                 Block::bordered()
                     .title("[Help]")
                     .title(format!("[ctrlr v{}]", VERSION))
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::new().fg(Color::Cyan)),
+                    .border_style(Style::new().fg(theme.help_search_border)),
             ),
         chunks[0],
     );
@@ -549,12 +575,11 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
                 let header = Line::from(vec![Span::styled(
                     sc.category,
                     Style::new()
-                        .fg(Color::Cyan)
+                        .fg(theme.header_fg)
                         .add_modifier(Modifier::UNDERLINED)
                         .add_modifier(Modifier::BOLD),
                 )]);
-                rendered_items
-                    .push(ListItem::new(header).style(Style::new().bg(Color::Rgb(30, 30, 30))));
+                rendered_items.push(ListItem::new(header).style(Style::new().bg(theme.header_bg)));
             }
 
             let keys_str: String = sc
@@ -574,15 +599,17 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
             let line = Line::from(vec![
                 Span::styled(
                     format!("{:width$}", keys_str, width = keys_width as usize),
-                    Style::new().fg(Color::Yellow),
+                    Style::new().fg(theme.help_keys_fg),
                 ),
                 Span::raw(" "),
                 Span::styled(
                     format!("{:width$}", sc.action_name, width = name_width as usize),
-                    Style::new().fg(Color::White).add_modifier(Modifier::BOLD),
+                    Style::new()
+                        .fg(theme.help_name_fg)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(" "),
-                Span::styled(sc.description, Style::new().fg(Color::DarkGray)),
+                Span::styled(sc.description, Style::new().fg(theme.help_desc_fg)),
             ]);
             rendered_items.push(ListItem::new(line));
         }
@@ -608,12 +635,12 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
 
         let list = List::new(rendered_items)
             .block(Block::bordered().title("Shortcuts"))
-            .highlight_style(Style::new().bg(Color::Blue).fg(Color::White));
+            .highlight_style(Style::new().bg(theme.highlight_bg).fg(theme.highlight_fg));
         frame.render_stateful_widget(list, list_area, &mut state.help_list_state);
 
         if total_items > visible_rows {
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                .style(Style::new().fg(Color::DarkGray));
+                .style(Style::new().fg(theme.scrollbar_fg));
             let mut scrollbar_state =
                 ratatui::widgets::ScrollbarState::new(total_items).position(rendered_selected);
             frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
@@ -621,7 +648,7 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
     } else {
         frame.render_widget(
             Paragraph::new("No matching shortcuts")
-                .style(Style::new().fg(Color::DarkGray))
+                .style(Style::new().fg(theme.hint_fg))
                 .alignment(Alignment::Center),
             chunks[1],
         );
@@ -629,7 +656,81 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
 
     frame.render_widget(
         Paragraph::new("? Help | ↑/↓ Navigate | Enter: Execute | Esc: Close")
-            .style(Style::new().fg(Color::DarkGray))
+            .style(Style::new().fg(theme.hint_fg))
+            .alignment(Alignment::Center),
+        chunks[2],
+    );
+}
+
+pub fn render_theme_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.current_theme;
+    let flavors = CatppuccinFlavor::all();
+
+    let popup_height = 8u16;
+    let popup_width = 35u16;
+    let centered = center_rect(popup_width, popup_height, area);
+
+    frame.render_widget(Clear, centered);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(centered);
+
+    let mut items: Vec<ListItem> = Vec::new();
+    for (i, flavor) in flavors.iter().enumerate() {
+        let flavor_theme = flavor.theme();
+        let accent = flavor_theme.focus_border;
+        let name = flavor.to_string();
+        if i == state.theme_popup_index {
+            let line = Line::from(vec![
+                Span::raw(" ● "),
+                Span::styled("██", Style::new().fg(accent)),
+                Span::raw(" "),
+                Span::styled(
+                    name,
+                    Style::new()
+                        .fg(theme.input_text)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]);
+            items.push(
+                ListItem::new(line)
+                    .style(Style::new().bg(theme.highlight_bg).fg(theme.highlight_fg)),
+            );
+        } else {
+            let line = Line::from(vec![
+                Span::raw(" ○ "),
+                Span::styled("██", Style::new().fg(accent)),
+                Span::raw(" "),
+                Span::styled(name, Style::new().fg(theme.input_text)),
+            ]);
+            items.push(ListItem::new(line));
+        }
+    }
+
+    let list = List::new(items)
+        .block(
+            Block::bordered()
+                .title("[Select Theme]")
+                .border_type(BorderType::Rounded)
+                .border_style(Style::new().fg(theme.popup_border)),
+        )
+        .highlight_style(Style::new().bg(theme.highlight_bg).fg(theme.highlight_fg));
+
+    state
+        .theme_popup_list_state
+        .select(Some(state.theme_popup_index));
+    frame.render_stateful_widget(list, chunks[1], &mut state.theme_popup_list_state);
+
+    let hint = "↑/↓: Navigate | Enter: Apply | Esc: Cancel";
+    frame.render_widget(
+        Paragraph::new(hint)
+            .style(Style::new().fg(theme.hint_fg))
             .alignment(Alignment::Center),
         chunks[2],
     );
