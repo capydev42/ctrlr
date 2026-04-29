@@ -2,31 +2,27 @@ use std::collections::HashSet;
 
 use ratatui::{
     layout::Alignment,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
 
 use crate::app::{ActivePane, ViewMode};
+use crate::ui::theme::Theme;
 
-const TAG_BG: Color = Color::Rgb(60, 65, 75);
-const TAG_FG: Color = Color::Rgb(180, 185, 190);
 const MAX_VISIBLE_TAGS: usize = 3;
 
-const TAB_ACTIVE_FG: Color = Color::Rgb(203, 166, 247);
-const TAB_INACTIVE_FG: Color = Color::Rgb(166, 173, 200);
-
-pub const FOCUS_BORDER: Color = Color::Rgb(203, 166, 247);
-pub const UNFOCUS_BORDER: Color = Color::DarkGray;
-
-pub fn tag_span(tag: &str) -> Span<'_> {
-    Span::styled(format!("[{}]", tag), Style::new().fg(TAG_FG).bg(TAG_BG))
+pub fn tag_span<'a>(tag: &'a str, theme: &Theme) -> Span<'a> {
+    Span::styled(
+        format!("[{}]", tag),
+        Style::new().fg(theme.tag_fg).bg(theme.tag_bg),
+    )
 }
 
-pub fn tags_overflow_span(overflow: usize) -> Span<'static> {
+pub fn tags_overflow_span(overflow: usize, theme: &Theme) -> Span<'static> {
     Span::styled(
         format!("+{} more", overflow),
-        Style::new().fg(Color::DarkGray).italic(),
+        Style::new().fg(theme.hint_fg).italic(),
     )
 }
 
@@ -35,6 +31,7 @@ pub fn command_with_right_tags<'a>(
     cmd_indices: Option<&HashSet<usize>>,
     tags: &'a [String],
     available_width: u16,
+    theme: &Theme,
 ) -> Line<'a> {
     let tags_width: usize = tags
         .iter()
@@ -65,7 +62,7 @@ pub fn command_with_right_tags<'a>(
             if idx_in_truncated {
                 line.spans.push(Span::styled(
                     c.to_string(),
-                    Style::new().fg(Color::Yellow).bold(),
+                    Style::new().fg(theme.match_highlight_fg).bold(),
                 ));
             } else {
                 line.spans.push(Span::raw(c.to_string()));
@@ -93,13 +90,13 @@ pub fn command_with_right_tags<'a>(
     }
 
     for tag in tags.iter().take(MAX_VISIBLE_TAGS) {
-        line.spans.push(tag_span(tag));
+        line.spans.push(tag_span(tag, theme));
         line.spans.push(Span::raw(" "));
     }
 
     if tags.len() > MAX_VISIBLE_TAGS {
         let overflow = tags.len() - MAX_VISIBLE_TAGS;
-        line.spans.push(tags_overflow_span(overflow));
+        line.spans.push(tags_overflow_span(overflow, theme));
     }
 
     line
@@ -112,6 +109,7 @@ pub fn render_search_bar(
 ) {
     use ratatui::widgets::{Block, BorderType};
 
+    let theme = &state.current_theme;
     let cursor = if state.active_pane == ActivePane::Search {
         "▋"
     } else {
@@ -119,9 +117,9 @@ pub fn render_search_bar(
     };
     let search_text = format!("{}{}", state.search_query, cursor);
     let search_border_color = if state.active_pane == ActivePane::Search {
-        FOCUS_BORDER
+        theme.focus_border
     } else {
-        UNFOCUS_BORDER
+        theme.unfocus_border
     };
 
     frame.render_widget(
@@ -146,6 +144,7 @@ pub fn render_tabs(
 ) {
     use ratatui::widgets::Paragraph;
 
+    let theme = &state.current_theme;
     let history_count = state.commands.len();
     let favorites_count = state.commands.iter().filter(|c| c.favorite).count();
     let collections_count = state.collections.len();
@@ -155,26 +154,37 @@ pub fn render_tabs(
     let tab_collections = format!("3 Collections ({})", collections_count);
 
     let line = Line::from(vec![
-        tab(&tab_history, state.view_mode == ViewMode::History),
+        tab(&tab_history, state.view_mode == ViewMode::History, theme),
         Span::raw("   "),
-        tab(&tab_favorites, state.view_mode == ViewMode::Favorites),
+        tab(
+            &tab_favorites,
+            state.view_mode == ViewMode::Favorites,
+            theme,
+        ),
         Span::raw("   "),
-        tab(&tab_collections, state.view_mode == ViewMode::Collections),
+        tab(
+            &tab_collections,
+            state.view_mode == ViewMode::Collections,
+            theme,
+        ),
     ]);
 
     frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }
 
-fn tab(label: &str, active: bool) -> Span<'_> {
+fn tab<'a>(label: &str, active: bool, theme: &Theme) -> Span<'a> {
     if active {
         Span::styled(
             format!(" {} ", label),
             Style::new()
-                .fg(TAB_ACTIVE_FG)
+                .fg(theme.tab_active_fg)
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )
     } else {
-        Span::styled(format!(" {} ", label), Style::new().fg(TAB_INACTIVE_FG))
+        Span::styled(
+            format!(" {} ", label),
+            Style::new().fg(theme.tab_inactive_fg),
+        )
     }
 }
 
@@ -192,10 +202,10 @@ pub fn render_footer(
             ViewMode::History | ViewMode::Favorites => {
                 match state.active_pane {
                     ActivePane::Search => {
-                        "? Help | 1: History | 2: Favorites | 3: Collections | /: Search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ".into()
+                        format!("? Help | 1: History | 2: Favorites | 3: Collections | Ctrl+T: Theme ({}) | /: Search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ", state.current_theme.name())
                     }
                     ActivePane::History => {
-                        "? Help | 1: History | 2: Favorites | 3: Collections | c: Add to Collection | /: Search | d: Details | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ".into()
+                        format!("? Help | 1: History | 2: Favorites | 3: Collections | Ctrl+T: Theme ({}) | c: Add to Collection | /: Search | d: Details | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ", state.current_theme.name())
                     }
                     _ => "".into(),
                 }

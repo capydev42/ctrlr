@@ -7,6 +7,7 @@ use ratatui::widgets::ListState;
 
 use crate::input::help::GroupedShortcut;
 use crate::storage::collections::Collection;
+use crate::ui::theme::{CatppuccinFlavor, Theme};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ActivePane {
@@ -92,6 +93,11 @@ pub struct AppState {
     pub help_filtered_shortcuts: Vec<GroupedShortcut>,
     pub help_selected_index: usize,
     pub help_list_state: ListState,
+    pub current_theme: Theme,
+    pub theme_popup_open: bool,
+    pub theme_popup_index: usize,
+    pub theme_popup_list_state: ListState,
+    pub saved_theme: Theme,
 }
 
 impl AppState {
@@ -195,6 +201,15 @@ impl AppState {
             help_filtered_shortcuts: Vec::new(),
             help_selected_index: 0,
             help_list_state,
+            current_theme: Theme::default(),
+            theme_popup_open: false,
+            theme_popup_index: 0,
+            theme_popup_list_state: {
+                let mut s = ListState::default();
+                s.select(Some(0));
+                s
+            },
+            saved_theme: Theme::default(),
         }
     }
 
@@ -930,6 +945,52 @@ impl AppState {
         self.selected_collection_index = self.selected_collection_index.saturating_sub(page_size);
         self.load_collection_commands();
         self.filter_commands();
+    }
+
+    pub fn open_theme_popup(&mut self) {
+        self.saved_theme = self.current_theme.clone();
+        self.theme_popup_open = true;
+        for (i, flavor) in CatppuccinFlavor::all().iter().enumerate() {
+            let t = flavor.theme();
+            if t.focus_border == self.current_theme.focus_border {
+                self.theme_popup_index = i;
+                break;
+            }
+        }
+        self.theme_popup_list_state
+            .select(Some(self.theme_popup_index));
+    }
+
+    pub fn close_theme_popup(&mut self) {
+        self.current_theme = self.saved_theme.clone();
+        self.theme_popup_open = false;
+    }
+
+    pub fn apply_theme_and_close(&mut self) {
+        self.theme_popup_open = false;
+    }
+
+    pub fn navigate_theme_popup_up(&mut self) {
+        if self.theme_popup_index > 0 {
+            self.theme_popup_index -= 1;
+        } else {
+            self.theme_popup_index = CatppuccinFlavor::all().len() - 1;
+        }
+        self.current_theme = CatppuccinFlavor::all()[self.theme_popup_index].theme();
+        self.theme_popup_list_state
+            .select(Some(self.theme_popup_index));
+    }
+
+    pub fn navigate_theme_popup_down(&mut self) {
+        let max = CatppuccinFlavor::all().len() - 1;
+        if self.theme_popup_index < max {
+            self.theme_popup_index += 1;
+        } else {
+            self.theme_popup_index = 0;
+        }
+        self.current_theme = CatppuccinFlavor::all()[self.theme_popup_index].theme();
+        self.theme_popup_list_state
+            .select(Some(self.theme_popup_index));
     }
 }
 

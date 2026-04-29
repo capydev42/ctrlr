@@ -3,6 +3,7 @@ pub mod components;
 pub mod history;
 pub mod layout;
 pub mod popups;
+pub mod theme;
 
 use ratatui::{
     Frame,
@@ -71,5 +72,9 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     if state.help_open {
         popups::render_help_popup(frame, state, area);
+    }
+
+    if state.theme_popup_open {
+        popups::render_theme_popup(frame, state, area);
     }
 }
