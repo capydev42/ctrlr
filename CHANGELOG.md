@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Catppuccin theme support with 4 flavors (Latte, Frappe, Macchiato, Mocha)
+  - Theme selector popup with color swatches and live preview (`Ctrl+T`)
+  - j/k or ↑/↓ navigation with instant theme switching
+  - Esc to cancel and revert to previous theme
+  - Current theme name displayed in footer (e.g. `Ctrl+T: Theme (Mocha)`)
+
 ---
 
 ## [0.4.0] - 2026-04-28
