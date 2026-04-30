@@ -100,6 +100,13 @@ pub fn get_all_shortcuts() -> Vec<GroupedShortcut> {
             category: "Actions",
         },
         GroupedShortcut {
+            action_id: "change_theme",
+            action_name: "Change Theme",
+            description: "Open theme selector popup",
+            keys: vec!["Ctrl+t"],
+            category: "Actions",
+        },
+        GroupedShortcut {
             action_id: "focus_search",
             action_name: "Focus Search",
             description: "Move cursor to search field",
@@ -258,6 +265,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "focus_search"
                         | "view_favorites"
                         | "view_collections"
+                        | "change_theme"
                         | "pane_down"
                         | "pane_up"
                 )
@@ -281,6 +289,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                     | "switch_pane"
                     | "view_favorites"
                     | "view_collections"
+                    | "change_theme"
                     | "pane_down"
                     | "pane_up")
             })
@@ -300,6 +309,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "focus_search"
                         | "view_history"
                         | "view_collections"
+                        | "change_theme"
                         | "pane_down"
                         | "pane_up"
                 )
@@ -323,6 +333,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                     | "switch_pane"
                     | "view_history"
                     | "view_collections"
+                    | "change_theme"
                     | "pane_down"
                     | "pane_up")
             })
@@ -359,6 +370,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "focus_search"
                         | "switch_pane"
                         | "pane_right"
+                        | "change_theme"
                         | "view_history"
                         | "view_favorites"
                 )
@@ -380,6 +392,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                     | "focus_search"
                     | "switch_pane"
                     | "pane_left"
+                    | "change_theme"
                     | "view_history"
                     | "view_favorites")
             })
@@ -542,6 +555,9 @@ pub fn execute_help_action(state: &mut AppState, action_id: &str) -> Action {
         }
         "focus_search" => {
             state.active_pane = ActivePane::Search;
+        }
+        "change_theme" => {
+            state.open_theme_popup();
         }
         "switch_pane" => {
             state.switch_pane();
