@@ -125,6 +125,7 @@ impl AppState {
         }
 
         let mut state = AppState::new(commands, db);
+        state.load_theme_from_db();
         state.load_collections();
         state
     }
@@ -961,12 +962,34 @@ impl AppState {
             .select(Some(self.theme_popup_index));
     }
 
+    pub fn load_theme_from_db(&mut self) {
+        if let Some(ref conn) = self.db
+            && let Some(name) = crate::storage::load_theme(conn)
+        {
+            let theme = match name.as_str() {
+                "Latte" => Theme::latte(),
+                "Frappe" => Theme::frappe(),
+                "Macchiato" => Theme::macchiato(),
+                "Mocha" => Theme::mocha(),
+                _ => Theme::default(),
+            };
+            self.current_theme = theme.clone();
+            self.saved_theme = theme;
+        }
+    }
+
     pub fn close_theme_popup(&mut self) {
         self.current_theme = self.saved_theme.clone();
         self.theme_popup_open = false;
     }
 
     pub fn apply_theme_and_close(&mut self) {
+        let theme_name = self.current_theme.name().to_string();
+        if let Some(ref conn) = self.db
+            && let Err(e) = crate::storage::save_theme(conn, &theme_name)
+        {
+            eprintln!("Failed to save theme: {}", e);
+        }
         self.theme_popup_open = false;
     }
 
