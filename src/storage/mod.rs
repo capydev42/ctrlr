@@ -1,4 +1,4 @@
-use rusqlite::Connection;
+use rusqlite::{Connection, params};
 use std::path::PathBuf;
 
 pub mod collections;
@@ -56,6 +56,11 @@ pub fn init_db_with_conn(conn: &Connection) -> rusqlite::Result<()> {
             PRIMARY KEY (command_id, collection_id)
         );
 
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_commands_text ON commands(text);
         CREATE INDEX IF NOT EXISTS idx_commands_favorite ON commands(favorite);
         CREATE INDEX IF NOT EXISTS idx_commands_use_count ON commands(use_count DESC);
@@ -63,6 +68,23 @@ pub fn init_db_with_conn(conn: &Connection) -> rusqlite::Result<()> {
         ",
     )?;
     Ok(())
+}
+
+pub fn save_theme(conn: &Connection, theme_name: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('theme', ?)",
+        params![theme_name],
+    )?;
+    Ok(())
+}
+
+pub fn load_theme(conn: &Connection) -> Option<String> {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = 'theme'",
+        [],
+        |row| row.get(0),
+    )
+    .ok()
 }
 
 #[derive(Debug, Clone)]
