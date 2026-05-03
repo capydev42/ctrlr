@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 pub mod collections;
 pub mod commands;
+pub mod import_export;
 pub mod tags;
 
 pub fn get_db_path() -> PathBuf {

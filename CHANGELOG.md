@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `Ctrl+t` shortcut added to help popup
 - Theme persistence in SQLite `settings` table
   - Selected theme is saved and restored on startup
+- **Import/export** via CLI with JSON format
+  - `ctrlr export` – export all data to stdout or file
+  - `ctrlr import backup.json` – import with merge mode (default)
+  - `ctrlr import --dry-run` – preview changes without applying
+  - `ctrlr import --replace` – replace all data (with y/N confirmation)
+  - Deduplication by command text hash; tags and collections are merged
+  - Versioned export format for future migration support
 
 ### Changed
 - Each theme now has distinct selection highlight colors (Mocha: mauve, Macchiato: sky, Frappe: teal, Latte: blue)
