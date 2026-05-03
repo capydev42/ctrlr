@@ -17,6 +17,7 @@
 - **Instant search** through your shell history
 - **Favorites** for frequently used commands
 - **Tags & collections** to organize commands
+- **Import/export** for backup and sharing (JSON format)
 - **Fast TUI** powered by `ratatui`
 - **Keyboard-first workflow**
 - Works with bash, zsh, fish
@@ -40,6 +41,25 @@ ctrlr init
 ```
 
 Replaces your default reverse search with ctrlr.
+
+### Import/Export
+
+Export all data to JSON (stdout or file):
+```bash
+ctrlr export                # print to stdout
+ctrlr export backup.json    # save to file
+```
+
+Import from a JSON export:
+```bash
+ctrlr import backup.json            # merge mode (default)
+ctrlr import backup.json --dry-run  # preview changes
+ctrlr import backup.json --replace  # replace all data
+```
+
+- **Merge** (default): adds new commands, skips duplicates, merges tags/collections
+- **Replace**: deletes all existing data before importing (with confirmation)
+- **Dry run**: shows what would be imported without making changes
 
 ---
 
@@ -178,10 +198,10 @@ Data is stored locally using SQLite:
 - [x] Fuzzy search
 - [x] Favorites & tags
 - [x] Collections
+- [x] Import/export (CLI)
 - [ ] Better ranking (recency + frequency)
 - [ ] Improved collections UX
-- [ ] Copy commands to clipboard
-- [ ] Import / export collections
+- [ ] Import/export (TUI)
 - [ ] Command preview / metadata
 - [ ] Vim-style navigation improvements
 - [ ] Plugin / extensibility ideas
