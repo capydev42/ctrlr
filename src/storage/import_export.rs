@@ -417,8 +417,9 @@ fn chrono_utc_now() -> String {
     )
 }
 
+#[allow(clippy::manual_is_multiple_of)]
 fn is_leap_year(year: u32) -> bool {
-    (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
 #[cfg(test)]
