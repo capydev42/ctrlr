@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Import/export TUI popups** for backup and sharing
+  - `Ctrl+E` – export popup (type file path, Enter to export)
+  - `Ctrl+O` – import popup (type file path, Enter for preview, Enter again to import)
+  - Import mode selector: Merge (default) or Replace
+  - Import preview shows new commands, collections, and duplicates
+  - Esc to close popups without exiting app
 - Catppuccin theme support with 4 flavors (Latte, Frappe, Macchiato, Mocha)
   - Theme selector popup with color swatches and live preview (`Ctrl+T`)
   - j/k or ↑/↓ navigation with instant theme switching

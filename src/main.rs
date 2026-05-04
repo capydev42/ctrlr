@@ -74,6 +74,8 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
             if key.code == crossterm::event::KeyCode::Esc
                 && !state.help_open
                 && !state.theme_popup_open
+                && !state.export_popup_open
+                && !state.import_popup_open
                 && state.input_mode != InputMode::TagInput
                 && state.input_mode != InputMode::CollectionInput
                 && state.handle_esc()

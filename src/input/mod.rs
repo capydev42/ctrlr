@@ -1,5 +1,6 @@
 pub mod collection;
 pub mod help;
+pub mod import_export;
 pub mod normal;
 pub mod tag;
 
@@ -13,9 +14,13 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
     if state.help_open {
         return help::handle(state, key);
     }
+    if state.export_popup_open || state.import_popup_open {
+        return import_export::handle(state, key);
+    }
     match state.input_mode {
         InputMode::TagInput => tag::handle(state, key),
         InputMode::CollectionInput => collection::handle(state, key),
+        InputMode::ImportExport => Action::None,
         InputMode::Normal => normal::handle(state, key),
     }
 }

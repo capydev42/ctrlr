@@ -735,3 +735,131 @@ pub fn render_theme_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
         chunks[2],
     );
 }
+
+pub fn render_import_export_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.current_theme;
+    let is_export = state.export_popup_open;
+    let has_preview = state.import_preview.is_some();
+
+    let title = if is_export { "Export" } else { "Import" };
+    let popup_width = 60u16;
+
+    let has_path = !state.import_export_file_path.is_empty();
+
+    let mode_height = if !is_export { 3 } else { 0 };
+    let preview_height = if has_preview && !is_export { 4 } else { 0 };
+    let hint_height = 1u16;
+    let input_height = 3u16;
+
+    let popup_height = input_height + mode_height + preview_height + hint_height;
+
+    let centered = center_rect(popup_width, popup_height, area);
+    frame.render_widget(Clear, centered);
+
+    let mut constraints = vec![Constraint::Length(input_height)];
+    if !is_export {
+        constraints.push(Constraint::Length(mode_height));
+    }
+    if has_preview && !is_export {
+        constraints.push(Constraint::Length(preview_height));
+    }
+    constraints.push(Constraint::Length(hint_height));
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(centered);
+
+    let input_text = Paragraph::new(Line::from(vec![
+        Span::styled("File: ", Style::default().fg(theme.input_text)),
+        Span::styled(
+            format!("{}▋", state.import_export_file_path),
+            Style::default().fg(theme.input_text),
+        ),
+    ]))
+    .block(
+        Block::bordered()
+            .title(format!("[{}]", title))
+            .border_type(BorderType::Rounded)
+            .border_style(Style::new().fg(theme.popup_border)),
+    );
+    frame.render_widget(input_text, chunks[0]);
+
+    let mut chunk_idx = 1;
+
+    if !is_export {
+        let merge_style = if state.import_mode_index == 0 {
+            Style::default()
+                .fg(theme.highlight_fg)
+                .bg(theme.highlight_bg)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme.hint_fg)
+        };
+
+        let replace_style = if state.import_mode_index == 1 {
+            Style::default()
+                .fg(theme.highlight_fg)
+                .bg(theme.highlight_bg)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme.hint_fg)
+        };
+
+        let mode_text = Line::from(vec![
+            Span::styled("(1) Merge ", merge_style),
+            Span::raw(" | "),
+            Span::styled("(2) Replace ", replace_style),
+        ]);
+
+        frame.render_widget(
+            Paragraph::new(mode_text).alignment(Alignment::Center),
+            chunks[chunk_idx],
+        );
+        chunk_idx += 1;
+
+        if has_preview {
+            let preview = state.import_preview.as_ref().unwrap();
+            let preview_lines = vec![
+                Line::from(vec![Span::styled(
+                    "Preview: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                )]),
+                Line::from(vec![Span::raw(format!(
+                    "  + {} commands, + {} collections",
+                    preview.new_commands, preview.new_collections
+                ))]),
+                Line::from(vec![Span::raw(format!(
+                    "  ~ {} duplicates (skipped)",
+                    preview.duplicates
+                ))]),
+            ];
+            frame.render_widget(
+                Paragraph::new(preview_lines).alignment(Alignment::Left),
+                chunks[chunk_idx],
+            );
+            chunk_idx += 1;
+        }
+    }
+
+    let hint = if is_export {
+        if has_path {
+            "Enter: Export | Esc: Cancel"
+        } else {
+            "Type path | Enter: Export | Esc: Cancel"
+        }
+    } else if has_preview {
+        "Enter: Import | Esc: Cancel"
+    } else if has_path {
+        "Enter: Preview | ↑/↓: Mode | Esc: Cancel"
+    } else {
+        "Type path | Enter: Preview | Esc: Cancel"
+    };
+
+    frame.render_widget(
+        Paragraph::new(hint)
+            .style(Style::new().fg(theme.hint_fg))
+            .alignment(Alignment::Center),
+        chunks[chunk_idx],
+    );
+}

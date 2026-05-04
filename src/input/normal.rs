@@ -56,6 +56,14 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             state.open_theme_popup();
             return Action::None;
         }
+        (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
+            state.open_export_popup();
+            return Action::None;
+        }
+        (KeyCode::Char('o'), KeyModifiers::CONTROL) => {
+            state.open_import_popup();
+            return Action::None;
+        }
         (KeyCode::Char('c'), KeyModifiers::NONE) => {
             if state.active_pane == ActivePane::Search {
                 state.add_to_search('c');

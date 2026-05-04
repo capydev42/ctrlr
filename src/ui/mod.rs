@@ -77,4 +77,8 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
     if state.theme_popup_open {
         popups::render_theme_popup(frame, state, area);
     }
+
+    if state.export_popup_open || state.import_popup_open {
+        popups::render_import_export_popup(frame, state, area);
+    }
 }
