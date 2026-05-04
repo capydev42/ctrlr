@@ -7,6 +7,7 @@ use ratatui::widgets::ListState;
 
 use crate::input::help::GroupedShortcut;
 use crate::storage::collections::Collection;
+use crate::storage::import_export::{ImportMode, ImportPreview};
 use crate::ui::theme::{CatppuccinFlavor, Theme};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -29,6 +30,7 @@ pub enum InputMode {
     Normal,
     TagInput,
     CollectionInput,
+    ImportExport,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -40,6 +42,13 @@ pub enum CollectionInputMode {
     AddToCollectionSearch,
     ConfirmDeleteCollection,
     ConfirmDeleteCommand,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ImportExportMode {
+    Export,
+    Import,
+    ImportPreview,
 }
 
 #[derive(Clone, Debug)]
@@ -98,6 +107,12 @@ pub struct AppState {
     pub theme_popup_index: usize,
     pub theme_popup_list_state: ListState,
     pub saved_theme: Theme,
+    pub export_popup_open: bool,
+    pub import_popup_open: bool,
+    pub import_export_file_path: String,
+    pub import_mode_index: usize,
+    pub import_preview: Option<ImportPreview>,
+    pub import_export_mode: ImportExportMode,
 }
 
 impl AppState {
@@ -211,11 +226,22 @@ impl AppState {
                 s
             },
             saved_theme: Theme::default(),
+            export_popup_open: false,
+            import_popup_open: false,
+            import_export_file_path: String::new(),
+            import_mode_index: 0,
+            import_preview: None,
+            import_export_mode: ImportExportMode::Export,
         }
     }
 
     pub fn set_terminal_height(&mut self, height: u16) {
         self.terminal_height = height;
+    }
+
+    pub fn set_status_message(&mut self, msg: String) {
+        self.status_message = Some(msg);
+        self.status_timestamp = Some(Instant::now());
     }
 
     pub fn check_key_buffer_timeout(&mut self) {
@@ -1016,6 +1042,207 @@ impl AppState {
         self.current_theme = CatppuccinFlavor::all()[self.theme_popup_index].theme();
         self.theme_popup_list_state
             .select(Some(self.theme_popup_index));
+    }
+
+    pub fn open_export_popup(&mut self) {
+        self.export_popup_open = true;
+        self.import_popup_open = false;
+        self.input_mode = InputMode::ImportExport;
+        self.import_export_mode = ImportExportMode::Export;
+        self.import_export_file_path.clear();
+        self.import_preview = None;
+        self.import_mode_index = 0;
+    }
+
+    pub fn open_import_popup(&mut self) {
+        self.import_popup_open = true;
+        self.export_popup_open = false;
+        self.input_mode = InputMode::ImportExport;
+        self.import_export_mode = ImportExportMode::Import;
+        self.import_export_file_path.clear();
+        self.import_preview = None;
+        self.import_mode_index = 0;
+    }
+
+    pub fn close_import_export_popup(&mut self) {
+        self.export_popup_open = false;
+        self.import_popup_open = false;
+        self.input_mode = InputMode::Normal;
+        self.import_export_file_path.clear();
+        self.import_preview = None;
+    }
+
+    pub fn preview_import(&mut self) {
+        if self.import_export_file_path.is_empty() {
+            return;
+        }
+
+        let content = match std::fs::read_to_string(&self.import_export_file_path) {
+            Ok(c) => c,
+            Err(e) => {
+                self.set_status_message(format!("Error: {}", e));
+                return;
+            }
+        };
+
+        let data: crate::storage::import_export::ExportData = match serde_json::from_str(&content) {
+            Ok(d) => d,
+            Err(e) => {
+                self.set_status_message(format!("Invalid JSON: {}", e));
+                return;
+            }
+        };
+
+        if data.version != 1 {
+            self.set_status_message(format!("Unsupported version {}", data.version));
+            return;
+        }
+
+        let Some(ref conn) = self.db else {
+            self.set_status_message("No database connection".to_string());
+            return;
+        };
+
+        match crate::storage::import_export::preview_import(conn, &data) {
+            Ok(preview) => {
+                self.import_preview = Some(preview);
+                self.import_export_mode = ImportExportMode::ImportPreview;
+            }
+            Err(e) => {
+                self.set_status_message(format!("Preview error: {}", e));
+            }
+        }
+    }
+
+    pub fn execute_import(&mut self) {
+        if self.import_preview.is_none() {
+            return;
+        }
+
+        let content = match std::fs::read_to_string(&self.import_export_file_path) {
+            Ok(c) => c,
+            Err(e) => {
+                self.set_status_message(format!("Error: {}", e));
+                return;
+            }
+        };
+
+        let data: crate::storage::import_export::ExportData = match serde_json::from_str(&content) {
+            Ok(d) => d,
+            Err(e) => {
+                self.set_status_message(format!("Invalid JSON: {}", e));
+                return;
+            }
+        };
+
+        let mode = if self.import_mode_index == 1 {
+            ImportMode::Replace
+        } else {
+            ImportMode::Merge
+        };
+
+        let Some(ref mut conn) = self.db else {
+            self.set_status_message("No database connection".to_string());
+            return;
+        };
+
+        match crate::storage::import_export::import_data(conn, &data, &mode) {
+            Ok(result) => {
+                let mut msg = String::new();
+                if result.imported_commands > 0 {
+                    msg.push_str(&format!("Imported {} commands", result.imported_commands));
+                }
+                if result.imported_collections > 0 {
+                    if !msg.is_empty() {
+                        msg.push_str(", ");
+                    }
+                    msg.push_str(&format!("{} collections", result.imported_collections));
+                }
+                if result.skipped_commands > 0 {
+                    msg.push_str(&format!(", skipped {}", result.skipped_commands));
+                }
+                self.set_status_message(msg);
+
+                let commands = crate::history::load_history();
+                let commands = crate::history::deduplicate(commands);
+                if let Some(ref mut c) = self.db {
+                    let cmd_refs: Vec<(&str, String)> = commands
+                        .iter()
+                        .map(|c| (c.text.as_str(), c.id.clone()))
+                        .collect();
+                    if let Err(e) = crate::storage::commands::ensure_commands_exist(c, &cmd_refs) {
+                        eprintln!("Failed to sync commands: {}", e);
+                    }
+                    self.commands.clear();
+                    self.commands.extend(commands.into_iter().map(|cmd| {
+                        let mut c2 = cmd;
+                        if let Some(meta) = crate::storage::load_metadata(c, &c2.text) {
+                            c2.favorite = meta.favorite;
+                            c2.use_count = meta.use_count.max(c2.use_count);
+                            if meta.last_used > c2.last_used {
+                                c2.last_used = meta.last_used;
+                            }
+                        }
+                        let tags = crate::storage::load_tags(c, &c2.text);
+                        if !tags.is_empty() {
+                            c2.tags = tags;
+                        }
+                        let cols =
+                            crate::storage::collections::get_collections_for_command(c, &c2.text)
+                                .unwrap_or_default();
+                        if !cols.is_empty() {
+                            c2.collection_ids = cols;
+                        }
+                        c2
+                    }));
+                }
+                self.filter_commands();
+            }
+            Err(e) => {
+                self.set_status_message(format!("Import error: {}", e));
+            }
+        }
+
+        self.close_import_export_popup();
+    }
+
+    pub fn execute_export(&mut self) {
+        if self.import_export_file_path.is_empty() {
+            return;
+        }
+
+        let Some(ref conn) = self.db else {
+            self.set_status_message("No database connection".to_string());
+            return;
+        };
+
+        match crate::storage::import_export::export_data(conn) {
+            Ok(data) => {
+                let json = match serde_json::to_string_pretty(&data) {
+                    Ok(j) => j,
+                    Err(e) => {
+                        self.set_status_message(format!("JSON error: {}", e));
+                        return;
+                    }
+                };
+
+                if let Err(e) = std::fs::write(&self.import_export_file_path, &json) {
+                    self.set_status_message(format!("Write error: {}", e));
+                    return;
+                }
+
+                self.set_status_message(format!(
+                    "Exported {} commands to {}",
+                    data.commands.len(),
+                    self.import_export_file_path
+                ));
+            }
+            Err(e) => {
+                self.set_status_message(format!("Export error: {}", e));
+            }
+        }
+
+        self.close_import_export_popup();
     }
 }
 
