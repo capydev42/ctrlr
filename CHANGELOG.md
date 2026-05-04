@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.5.0] - 2026-05-04
+
 ### Added
 - **Import/export TUI popups** for backup and sharing
   - `Ctrl+E` – export popup (type file path, Enter to export)
@@ -35,8 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Each theme now has distinct selection highlight colors (Mocha: mauve, Macchiato: sky, Frappe: teal, Latte: blue)
 - Unfocus border colors use theme-specific subtle colors instead of generic `DarkGray`
-  - Esc to cancel and revert to previous theme
-  - Current theme name displayed in footer (e.g. `Ctrl+T: Theme (Mocha)`)
 
 ---
 
