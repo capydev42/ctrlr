@@ -107,6 +107,20 @@ pub fn get_all_shortcuts() -> Vec<GroupedShortcut> {
             category: "Actions",
         },
         GroupedShortcut {
+            action_id: "export_data",
+            action_name: "Export Data",
+            description: "Open export popup (type path, Enter to export)",
+            keys: vec!["Ctrl+e"],
+            category: "Actions",
+        },
+        GroupedShortcut {
+            action_id: "import_data",
+            action_name: "Import Data",
+            description: "Open import popup (type path, Enter to preview)",
+            keys: vec!["Ctrl+o"],
+            category: "Actions",
+        },
+        GroupedShortcut {
             action_id: "focus_search",
             action_name: "Focus Search",
             description: "Move cursor to search field",
@@ -266,6 +280,8 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "view_favorites"
                         | "view_collections"
                         | "change_theme"
+                        | "export_data"
+                        | "import_data"
                         | "pane_down"
                         | "pane_up"
                 )
@@ -290,6 +306,8 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                     | "view_favorites"
                     | "view_collections"
                     | "change_theme"
+                    | "export_data"
+                    | "import_data"
                     | "pane_down"
                     | "pane_up")
             })
@@ -310,6 +328,8 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "view_history"
                         | "view_collections"
                         | "change_theme"
+                        | "export_data"
+                        | "import_data"
                         | "pane_down"
                         | "pane_up"
                 )
@@ -334,6 +354,8 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                     | "view_history"
                     | "view_collections"
                     | "change_theme"
+                    | "export_data"
+                    | "import_data"
                     | "pane_down"
                     | "pane_up")
             })
@@ -347,6 +369,9 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "view_history"
                         | "view_favorites"
                         | "new_collection"
+                        | "change_theme"
+                        | "export_data"
+                        | "import_data"
                         | "pane_down"
                         | "pane_up"
                 )
@@ -371,6 +396,8 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "switch_pane"
                         | "pane_right"
                         | "change_theme"
+                        | "export_data"
+                        | "import_data"
                         | "view_history"
                         | "view_favorites"
                 )
@@ -393,6 +420,8 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                     | "switch_pane"
                     | "pane_left"
                     | "change_theme"
+                    | "export_data"
+                    | "import_data"
                     | "view_history"
                     | "view_favorites")
             })
@@ -558,6 +587,12 @@ pub fn execute_help_action(state: &mut AppState, action_id: &str) -> Action {
         }
         "change_theme" => {
             state.open_theme_popup();
+        }
+        "export_data" => {
+            state.open_export_popup();
+        }
+        "import_data" => {
+            state.open_import_popup();
         }
         "switch_pane" => {
             state.switch_pane();
