@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Import/export shortcuts (`Ctrl+E`, `Ctrl+O`) shown in help popup across all views
+
+### Fixed
+- Commands added to collections that never existed in shell history are now persisted across restarts
+- DB operations in `add_command_to_collection` now run before in-memory state updates to prevent inconsistency on error
+
 ---
 
 ## [0.5.0] - 2026-05-04

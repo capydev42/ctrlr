@@ -137,6 +137,50 @@ impl AppState {
                 eprintln!("Failed to save commands: {}", e);
             }
             crate::storage::hydrate_commands(conn, &mut commands);
+
+            // Load DB-only commands (manually added to collections, not in shell history)
+            #[allow(clippy::collapsible_if)]
+            if let Ok(mut stmt) = conn.prepare("SELECT id, text FROM commands") {
+                if let Ok(rows) = stmt.query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                }) {
+                    for row in rows.flatten() {
+                        let (db_id, db_text) = row;
+                        if !commands.iter().any(|c| c.id == db_id) {
+                            let mut cmd = Command {
+                                id: db_id,
+                                text: db_text.clone(),
+                                tags: vec![],
+                                collection_ids: vec![],
+                                favorite: false,
+                                _context: vec![],
+                                use_count: 0,
+                                last_used: None,
+                            };
+                            if let Some(meta) = crate::storage::load_metadata(conn, &db_text) {
+                                cmd.favorite = meta.favorite;
+                                if meta.use_count > cmd.use_count {
+                                    cmd.use_count = meta.use_count;
+                                }
+                                cmd.last_used = meta.last_used;
+                            }
+                            let tags = crate::storage::load_tags(conn, &db_text);
+                            if !tags.is_empty() {
+                                cmd.tags = tags;
+                            }
+                            let collection_ids =
+                                crate::storage::collections::get_collections_for_command(
+                                    conn, &db_text,
+                                )
+                                .unwrap_or_default();
+                            if !collection_ids.is_empty() {
+                                cmd.collection_ids = collection_ids;
+                            }
+                            commands.push(cmd);
+                        }
+                    }
+                }
+            }
         }
 
         let mut state = AppState::new(commands, db);
@@ -767,27 +811,7 @@ impl AppState {
     }
 
     pub fn add_command_to_collection(&mut self, cmd_text: &str, collection_id: &str) {
-        let col_name = self
-            .collections
-            .iter()
-            .find(|c| c.id == collection_id)
-            .map(|c| c.name.clone());
-
-        let cmd_id = crate::storage::collections::hash_command(cmd_text);
-
-        if !self.commands.iter().any(|c| c.text == cmd_text) {
-            self.commands.push(Command {
-                id: cmd_id,
-                text: cmd_text.to_string(),
-                tags: vec![],
-                collection_ids: vec![collection_id.to_string()],
-                favorite: false,
-                _context: vec![],
-                use_count: 0,
-                last_used: None,
-            });
-        }
-
+        // DB operation FIRST to keep state consistent on error
         let conn = match self.db.as_ref() {
             Some(c) => c,
             None => return,
@@ -801,9 +825,19 @@ impl AppState {
             return;
         }
 
-        if let Some(name) = col_name {
-            self.status_message = Some(format!("Added to {}", name));
-            self.status_timestamp = Some(Instant::now());
+        // Then update in-memory state
+        if !self.commands.iter().any(|c| c.text == cmd_text) {
+            let cmd_id = crate::storage::collections::hash_command(cmd_text);
+            self.commands.push(Command {
+                id: cmd_id,
+                text: cmd_text.to_string(),
+                tags: vec![],
+                collection_ids: vec![],
+                favorite: false,
+                _context: vec![],
+                use_count: 0,
+                last_used: None,
+            });
         }
 
         match self.commands.iter_mut().find(|c| c.text == cmd_text) {
@@ -811,6 +845,17 @@ impl AppState {
                 cmd.collection_ids.push(collection_id.to_string());
             }
             _ => {}
+        }
+
+        let col_name = self
+            .collections
+            .iter()
+            .find(|c| c.id == collection_id)
+            .map(|c| c.name.clone());
+
+        if let Some(name) = col_name {
+            self.status_message = Some(format!("Added to {}", name));
+            self.status_timestamp = Some(Instant::now());
         }
 
         self.load_collection_commands();
