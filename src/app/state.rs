@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
-use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::widgets::ListState;
 
 use crate::input::help::GroupedShortcut;
