@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.5.1] - 2026-05-28
+
 ### Added
 - Import/export shortcuts (`Ctrl+E`, `Ctrl+O`) shown in help popup across all views
 
