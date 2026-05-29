@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Search field now accepts uppercase letters (Shift+letter combinations) instead of silently dropping them
+
 ---
 
 ## [0.5.1] - 2026-05-28

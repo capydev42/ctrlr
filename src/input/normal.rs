@@ -164,7 +164,7 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
 
     match state.active_pane {
         ActivePane::Search => match (key.code, key.modifiers) {
-            (KeyCode::Char(c), KeyModifiers::NONE) => {
+            (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
                 state.add_to_search(c);
             }
             (KeyCode::Backspace, _) => {
