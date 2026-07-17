@@ -64,6 +64,13 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             state.open_import_popup();
             return Action::None;
         }
+        // Guarded so that outside the search bar this falls through to the
+        // page-up arm below, which Ctrl+u shares with PageUp.
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) if state.active_pane == ActivePane::Search => {
+            state.clear_key_buffer();
+            state.clear_search();
+            return Action::None;
+        }
         (KeyCode::Char('c'), KeyModifiers::NONE) => {
             if state.active_pane == ActivePane::Search {
                 state.add_to_search('c');
@@ -480,5 +487,85 @@ fn handle_go_to_bottom(state: &mut AppState) {
             }
             state.go_to_bottom();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::Command;
+
+    fn cmd(text: &str) -> Command {
+        Command {
+            id: text.to_string(),
+            text: text.to_string(),
+            tags: vec![],
+            collection_ids: vec![],
+            favorite: false,
+            _context: vec![],
+            use_count: 0,
+            last_used: None,
+        }
+    }
+
+    fn state_with_query(pane: ActivePane, query: &str) -> AppState {
+        let commands = (0..40).map(|i| cmd(&format!("command {}", i))).collect();
+        let mut state = AppState::new(commands, None);
+        state.active_pane = pane;
+        state.search_query = query.to_string();
+        state.filter_commands();
+        state
+    }
+
+    fn ctrl(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    #[test]
+    fn test_ctrl_u_clears_search_and_keeps_focus() {
+        let mut state = state_with_query(ActivePane::Search, "command 1");
+
+        handle(&mut state, ctrl('u'));
+
+        assert!(state.search_query.is_empty());
+        // Must not fall through to page-up, which steals focus to History.
+        assert_eq!(state.active_pane, ActivePane::Search);
+        assert_eq!(state.selected_index, 0);
+    }
+
+    #[test]
+    fn test_ctrl_u_still_pages_up_outside_search() {
+        let mut state = state_with_query(ActivePane::History, "command");
+        state.selected_index = 30;
+
+        handle(&mut state, ctrl('u'));
+
+        assert_eq!(state.search_query, "command", "query must be untouched");
+        assert!(state.selected_index < 30, "should have paged up");
+    }
+
+    #[test]
+    fn test_page_up_key_still_steals_focus_from_search() {
+        let mut state = state_with_query(ActivePane::Search, "command");
+        state.selected_index = 30;
+
+        handle(
+            &mut state,
+            KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
+        );
+
+        assert_eq!(state.search_query, "command", "PageUp must not clear");
+        assert_eq!(state.active_pane, ActivePane::History);
+        assert!(state.selected_index < 30);
+    }
+
+    #[test]
+    fn test_ctrl_u_on_empty_search_does_not_quit() {
+        let mut state = state_with_query(ActivePane::Search, "");
+
+        let action = handle(&mut state, ctrl('u'));
+
+        assert!(matches!(action, Action::None), "must never signal exit");
+        assert_eq!(state.active_pane, ActivePane::Search);
     }
 }

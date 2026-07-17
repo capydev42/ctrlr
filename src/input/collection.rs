@@ -16,6 +16,14 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.collection_input_text.push(c);
             }
         },
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+            state.collection_input_text.clear();
+            match state.collection_input_mode {
+                CollectionInputMode::AddToCollection => state.collection_popup_index = 0,
+                CollectionInputMode::AddToCollectionSearch => state.add_command_search_index = 0,
+                _ => {}
+            }
+        }
         (KeyCode::Backspace, _) => match state.collection_input_mode {
             CollectionInputMode::AddToCollection => {
                 if !state.collection_input_text.is_empty() {

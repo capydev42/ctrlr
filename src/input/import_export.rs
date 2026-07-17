@@ -9,6 +9,15 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
         (KeyCode::Backspace, _) => {
             state.import_export_file_path.pop();
         }
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+            state.import_export_file_path.clear();
+            // The preview describes the path that was just cleared, so it has
+            // to go with it.
+            state.import_preview = None;
+            if state.import_export_mode == ImportExportMode::ImportPreview {
+                state.import_export_mode = ImportExportMode::Import;
+            }
+        }
         (KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL)
             if state.import_export_mode == ImportExportMode::Import
                 || state.import_export_mode == ImportExportMode::ImportPreview =>

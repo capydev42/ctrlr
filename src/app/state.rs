@@ -510,6 +510,18 @@ impl AppState {
         self.filter_commands();
     }
 
+    /// Clears the query and returns the selection to the top.
+    ///
+    /// `filter_commands` only resets the selection while a query is present, so
+    /// without the explicit reset the cursor would sit on whatever index it had
+    /// once the full list comes back — an unrelated command.
+    pub fn clear_search(&mut self) {
+        self.search_query.clear();
+        self.filter_commands();
+        self.selected_index = 0;
+        self.list_state.select(Some(0));
+    }
+
     pub fn filter_commands(&mut self) {
         let base_commands: Vec<&Command> = match self.view_mode {
             ViewMode::History => self.commands.iter().collect(),
@@ -600,12 +612,12 @@ impl AppState {
         }
     }
 
+    /// Returns true when the caller should quit — i.e. there was no query to clear.
     pub fn handle_esc(&mut self) -> bool {
         if self.search_query.is_empty() {
             true
         } else {
-            self.search_query.clear();
-            self.filter_commands();
+            self.clear_search();
             false
         }
     }
@@ -1315,3 +1327,85 @@ fn compute_ranking_score(cmd: &Command, fuzzy: i64, now: i64) -> i64 {
 }
 
 impl AppState {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cmd(text: &str) -> Command {
+        Command {
+            id: text.to_string(),
+            text: text.to_string(),
+            tags: vec![],
+            collection_ids: vec![],
+            favorite: false,
+            _context: vec![],
+            use_count: 0,
+            last_used: None,
+        }
+    }
+
+    fn state_with(texts: &[&str]) -> AppState {
+        AppState::new(texts.iter().map(|t| cmd(t)).collect(), None)
+    }
+
+    #[test]
+    fn test_clear_search_resets_query_and_list() {
+        let mut state = state_with(&["git status", "cargo build", "ls -la"]);
+        state.search_query = "git".to_string();
+        state.filter_commands();
+        assert_eq!(state.filtered.len(), 1);
+
+        state.clear_search();
+
+        assert!(state.search_query.is_empty());
+        assert_eq!(state.filtered.len(), 3, "full list must come back");
+    }
+
+    #[test]
+    fn test_clear_search_resets_selection_to_top() {
+        let mut state = state_with(&["git status", "cargo build", "ls -la"]);
+        state.search_query = "a".to_string();
+        state.filter_commands();
+        // Walked down the filtered results before clearing.
+        state.selected_index = 1;
+        state.list_state.select(Some(1));
+
+        state.clear_search();
+
+        // filter_commands alone would leave these at 1, pointing at an
+        // unrelated command once the full list returns.
+        assert_eq!(state.selected_index, 0);
+        assert_eq!(state.list_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn test_clear_search_on_empty_query_is_noop() {
+        let mut state = state_with(&["git status", "cargo build"]);
+        state.clear_search();
+        state.clear_search();
+
+        assert!(state.search_query.is_empty());
+        assert_eq!(state.filtered.len(), 2);
+        assert_eq!(state.selected_index, 0);
+    }
+
+    #[test]
+    fn test_handle_esc_clears_query_without_quitting() {
+        let mut state = state_with(&["git status", "cargo build"]);
+        state.search_query = "git".to_string();
+        state.filter_commands();
+
+        let should_quit = state.handle_esc();
+
+        assert!(!should_quit, "Esc with a query must not quit");
+        assert!(state.search_query.is_empty());
+        assert_eq!(state.filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_handle_esc_on_empty_query_signals_quit() {
+        let mut state = state_with(&["git status"]);
+        assert!(state.handle_esc(), "Esc with no query must quit");
+    }
+}
