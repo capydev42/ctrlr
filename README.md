@@ -154,6 +154,7 @@ mv target/release/ctrlr ~/.local/bin/
 |-----------|------------------|
 | Type      | Search           |
 | Backspace | Delete character |
+| Ctrl+u    | Clear search     |
 | Enter     | Focus list       |
 | Esc       | Clear / exit     |
 
@@ -165,6 +166,7 @@ mv target/release/ctrlr ~/.local/bin/
 | Up / Down | Navigate suggestions|
 | Enter     | Select / Create     |
 | Tab       | Autocomplete        |
+| Ctrl+u    | Clear input         |
 | Esc       | Cancel              |
 
 ### Collections View

@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exporting and re-importing is now idempotent for those commands; previously they were re-imported as duplicates
 - Importing an export written by an older version no longer fails with `UNIQUE constraint failed: commands.id` when the file contains commands differing only by case
 - Renaming a collection no longer silently drops every command's membership on export/import. Exports now carry `collection_ids`; files without it still import
+- Quitting with `Esc` no longer leaves the terminal cursor invisible until you reopen ctrlr and pick a command. ctrlr draws its own cursor glyph, so ratatui hides the real one on every frame and only restores it when the terminal is dropped — which the cancel path skipped by exiting the process outright. Only affected launches via the shell integration, which always passes `--output-file`
 
 ### Changed
 - Commands differing only by case or surrounding whitespace now share one entry in storage, and therefore one set of favorites, tags and usage counts. The list already treated them as one; storage now agrees. The text you execute is unchanged
