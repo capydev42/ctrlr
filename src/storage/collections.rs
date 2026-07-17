@@ -1,5 +1,5 @@
+use crate::hash::hash_command;
 use rusqlite::Connection;
-use sha1::{Digest, Sha1};
 
 #[derive(Debug, Clone)]
 pub struct Collection {
@@ -7,14 +7,16 @@ pub struct Collection {
     pub name: String,
 }
 
-fn hash_name(name: &str) -> String {
-    let mut hasher = Sha1::new();
-    hasher.update(name.as_bytes());
-    format!("{:x}", hasher.finalize())
+/// Collection ids hash the raw name, unlike command ids.
+///
+/// Renaming a collection deliberately keeps the old id, so this must never
+/// normalize — two collections may legitimately differ only by case.
+pub fn hash_collection_name(name: &str) -> String {
+    crate::hash::sha1_hex(name)
 }
 
 pub fn create_collection(conn: &Connection, name: &str) -> rusqlite::Result<String> {
-    let id = hash_name(name);
+    let id = hash_collection_name(name);
     conn.execute(
         "INSERT INTO collections (id, name) VALUES (?, ?)",
         (&id, name),
@@ -135,12 +137,6 @@ pub fn command_in_collection(conn: &Connection, cmd_text: &str, collection_id: &
     .is_ok()
 }
 
-pub fn hash_command(text: &str) -> String {
-    let mut hasher = Sha1::new();
-    hasher.update(text.as_bytes());
-    format!("{:x}", hasher.finalize())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,6 +154,29 @@ mod tests {
         let conn = test_conn();
         let id = create_collection(&conn, "work").unwrap();
         assert!(!id.is_empty());
+    }
+
+    #[test]
+    fn test_hash_collection_name_is_case_sensitive() {
+        // Unlike command ids: renames keep the old id, so normalizing here
+        // would silently merge distinct collections.
+        assert_ne!(hash_collection_name("Work"), hash_collection_name("work"));
+        assert_eq!(hash_collection_name("work"), hash_collection_name("work"));
+    }
+
+    #[test]
+    fn test_add_command_to_collection_normalizes() {
+        let conn = test_conn();
+        let col_id = create_collection(&conn, "build").unwrap();
+        add_command_to_collection(&conn, "Cargo Build", &col_id).unwrap();
+
+        assert!(command_in_collection(&conn, "cargo build", &col_id));
+        assert!(command_in_collection(&conn, "  CARGO BUILD  ", &col_id));
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM commands", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1, "must not create a raw-hashed shadow row");
     }
 
     #[test]

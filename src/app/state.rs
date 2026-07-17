@@ -827,7 +827,7 @@ impl AppState {
 
         // Then update in-memory state
         if !self.commands.iter().any(|c| c.text == cmd_text) {
-            let cmd_id = crate::storage::collections::hash_command(cmd_text);
+            let cmd_id = crate::hash::hash_command(cmd_text);
             self.commands.push(Command {
                 id: cmd_id,
                 text: cmd_text.to_string(),
@@ -954,7 +954,7 @@ impl AppState {
                 cmd.collection_ids.push(col_id.clone());
             }
         } else {
-            let cmd_id = crate::storage::collections::hash_command(cmd_text);
+            let cmd_id = crate::hash::hash_command(cmd_text);
             self.commands.push(Command {
                 id: cmd_id,
                 text: cmd_text.to_string(),

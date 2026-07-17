@@ -3,6 +3,7 @@ use ratatui::DefaultTerminal;
 
 mod app;
 mod cli;
+mod hash;
 mod history;
 mod input;
 mod storage;

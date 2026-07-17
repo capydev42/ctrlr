@@ -13,7 +13,7 @@ pub fn set_tags_for_command(
     text: &str,
     new_tags: &[String],
 ) -> rusqlite::Result<()> {
-    use crate::storage::commands::hash_command;
+    use crate::hash::hash_command;
 
     let cmd_id = hash_command(text);
 

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 pub mod collections;
 pub mod commands;
 pub mod import_export;
+pub mod migrations;
 pub mod tags;
 
 pub fn get_db_path() -> PathBuf {
@@ -18,11 +19,32 @@ pub fn get_db_path() -> PathBuf {
 
 pub fn init_db() -> rusqlite::Result<Connection> {
     let db_path = get_db_path();
-    let conn = Connection::open(&db_path)?;
+    let mut conn = Connection::open(&db_path)?;
     init_db_with_conn(&conn)?;
+
+    if migrations::needs_migration(&conn) {
+        // The migration merges and deletes rows; keep a copy of the last known
+        // good state. Best-effort — a failed backup must not block startup.
+        let backup = db_path.with_extension("db.pre-migration.bak");
+        if let Err(e) = std::fs::copy(&db_path, &backup) {
+            eprintln!("ctrlr: could not back up database before migrating: {}", e);
+        }
+    }
+
+    // Non-fatal by design, matching the Option<Connection> the app holds: on
+    // failure the transaction rolled back and the next launch retries.
+    if let Err(e) = migrations::run_migrations(&mut conn) {
+        eprintln!(
+            "ctrlr: database migration failed, continuing without it: {}",
+            e
+        );
+    }
+
     Ok(conn)
 }
 
+/// Creates the schema only. Production callers want [`init_db`], which also
+/// runs migrations; this is split out so tests can build a bare in-memory DB.
 pub fn init_db_with_conn(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "
@@ -96,7 +118,7 @@ pub struct CommandMeta {
 }
 
 pub fn load_metadata(conn: &Connection, text: &str) -> Option<CommandMeta> {
-    let id = commands::hash_command(text);
+    let id = crate::hash::hash_command(text);
 
     let mut stmt = conn
         .prepare("SELECT favorite, last_used, use_count FROM commands WHERE id = ?")
@@ -116,7 +138,7 @@ pub fn load_metadata(conn: &Connection, text: &str) -> Option<CommandMeta> {
 }
 
 pub fn load_tags(conn: &Connection, text: &str) -> Vec<String> {
-    let id = commands::hash_command(text);
+    let id = crate::hash::hash_command(text);
 
     let mut stmt = match conn.prepare(
         "SELECT t.name FROM tags t 

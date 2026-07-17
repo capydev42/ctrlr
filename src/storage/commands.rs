@@ -1,11 +1,5 @@
+use crate::hash::hash_command;
 use rusqlite::Connection;
-use sha1::{Digest, Sha1};
-
-pub fn hash_command(text: &str) -> String {
-    let mut hasher = Sha1::new();
-    hasher.update(text.as_bytes());
-    format!("{:x}", hasher.finalize())
-}
 
 pub fn ensure_commands_exist(
     conn: &mut Connection,
@@ -64,18 +58,34 @@ mod tests {
     }
 
     #[test]
-    fn test_hash_command_deterministic() {
-        let h1 = hash_command("ls -la");
-        let h2 = hash_command("ls -la");
-        assert_eq!(h1, h2);
-        assert_eq!(h1.len(), 40);
+    fn test_update_favorite_uses_normalized_id() {
+        let conn = test_conn();
+        update_favorite(&conn, "Git Status", true).unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM commands", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1, "mixed-case text must not create a shadow row");
+
+        let id: String = conn
+            .query_row("SELECT id FROM commands", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(id, hash_command("git status"));
     }
 
     #[test]
-    fn test_hash_command_different_inputs() {
-        let h1 = hash_command("ls -la");
-        let h2 = hash_command("ls -la ");
-        assert_ne!(h1, h2);
+    fn test_increment_use_count_uses_normalized_id() {
+        let conn = test_conn();
+        increment_use_count(&conn, "Git Status").unwrap();
+        increment_use_count(&conn, "git status").unwrap();
+
+        let (count, uses): (i64, i64) = conn
+            .query_row("SELECT COUNT(*), SUM(use_count) FROM commands", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(count, 1, "casing variants must share one row");
+        assert_eq!(uses, 2);
     }
 
     #[test]
