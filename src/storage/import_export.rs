@@ -28,7 +28,7 @@ pub struct ExportCommand {
     pub collections: Vec<String>,
     /// Authoritative link target. `collections` holds names for readability,
     /// but a renamed collection keeps its original id, so names cannot be
-    /// re-hashed to recover the link. Absent in files written before 0.5.2.
+    /// re-hashed to recover the link. Absent in files written before 0.6.0.
     #[serde(default)]
     pub collection_ids: Vec<String>,
 }
@@ -579,7 +579,7 @@ mod tests {
     fn test_import_legacy_file_without_collection_ids() {
         use crate::storage::collections::get_command_ids_in_collection;
 
-        // Pre-0.5.2 file from a renamed collection: no collection_ids, and the
+        // Pre-0.6.0 file from a renamed collection: no collection_ids, and the
         // name no longer hashes to the id the collection row carries.
         let old_id = hash_collection_name("old");
         let data = ExportData {
