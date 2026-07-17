@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.6.0] - 2026-07-17
+
 ### Added
 - `Ctrl+u` clears the search bar when it is focused, following the readline convention. It still pages up in the list panes, and `PageUp` is unchanged
 - `Ctrl+u` also clears the input in the tag, collection and import/export popups
