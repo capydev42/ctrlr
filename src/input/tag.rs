@@ -44,6 +44,11 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.tag_selected_index = 0;
             }
         }
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+            state.tag_input.clear();
+            state.tag_selected_index = 0;
+            state.tag_cursor_index = None;
+        }
         (KeyCode::Char(c), KeyModifiers::NONE) => {
             if state.tag_cursor_index.is_some() {
                 state.tag_cursor_index = None;

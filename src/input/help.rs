@@ -128,6 +128,13 @@ pub fn get_all_shortcuts() -> Vec<GroupedShortcut> {
             category: "Actions",
         },
         GroupedShortcut {
+            action_id: "clear_search",
+            action_name: "Clear Search",
+            description: "Clear the search query",
+            keys: vec!["Ctrl+u"],
+            category: "Actions",
+        },
+        GroupedShortcut {
             action_id: "switch_pane",
             action_name: "Switch Pane",
             description: "Cycle through panes",
@@ -260,6 +267,15 @@ pub fn filter_shortcuts(shortcuts: &[GroupedShortcut], query: &str) -> Vec<Group
     scored.into_iter().map(|(_, sc)| sc).collect()
 }
 
+/// In the search bar Ctrl+u clears the query instead of paging, so listing it
+/// under Page Up would advertise the same key for two actions.
+fn drop_ctrl_u_from_page_up(mut sc: GroupedShortcut) -> GroupedShortcut {
+    if sc.action_id == "page_up" {
+        sc.keys.retain(|k| *k != "Ctrl+u");
+    }
+    sc
+}
+
 pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
     let all = get_all_shortcuts();
 
@@ -277,6 +293,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "go_to_top"
                         | "go_to_bottom"
                         | "focus_search"
+                        | "clear_search"
                         | "view_favorites"
                         | "view_collections"
                         | "change_theme"
@@ -286,6 +303,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "pane_up"
                 )
             })
+            .map(drop_ctrl_u_from_page_up)
             .collect(),
         (ViewMode::History, ActivePane::History, InputMode::Normal) => all
             .into_iter()
@@ -325,6 +343,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "go_to_top"
                         | "go_to_bottom"
                         | "focus_search"
+                        | "clear_search"
                         | "view_history"
                         | "view_collections"
                         | "change_theme"
@@ -334,6 +353,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "pane_up"
                 )
             })
+            .map(drop_ctrl_u_from_page_up)
             .collect(),
         (ViewMode::Favorites, ActivePane::History, InputMode::Normal) => all
             .into_iter()
@@ -366,6 +386,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                 matches!(
                     sc.action_id,
                     "focus_search"
+                        | "clear_search"
                         | "view_history"
                         | "view_favorites"
                         | "new_collection"
@@ -584,6 +605,9 @@ pub fn execute_help_action(state: &mut AppState, action_id: &str) -> Action {
         }
         "focus_search" => {
             state.active_pane = ActivePane::Search;
+        }
+        "clear_search" => {
+            state.clear_search();
         }
         "change_theme" => {
             state.open_theme_popup();

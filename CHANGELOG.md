@@ -9,8 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `Ctrl+u` clears the search bar when it is focused, following the readline convention. It still pages up in the list panes, and `PageUp` is unchanged
+- `Ctrl+u` also clears the input in the tag, collection and import/export popups
+
 ### Fixed
 - Search field now accepts uppercase letters (Shift+letter combinations) instead of silently dropping them
+- Clearing the search with `Esc` no longer leaves the selection on whatever row it was on, pointing at an unrelated command once the full list returns; it now goes back to the top
+- Commands whose text was not already lowercase (e.g. `Git Status`) could occupy two database rows and appear twice in the list, permanently. Command ids were hashed from normalized text in one place and raw text everywhere else, so favoriting or tagging such a command wrote a second row instead of updating the first. All ids now derive from the normalized text
+- Existing databases are repaired on first launch by a one-time migration that merges the duplicated rows, summing use counts, keeping the command favorited if either copy was, and preserving tags and collection membership. The database is backed up to `ctrlr.db.pre-migration.bak` beforehand
+- Exporting and re-importing is now idempotent for those commands; previously they were re-imported as duplicates
+- Importing an export written by an older version no longer fails with `UNIQUE constraint failed: commands.id` when the file contains commands differing only by case
+- Renaming a collection no longer silently drops every command's membership on export/import. Exports now carry `collection_ids`; files without it still import
+
+### Changed
+- Commands differing only by case or surrounding whitespace now share one entry in storage, and therefore one set of favorites, tags and usage counts. The list already treated them as one; storage now agrees. The text you execute is unchanged
 
 ---
 
