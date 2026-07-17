@@ -1,4 +1,5 @@
 use crate::app::Command;
+use crate::hash::{hash_command, normalize};
 
 mod bash;
 mod fish;
@@ -58,9 +59,8 @@ pub fn load_history() -> Vec<Command> {
         "bash" => {
             let path = home.join(".bash_history");
             for entry in bash::read_history(&path) {
-                let normalized = normalize(&entry.command);
                 commands.push(Command {
-                    id: hash_command(&normalized),
+                    id: hash_command(&entry.command),
                     text: entry.command,
                     tags: vec!["bash".to_string()],
                     collection_ids: vec![],
@@ -74,9 +74,8 @@ pub fn load_history() -> Vec<Command> {
         "zsh" => {
             let path = home.join(".zsh_history");
             for entry in zsh::read_history(&path) {
-                let normalized = normalize(&entry.command);
                 commands.push(Command {
-                    id: hash_command(&normalized),
+                    id: hash_command(&entry.command),
                     text: entry.command,
                     tags: vec!["zsh".to_string()],
                     collection_ids: vec![],
@@ -90,9 +89,8 @@ pub fn load_history() -> Vec<Command> {
         "fish" => {
             let path = home.join(".local/share/fish/fish_history");
             for entry in fish::read_history(&path) {
-                let normalized = normalize(&entry.command);
                 commands.push(Command {
-                    id: hash_command(&normalized),
+                    id: hash_command(&entry.command),
                     text: entry.command,
                     tags: vec!["fish".to_string()],
                     collection_ids: vec![],
@@ -150,17 +148,6 @@ pub fn deduplicate(commands: Vec<Command>) -> Vec<Command> {
     merged.into_iter().map(|(_, c)| c).collect()
 }
 
-fn normalize(s: &str) -> String {
-    s.trim().to_lowercase()
-}
-
-fn hash_command(text: &str) -> String {
-    use sha1::{Digest, Sha1};
-    let mut hasher = Sha1::new();
-    hasher.update(text.as_bytes());
-    format!("{:x}", hasher.finalize())
-}
-
 #[allow(dead_code)]
 pub fn detect_shell() -> &'static str {
     std::env::var("SHELL")
@@ -178,8 +165,9 @@ pub fn detect_shell() -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{deduplicate, hash_command, normalize};
+    use super::deduplicate;
     use crate::app::Command as AppCommand;
+    use crate::hash::hash_command;
 
     fn make_cmd(text: &str, use_count: i32, tags: Vec<String>, favorite: bool) -> AppCommand {
         AppCommand {
@@ -192,40 +180,6 @@ mod tests {
             use_count,
             last_used: None,
         }
-    }
-
-    #[test]
-    fn test_normalize_trims_and_lowercases() {
-        assert_eq!(normalize("  LS  "), "ls");
-        assert_eq!(normalize("Git Status"), "git status");
-        assert_eq!(normalize("\t\techo\n"), "echo");
-    }
-
-    #[test]
-    fn test_normalize_case_insensitive() {
-        assert_eq!(normalize("GIT"), normalize("git"));
-        assert_eq!(normalize("Git"), normalize("GIT"));
-    }
-
-    #[test]
-    fn test_hash_command_deterministic() {
-        let hash1 = hash_command("ls");
-        let hash2 = hash_command("ls");
-        assert_eq!(hash1, hash2);
-    }
-
-    #[test]
-    fn test_hash_command_different_inputs() {
-        let hash1 = hash_command("ls");
-        let hash2 = hash_command("ls -la");
-        assert_ne!(hash1, hash2);
-    }
-
-    #[test]
-    fn test_hash_command_sha1_format() {
-        let hash = hash_command("test");
-        assert_eq!(hash.len(), 40);
-        assert!(hash.chars().all(|c: char| c.is_ascii_hexdigit()));
     }
 
     #[test]

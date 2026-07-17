@@ -1,7 +1,8 @@
 use rusqlite::{Connection, Transaction, params};
 use serde::{Deserialize, Serialize};
 
-use crate::storage::commands::hash_command;
+use crate::hash::hash_command;
+use crate::storage::collections::hash_collection_name;
 
 const EXPORT_VERSION: u32 = 1;
 
@@ -25,6 +26,11 @@ pub struct ExportCommand {
     pub last_used: Option<i64>,
     pub tags: Vec<String>,
     pub collections: Vec<String>,
+    /// Authoritative link target. `collections` holds names for readability,
+    /// but a renamed collection keeps its original id, so names cannot be
+    /// re-hashed to recover the link. Absent in files written before 0.5.2.
+    #[serde(default)]
+    pub collection_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,6 +95,7 @@ fn export_commands(conn: &Connection) -> rusqlite::Result<Vec<ExportCommand>> {
     for (id, text, favorite, use_count, last_used, _created_at) in rows {
         let tags = get_tags_for_command(conn, &id)?;
         let collection_names = get_collection_names_for_command(conn, &id)?;
+        let collection_ids = get_collection_ids_for_command(conn, &id)?;
         let context = get_context_for_command(conn, &id)?;
 
         commands.push(ExportCommand {
@@ -100,6 +107,7 @@ fn export_commands(conn: &Connection) -> rusqlite::Result<Vec<ExportCommand>> {
             last_used,
             tags,
             collections: collection_names,
+            collection_ids,
         });
     }
 
@@ -119,6 +127,21 @@ fn get_tags_for_command(conn: &Connection, command_id: &str) -> rusqlite::Result
         .collect();
 
     Ok(tags)
+}
+
+fn get_collection_ids_for_command(
+    conn: &Connection,
+    command_id: &str,
+) -> rusqlite::Result<Vec<String>> {
+    let mut stmt =
+        conn.prepare("SELECT collection_id FROM command_collections WHERE command_id = ?")?;
+
+    let ids: Vec<String> = stmt
+        .query_map([command_id], |row| row.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(ids)
 }
 
 fn get_collection_names_for_command(
@@ -176,10 +199,11 @@ pub fn preview_import(conn: &Connection, data: &ExportData) -> rusqlite::Result<
 
     let mut new_commands = 0;
     let mut duplicates = 0;
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for cmd in &data.commands {
         let hash = hash_command(&cmd.text);
-        if existing_command_hashes.contains(&hash) {
+        if existing_command_hashes.contains(&hash) || !seen.insert(hash) {
             duplicates += 1;
         } else {
             new_commands += 1;
@@ -270,16 +294,29 @@ fn perform_import(
         }
     }
 
+    // A file written before ids were normalized can hold both "Git Status" and
+    // "git status"; they collapse to one id here, so the second must be skipped
+    // rather than collide on the primary key and abort the import.
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // Names are ambiguous after a rename (and are not unique), so the id carried
+    // in the file wins; the map only rescues files written before that field.
+    let name_to_id: std::collections::HashMap<&str, &str> = data
+        .collections
+        .iter()
+        .map(|c| (c.name.as_str(), c.id.as_str()))
+        .collect();
+
     for cmd in &data.commands {
         let hash = hash_command(&cmd.text);
 
-        if existing_command_hashes.contains(&hash) {
+        if existing_command_hashes.contains(&hash) || !seen.insert(hash.clone()) {
             skipped_commands += 1;
             continue;
         }
 
         tx.execute(
-            "INSERT INTO commands (id, text, favorite, use_count, last_used) VALUES (?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO commands (id, text, favorite, use_count, last_used) VALUES (?, ?, ?, ?, ?)",
             params![&hash, &cmd.text, cmd.favorite as i32, cmd.use_count, cmd.last_used],
         )?;
 
@@ -293,11 +330,24 @@ fn perform_import(
             )?;
         }
 
-        for collection_name in &cmd.collections {
-            let collection_id = hash_collection_name(collection_name);
+        let link_ids: Vec<String> = if !cmd.collection_ids.is_empty() {
+            cmd.collection_ids.clone()
+        } else {
+            cmd.collections
+                .iter()
+                .map(|name| {
+                    name_to_id
+                        .get(name.as_str())
+                        .map(|id| (*id).to_string())
+                        .unwrap_or_else(|| hash_collection_name(name))
+                })
+                .collect()
+        };
+
+        for collection_id in &link_ids {
             tx.execute(
                 "INSERT OR IGNORE INTO command_collections (command_id, collection_id) VALUES (?, ?)",
-                params![&hash, &collection_id],
+                params![&hash, collection_id],
             )?;
         }
     }
@@ -370,10 +420,6 @@ fn add_tag_if_not_exists(tx: &Transaction, name: &str) -> rusqlite::Result<i64> 
     })
 }
 
-fn hash_collection_name(name: &str) -> String {
-    hash_command(name)
-}
-
 fn chrono_utc_now() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -431,6 +477,127 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         init_db_with_conn(&conn).unwrap();
         conn
+    }
+
+    fn export_command_fixture(text: &str, collections: Vec<String>) -> ExportCommand {
+        ExportCommand {
+            id: hash_command(text),
+            text: text.to_string(),
+            context: vec![],
+            favorite: false,
+            use_count: 1,
+            last_used: None,
+            tags: vec![],
+            collections,
+            collection_ids: vec![],
+        }
+    }
+
+    #[test]
+    fn test_mixed_case_export_import_round_trip() {
+        let mut conn = test_conn();
+        crate::storage::commands::update_favorite(&conn, "Git Status", true).unwrap();
+
+        let data = export_data(&conn).unwrap();
+        assert_eq!(data.commands.len(), 1);
+
+        // Re-importing an export into its own database must be a no-op.
+        let result = import_data(&mut conn, &data, &ImportMode::Merge).unwrap();
+        assert_eq!(result.imported_commands, 0);
+        assert_eq!(result.skipped_commands, 1);
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM commands", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_import_file_with_case_duplicate_commands() {
+        let mut conn = test_conn();
+
+        // An export written before ids were normalized can hold both casings;
+        // they collapse to one id now, which must not abort the import.
+        let data = ExportData {
+            version: EXPORT_VERSION,
+            exported_at: "2026-01-01T00:00:00Z".to_string(),
+            commands: vec![
+                export_command_fixture("Git Status", vec![]),
+                export_command_fixture("git status", vec![]),
+            ],
+            collections: vec![],
+            tags: vec![],
+        };
+
+        let preview = preview_import(&conn, &data).unwrap();
+        assert_eq!(preview.new_commands, 1);
+        assert_eq!(preview.duplicates, 1, "dry-run must match the real import");
+
+        let result = import_data(&mut conn, &data, &ImportMode::Merge).unwrap();
+        assert_eq!(result.imported_commands, 1);
+        assert_eq!(result.skipped_commands, 1);
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM commands", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_import_after_collection_rename_keeps_links() {
+        use crate::storage::collections::{
+            add_command_to_collection, create_collection, get_command_ids_in_collection,
+            rename_collection,
+        };
+
+        let conn = test_conn();
+        let col_id = create_collection(&conn, "old").unwrap();
+        add_command_to_collection(&conn, "deploy", &col_id).unwrap();
+        // Renaming keeps the id, so the name can no longer be re-hashed to it.
+        rename_collection(&conn, &col_id, "new").unwrap();
+
+        let data = export_data(&conn).unwrap();
+
+        let mut fresh = test_conn();
+        import_data(&mut fresh, &data, &ImportMode::Replace).unwrap();
+
+        let members = get_command_ids_in_collection(&fresh, &col_id).unwrap();
+        assert_eq!(members.len(), 1, "membership must survive a rename");
+        assert_eq!(members[0], hash_command("deploy"));
+
+        let name: String = fresh
+            .query_row(
+                "SELECT name FROM collections WHERE id = ?",
+                [&col_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(name, "new");
+    }
+
+    #[test]
+    fn test_import_legacy_file_without_collection_ids() {
+        use crate::storage::collections::get_command_ids_in_collection;
+
+        // Pre-0.5.2 file from a renamed collection: no collection_ids, and the
+        // name no longer hashes to the id the collection row carries.
+        let old_id = hash_collection_name("old");
+        let data = ExportData {
+            version: EXPORT_VERSION,
+            exported_at: "2026-01-01T00:00:00Z".to_string(),
+            commands: vec![export_command_fixture("deploy", vec!["new".to_string()])],
+            collections: vec![ExportCollection {
+                id: old_id.clone(),
+                name: "new".to_string(),
+            }],
+            tags: vec![],
+        };
+
+        let mut conn = test_conn();
+        import_data(&mut conn, &data, &ImportMode::Merge).unwrap();
+
+        let members = get_command_ids_in_collection(&conn, &old_id).unwrap();
+        assert_eq!(members.len(), 1, "name->id map must rescue legacy files");
     }
 
     fn seed_test_data(conn: &mut Connection) {
@@ -524,6 +691,7 @@ mod tests {
                 last_used: None,
                 tags: vec![],
                 collections: vec![],
+                collection_ids: vec![],
             }],
             collections: vec![],
             tags: vec![],
@@ -552,6 +720,7 @@ mod tests {
                     last_used: None,
                     tags: vec![],
                     collections: vec![],
+                    collection_ids: vec![],
                 },
                 ExportCommand {
                     id: hash_command("totally new"),
@@ -562,6 +731,7 @@ mod tests {
                     last_used: None,
                     tags: vec![],
                     collections: vec![],
+                    collection_ids: vec![],
                 },
             ],
             collections: vec![],
@@ -588,6 +758,7 @@ mod tests {
                 last_used: Some(1700000000),
                 tags: vec!["files".to_string()],
                 collections: vec![],
+                collection_ids: vec![],
             }],
             collections: vec![],
             tags: vec![],
@@ -625,6 +796,7 @@ mod tests {
                     last_used: None,
                     tags: vec![],
                     collections: vec![],
+                    collection_ids: vec![],
                 },
                 ExportCommand {
                     id: hash_command("new one"),
@@ -635,6 +807,7 @@ mod tests {
                     last_used: None,
                     tags: vec![],
                     collections: vec![],
+                    collection_ids: vec![],
                 },
             ],
             collections: vec![],
@@ -668,6 +841,7 @@ mod tests {
                 last_used: None,
                 tags: vec![],
                 collections: vec![],
+                collection_ids: vec![],
             }],
             collections: vec![],
             tags: vec![],
@@ -703,6 +877,7 @@ mod tests {
                 last_used: None,
                 tags: vec![],
                 collections: vec![],
+                collection_ids: vec![],
             }],
             collections: vec![],
             tags: vec![],
@@ -734,9 +909,10 @@ mod tests {
                 last_used: None,
                 tags: vec![],
                 collections: vec!["prod".to_string()],
+                collection_ids: vec![],
             }],
             collections: vec![ExportCollection {
-                id: hash_command("prod"),
+                id: hash_collection_name("prod"),
                 name: "prod".to_string(),
             }],
             tags: vec![],
@@ -747,7 +923,7 @@ mod tests {
         let col_name: String = conn
             .query_row(
                 "SELECT name FROM collections WHERE id = ?",
-                [hash_command("prod")],
+                [hash_collection_name("prod")],
                 |row| row.get(0),
             )
             .unwrap();
