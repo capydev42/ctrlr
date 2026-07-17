@@ -22,7 +22,16 @@ fn main() -> color_eyre::Result<()> {
 pub fn run_tui(output_file: Option<String>) -> color_eyre::Result<Option<String>> {
     let mut terminal = ratatui::init();
     let result = app(&mut terminal, output_file.clone());
+
+    // Leave the alternate screen first, then restore cursor visibility on the
+    // normal screen: ?1049 does not save/restore DECTCEM, and the draw loop
+    // hides the cursor every frame because ctrlr draws its own glyph rather
+    // than calling frame.set_cursor_position. Doing this here instead of
+    // leaning on Terminal's Drop is what makes it total — the process::exit
+    // calls below would skip Drop and leave the cursor hidden for good.
     ratatui::restore();
+    let _ = terminal.show_cursor();
+    drop(terminal);
 
     match result {
         Ok(Some(cmd)) => {
