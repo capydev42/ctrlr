@@ -9,23 +9,31 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             state.switch_pane();
             return Action::None;
         }
-        (KeyCode::Char('1'), KeyModifiers::NONE) => {
-            state.view_mode = ViewMode::History;
-            state.active_pane = ActivePane::History;
-            state.filter_commands();
+        // Plain digits switch views only outside the search bar. When the search
+        // pane is focused these fall through to the Search block below, which types
+        // the character into the query. Alt+digit switches views from any pane.
+        (KeyCode::Char('1'), KeyModifiers::NONE) if state.active_pane != ActivePane::Search => {
+            switch_view_history(state);
             return Action::None;
         }
-        (KeyCode::Char('2'), KeyModifiers::NONE) => {
-            state.view_mode = ViewMode::Favorites;
-            state.active_pane = ActivePane::History;
-            state.filter_commands();
+        (KeyCode::Char('2'), KeyModifiers::NONE) if state.active_pane != ActivePane::Search => {
+            switch_view_favorites(state);
             return Action::None;
         }
-        (KeyCode::Char('3'), KeyModifiers::NONE) => {
-            state.view_mode = ViewMode::Collections;
-            state.active_pane = ActivePane::CollectionsList;
-            state.load_collection_commands();
-            state.filter_commands();
+        (KeyCode::Char('3'), KeyModifiers::NONE) if state.active_pane != ActivePane::Search => {
+            switch_view_collections(state);
+            return Action::None;
+        }
+        (KeyCode::Char('1'), KeyModifiers::ALT) => {
+            switch_view_history(state);
+            return Action::None;
+        }
+        (KeyCode::Char('2'), KeyModifiers::ALT) => {
+            switch_view_favorites(state);
+            return Action::None;
+        }
+        (KeyCode::Char('3'), KeyModifiers::ALT) => {
+            switch_view_collections(state);
             return Action::None;
         }
         (KeyCode::Char('j'), KeyModifiers::CONTROL) => {
@@ -44,12 +52,14 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             state.pane_right();
             return Action::None;
         }
-        (KeyCode::Char('?'), KeyModifiers::NONE) => {
-            state.help_open = true;
-            state.help_search_query.clear();
-            state.help_filtered_shortcuts = help::get_shortcuts_for_context(state);
-            state.help_selected_index = 0;
-            state.help_list_state.select(Some(0));
+        // `?` opens Help only outside the search bar; inside it types into the query.
+        // F1 opens Help from any pane.
+        (KeyCode::Char('?'), KeyModifiers::NONE) if state.active_pane != ActivePane::Search => {
+            open_help(state);
+            return Action::None;
+        }
+        (KeyCode::F(1), _) => {
+            open_help(state);
             return Action::None;
         }
         (KeyCode::Char('t'), KeyModifiers::CONTROL) => {
@@ -321,6 +331,33 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
     Action::None
 }
 
+fn switch_view_history(state: &mut AppState) {
+    state.view_mode = ViewMode::History;
+    state.active_pane = ActivePane::History;
+    state.filter_commands();
+}
+
+fn switch_view_favorites(state: &mut AppState) {
+    state.view_mode = ViewMode::Favorites;
+    state.active_pane = ActivePane::History;
+    state.filter_commands();
+}
+
+fn switch_view_collections(state: &mut AppState) {
+    state.view_mode = ViewMode::Collections;
+    state.active_pane = ActivePane::CollectionsList;
+    state.load_collection_commands();
+    state.filter_commands();
+}
+
+fn open_help(state: &mut AppState) {
+    state.help_open = true;
+    state.help_search_query.clear();
+    state.help_filtered_shortcuts = help::get_shortcuts_for_context(state);
+    state.help_selected_index = 0;
+    state.help_list_state.select(Some(0));
+}
+
 fn handle_navigation_up(state: &mut AppState) {
     match state.view_mode {
         ViewMode::Collections => match state.active_pane {
@@ -519,6 +556,64 @@ mod tests {
 
     fn ctrl(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    fn alt(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::ALT)
+    }
+
+    fn plain(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn test_digit_types_into_search_when_focused() {
+        let mut state = state_with_query(ActivePane::Search, "");
+
+        handle(&mut state, plain('1'));
+
+        assert_eq!(state.search_query, "1");
+        assert_eq!(state.view_mode, ViewMode::History, "view must not change");
+        assert_eq!(state.active_pane, ActivePane::Search);
+    }
+
+    #[test]
+    fn test_question_mark_types_into_search() {
+        let mut state = state_with_query(ActivePane::Search, "");
+
+        handle(&mut state, plain('?'));
+
+        assert_eq!(state.search_query, "?");
+        assert!(!state.help_open, "help must not open from the search bar");
+    }
+
+    #[test]
+    fn test_digit_switches_view_in_list_pane() {
+        let mut state = state_with_query(ActivePane::History, "command");
+
+        handle(&mut state, plain('2'));
+
+        assert_eq!(state.view_mode, ViewMode::Favorites);
+        assert_eq!(state.search_query, "command", "typing must not occur here");
+    }
+
+    #[test]
+    fn test_alt_digit_switches_view_from_search() {
+        let mut state = state_with_query(ActivePane::Search, "git");
+
+        handle(&mut state, alt('3'));
+
+        assert_eq!(state.view_mode, ViewMode::Collections);
+        assert_eq!(state.search_query, "git", "query must be untouched");
+    }
+
+    #[test]
+    fn test_f1_opens_help_from_search() {
+        let mut state = state_with_query(ActivePane::Search, "");
+
+        handle(&mut state, KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE));
+
+        assert!(state.help_open);
     }
 
     #[test]

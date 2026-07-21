@@ -149,9 +149,9 @@ pub fn render_tabs(
     let favorites_count = state.commands.iter().filter(|c| c.favorite).count();
     let collections_count = state.collections.len();
 
-    let tab_history = format!("1 History ({})", history_count);
-    let tab_favorites = format!("2 Favorites ({})", favorites_count);
-    let tab_collections = format!("3 Collections ({})", collections_count);
+    let tab_history = format!("Alt+1 History ({})", history_count);
+    let tab_favorites = format!("Alt+2 Favorites ({})", favorites_count);
+    let tab_collections = format!("Alt+3 Collections ({})", collections_count);
 
     let line = Line::from(vec![
         tab(&tab_history, state.view_mode == ViewMode::History, theme),
@@ -202,10 +202,10 @@ pub fn render_footer(
             ViewMode::History | ViewMode::Favorites => {
                 match state.active_pane {
                     ActivePane::Search => {
-                        format!("? Help | 1: History | 2: Favorites | 3: Collections | Ctrl+T: Theme ({}) | /: Search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ", state.current_theme.name())
+                        format!("F1 Help | Ctrl+T: Theme ({}) | /: Search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ", state.current_theme.name())
                     }
                     ActivePane::History => {
-                        format!("? Help | 1: History | 2: Favorites | 3: Collections | Ctrl+T: Theme ({}) | c: Add to Collection | /: Search | d: Details | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ", state.current_theme.name())
+                        format!("? Help | Ctrl+T: Theme ({}) | c: Add to Collection | /: Search | d: Details | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ", state.current_theme.name())
                     }
                     _ => "".into(),
                 }
@@ -219,10 +219,10 @@ pub fn render_footer(
                         "? Help | j/k or ↑/↓: Navigate | Enter: Select | c: Add | d: Details | r: Remove | Tab: Switch pane ".into()
                     }
                     ActivePane::Search => {
-                        "? Help | j/k: Navigate | Backspace: Delete | Enter: Select | 1/2/3: Switch view ".into()
+                        "F1 Help | j/k: Navigate | Backspace: Delete | Enter: Select ".into()
                     }
                     ActivePane::History => {
-                        "? Help | j/k: Navigate | Enter: Select | 1/2/3: Switch view ".into()
+                        "? Help | j/k: Navigate | Enter: Select ".into()
                     }
                 }
             }

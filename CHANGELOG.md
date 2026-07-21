@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.1] - 2026-07-21
+
+### Added
+- `Alt+1`, `Alt+2` and `Alt+3` switch between the History, Favorites and Collections views from any pane, including while the search bar is focused. `F1` opens the help popup from anywhere. The view tabs now display the `Alt+1/2/3` hints
+
+### Fixed
+- The search bar now accepts `1`, `2`, `3` and `?` as literal input. Because the search bar is focused by default, these keys previously always switched view or opened help — making them impossible to type in a query. They now type into the query when the search bar has focus, while keeping their shortcut behaviour in the list panes
+
+---
+
 ## [0.6.0] - 2026-07-17
 
 ### Added
