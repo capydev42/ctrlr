@@ -135,6 +135,13 @@ pub fn get_all_shortcuts() -> Vec<GroupedShortcut> {
             category: "Actions",
         },
         GroupedShortcut {
+            action_id: "show_help",
+            action_name: "Show Help",
+            description: "Open this help popup",
+            keys: vec!["?", "F1"],
+            category: "Actions",
+        },
+        GroupedShortcut {
             action_id: "switch_pane",
             action_name: "Switch Pane",
             description: "Cycle through panes",
@@ -173,21 +180,21 @@ pub fn get_all_shortcuts() -> Vec<GroupedShortcut> {
             action_id: "view_history",
             action_name: "History View",
             description: "Show all commands",
-            keys: vec!["1"],
+            keys: vec!["1", "Alt+1"],
             category: "Views",
         },
         GroupedShortcut {
             action_id: "view_favorites",
             action_name: "Favorites View",
             description: "Show favorites only",
-            keys: vec!["2"],
+            keys: vec!["2", "Alt+2"],
             category: "Views",
         },
         GroupedShortcut {
             action_id: "view_collections",
             action_name: "Collections View",
             description: "Show collections",
-            keys: vec!["3"],
+            keys: vec!["3", "Alt+3"],
             category: "Views",
         },
         GroupedShortcut {
@@ -293,6 +300,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "go_to_top"
                         | "go_to_bottom"
                         | "focus_search"
+                        | "show_help"
                         | "clear_search"
                         | "view_favorites"
                         | "view_collections"
@@ -320,6 +328,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                     | "add_to_collection"
                     | "toggle_details"
                     | "focus_search"
+                    | "show_help"
                     | "switch_pane"
                     | "view_favorites"
                     | "view_collections"
@@ -343,6 +352,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "go_to_top"
                         | "go_to_bottom"
                         | "focus_search"
+                        | "show_help"
                         | "clear_search"
                         | "view_history"
                         | "view_collections"
@@ -370,6 +380,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                     | "add_to_collection"
                     | "toggle_details"
                     | "focus_search"
+                    | "show_help"
                     | "switch_pane"
                     | "view_history"
                     | "view_collections"
@@ -386,6 +397,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                 matches!(
                     sc.action_id,
                     "focus_search"
+                        | "show_help"
                         | "clear_search"
                         | "view_history"
                         | "view_favorites"
@@ -414,6 +426,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "edit_collection"
                         | "delete_collection"
                         | "focus_search"
+                        | "show_help"
                         | "switch_pane"
                         | "pane_right"
                         | "change_theme"
@@ -438,6 +451,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                     | "search_collection"
                     | "remove_from_collection"
                     | "focus_search"
+                    | "show_help"
                     | "switch_pane"
                     | "pane_left"
                     | "change_theme"
@@ -603,7 +617,7 @@ pub fn execute_help_action(state: &mut AppState, action_id: &str) -> Action {
         "toggle_details" => {
             state.show_details = !state.show_details;
         }
-        "focus_search" => {
+        "focus_search" | "show_help" => {
             state.active_pane = ActivePane::Search;
         }
         "clear_search" => {
