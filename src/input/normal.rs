@@ -36,6 +36,16 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             switch_view_collections(state);
             return Action::None;
         }
+        // Same split as the digits: `.` types into a focused search bar, and
+        // Alt+. reaches the toggle from anywhere.
+        (KeyCode::Char('.'), KeyModifiers::NONE) if state.active_pane != ActivePane::Search => {
+            toggle_cwd_scope(state);
+            return Action::None;
+        }
+        (KeyCode::Char('.'), KeyModifiers::ALT) => {
+            toggle_cwd_scope(state);
+            return Action::None;
+        }
         (KeyCode::Char('j'), KeyModifiers::CONTROL) => {
             state.pane_down();
             return Action::None;
@@ -350,6 +360,11 @@ fn switch_view_collections(state: &mut AppState) {
     state.filter_commands();
 }
 
+fn toggle_cwd_scope(state: &mut AppState) {
+    let message = state.toggle_cwd_scope();
+    state.set_status_message(message);
+}
+
 fn open_help(state: &mut AppState) {
     state.help_open = true;
     state.help_search_query.clear();
@@ -542,6 +557,7 @@ mod tests {
             _context: vec![],
             use_count: 0,
             last_used: None,
+            runs_here: 0,
         }
     }
 

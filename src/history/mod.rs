@@ -3,6 +3,7 @@ use crate::hash::{hash_command, normalize};
 
 mod bash;
 mod fish;
+pub mod runs;
 mod zsh;
 
 use std::collections::{HashMap, HashSet};
@@ -68,6 +69,7 @@ pub fn load_history() -> Vec<Command> {
                     _context: vec!["shell:bash".to_string()],
                     use_count: entry.use_count,
                     last_used: entry.timestamp,
+                    runs_here: 0,
                 });
             }
         }
@@ -83,6 +85,7 @@ pub fn load_history() -> Vec<Command> {
                     _context: vec!["shell:zsh".to_string()],
                     use_count: entry.use_count,
                     last_used: entry.timestamp,
+                    runs_here: 0,
                 });
             }
         }
@@ -98,6 +101,7 @@ pub fn load_history() -> Vec<Command> {
                     _context: vec!["shell:fish".to_string()],
                     use_count: entry.use_count,
                     last_used: entry.timestamp,
+                    runs_here: 0,
                 });
             }
         }
@@ -179,6 +183,7 @@ mod tests {
             _context: vec![],
             use_count,
             last_used: None,
+            runs_here: 0,
         }
     }
 

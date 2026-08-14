@@ -4,3 +4,4 @@
 *.pdb
 .env
 .env.*
+.claude/

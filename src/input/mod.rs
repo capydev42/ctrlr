@@ -8,6 +8,11 @@ use crate::app::{Action, AppState, InputMode};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
+    // Checked first: it is offered on startup, before the user has done
+    // anything else.
+    if state.integration_popup_open {
+        return handle_integration_popup(state, key);
+    }
     if state.theme_popup_open {
         return handle_theme_popup(state, key);
     }
@@ -22,6 +27,31 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
         InputMode::CollectionInput => collection::handle(state, key),
         InputMode::ImportExport => Action::None,
         InputMode::Normal => normal::handle(state, key),
+    }
+}
+
+fn handle_integration_popup(state: &mut AppState, key: KeyEvent) -> Action {
+    // After a write the popup is a result view; nothing left to confirm.
+    if state.integration_installed {
+        state.integration_popup_open = false;
+        return Action::None;
+    }
+
+    match key.code {
+        KeyCode::Enter | KeyCode::Char('u') | KeyCode::Char('y') => {
+            // A reload only comes back when ctrlr can reach the prompt line
+            // through --output-file; otherwise the popup reports the result and
+            // the user restarts the shell themselves.
+            match state.install_integration() {
+                Some(reload) => Action::Execute(reload),
+                None => Action::None,
+            }
+        }
+        KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('q') => {
+            state.dismiss_integration_popup();
+            Action::None
+        }
+        _ => Action::None,
     }
 }
 

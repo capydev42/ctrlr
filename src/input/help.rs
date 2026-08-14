@@ -198,6 +198,13 @@ pub fn get_all_shortcuts() -> Vec<GroupedShortcut> {
             category: "Views",
         },
         GroupedShortcut {
+            action_id: "scope_cwd",
+            action_name: "Scope to Directory",
+            description: "Show only commands run in the current directory",
+            keys: vec![".", "Alt+."],
+            category: "Views",
+        },
+        GroupedShortcut {
             action_id: "new_collection",
             action_name: "New Collection",
             description: "Create new collection",
@@ -304,6 +311,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "clear_search"
                         | "view_favorites"
                         | "view_collections"
+                        | "scope_cwd"
                         | "change_theme"
                         | "export_data"
                         | "import_data"
@@ -332,6 +340,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                     | "switch_pane"
                     | "view_favorites"
                     | "view_collections"
+                    | "scope_cwd"
                     | "change_theme"
                     | "export_data"
                     | "import_data"
@@ -356,6 +365,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "clear_search"
                         | "view_history"
                         | "view_collections"
+                        | "scope_cwd"
                         | "change_theme"
                         | "export_data"
                         | "import_data"
@@ -384,6 +394,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                     | "switch_pane"
                     | "view_history"
                     | "view_collections"
+                    | "scope_cwd"
                     | "change_theme"
                     | "export_data"
                     | "import_data"
@@ -401,6 +412,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "clear_search"
                         | "view_history"
                         | "view_favorites"
+                        | "scope_cwd"
                         | "new_collection"
                         | "change_theme"
                         | "export_data"
@@ -434,6 +446,7 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                         | "import_data"
                         | "view_history"
                         | "view_favorites"
+                        | "scope_cwd"
                 )
             })
             .collect(),
@@ -458,7 +471,8 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
                     | "export_data"
                     | "import_data"
                     | "view_history"
-                    | "view_favorites")
+                    | "view_favorites"
+                    | "scope_cwd")
             })
             .collect(),
         _ => all,
@@ -662,6 +676,10 @@ pub fn execute_help_action(state: &mut AppState, action_id: &str) -> Action {
             state.active_pane = ActivePane::CollectionsList;
             state.load_collection_commands();
             state.filter_commands();
+        }
+        "scope_cwd" => {
+            let message = state.toggle_cwd_scope();
+            state.set_status_message(message);
         }
         "new_collection" => {
             state.collection_input_mode = crate::app::CollectionInputMode::NewCollection;
