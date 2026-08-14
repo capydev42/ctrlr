@@ -11,9 +11,45 @@ use ratatui::{
 use crate::app::{AppState, CollectionInputMode};
 use crate::ui::theme::CatppuccinFlavor;
 
-use super::layout::center_rect;
+use super::layout::{anchor_rect, center_rect};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The right-click menu, anchored at the pointer.
+pub fn render_context_menu(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let labels = state.context_menu_labels();
+    if labels.is_empty() {
+        return;
+    }
+
+    let width = labels.iter().map(|l| l.chars().count()).max().unwrap_or(0) as u16 + 4;
+    let height = labels.len() as u16 + 2;
+    let (x, y) = state.context_menu_pos;
+    // Opened at the pointer, so it grows down and right from the click unless
+    // that would push it off screen.
+    let menu = anchor_rect(x, y, width, height, area);
+    state.hit.context_menu = menu;
+
+    let theme = &state.current_theme;
+    let items: Vec<ListItem> = labels
+        .iter()
+        .map(|l| ListItem::new(format!(" {}", l)))
+        .collect();
+
+    let list = List::new(items)
+        .block(
+            Block::bordered()
+                .border_type(BorderType::Rounded)
+                .border_style(Style::new().fg(theme.popup_border)),
+        )
+        .highlight_style(Style::new().bg(theme.highlight_bg).fg(theme.highlight_fg));
+
+    frame.render_widget(Clear, menu);
+    state
+        .context_menu_list_state
+        .select(Some(state.context_menu_index));
+    frame.render_stateful_widget(list, menu, &mut state.context_menu_list_state);
+}
 
 pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
     let theme = &state.current_theme;
@@ -37,6 +73,8 @@ pub fn render_tag_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
     let popup_width = 60u16;
 
     let centered = center_rect(popup_width, popup_height, area);
+    // Recorded for hit-testing: a click outside a modal dismisses it.
+    state.hit.popup = centered;
 
     frame.render_widget(Clear, centered);
 
@@ -166,6 +204,8 @@ pub fn render_collection_popup(frame: &mut Frame, state: &mut AppState, area: Re
     let popup_height = 8u16;
     let popup_width = 45u16;
     let centered = center_rect(popup_width, popup_height, area);
+    // Recorded for hit-testing: a click outside a modal dismisses it.
+    state.hit.popup = centered;
 
     frame.render_widget(Clear, centered);
 
@@ -446,6 +486,10 @@ pub fn render_add_command_popup(frame: &mut Frame, state: &mut AppState, area: R
             .alignment(Alignment::Center),
         chunks[2],
     );
+
+    // Recorded for hit-testing: a click outside a modal dismisses it. Set last
+    // here because the search results borrow `state` for most of the function.
+    state.hit.popup = centered;
 }
 
 pub fn render_delete_confirm_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
@@ -463,6 +507,8 @@ pub fn render_delete_confirm_popup(frame: &mut Frame, state: &mut AppState, area
     let popup_height = 10u16;
     let popup_width = 55u16;
     let centered = center_rect(popup_width, popup_height, area);
+    // Recorded for hit-testing: a click outside a modal dismisses it.
+    state.hit.popup = centered;
 
     frame.render_widget(Clear, centered);
 
@@ -521,6 +567,8 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
     let popup_width = (area.width - 4).clamp(50, 90);
 
     let centered = center_rect(popup_width, popup_height, area);
+    // Recorded for hit-testing: a click outside a modal dismisses it.
+    state.hit.popup = centered;
 
     frame.render_widget(Clear, centered);
 
@@ -754,6 +802,8 @@ pub fn render_import_export_popup(frame: &mut Frame, state: &mut AppState, area:
     let popup_height = input_height + mode_height + preview_height + hint_height;
 
     let centered = center_rect(popup_width, popup_height, area);
+    // Recorded for hit-testing: a click outside a modal dismisses it.
+    state.hit.popup = centered;
     frame.render_widget(Clear, centered);
 
     let mut constraints = vec![Constraint::Length(input_height)];

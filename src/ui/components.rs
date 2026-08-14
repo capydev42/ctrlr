@@ -104,11 +104,12 @@ pub fn command_with_right_tags<'a>(
 
 pub fn render_search_bar(
     frame: &mut ratatui::Frame,
-    state: &crate::app::AppState,
+    state: &mut crate::app::AppState,
     area: ratatui::layout::Rect,
 ) {
     use ratatui::widgets::{Block, BorderType};
 
+    state.hit.search = area;
     let theme = &state.current_theme;
     let cursor = if state.active_pane == ActivePane::Search {
         "▋"
@@ -139,7 +140,7 @@ pub fn render_search_bar(
 
 pub fn render_tabs(
     frame: &mut ratatui::Frame,
-    state: &crate::app::AppState,
+    state: &mut crate::app::AppState,
     area: ratatui::layout::Rect,
 ) {
     use ratatui::widgets::Paragraph;
@@ -168,6 +169,19 @@ pub fn render_tabs(
             theme,
         ),
     ]);
+
+    // The line is centred, so walk the spans from the centred start to learn
+    // where each tab actually landed. Spans 0, 2 and 4 are the tabs; 1 and 3
+    // are the separators.
+    let total = line.width() as u16;
+    let mut x = area.x + area.width.saturating_sub(total) / 2;
+    for (i, span) in line.spans.iter().enumerate() {
+        let width = span.width() as u16;
+        if i % 2 == 0 {
+            state.hit.tabs[i / 2] = ratatui::layout::Rect::new(x, area.y, width, area.height);
+        }
+        x = x.saturating_add(width);
+    }
 
     frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
 }

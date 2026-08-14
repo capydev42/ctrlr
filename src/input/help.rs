@@ -239,6 +239,36 @@ pub fn get_all_shortcuts() -> Vec<GroupedShortcut> {
             keys: vec!["r"],
             category: "Collections",
         },
+        // Reference only: these have no `action_id` arm in
+        // `execute_help_action`, since there is no key to press for them.
+        GroupedShortcut {
+            action_id: "mouse_select",
+            action_name: "Select / Run",
+            description: "Click selects a row, double-click runs it",
+            keys: vec!["Click"],
+            category: "Mouse",
+        },
+        GroupedShortcut {
+            action_id: "mouse_menu",
+            action_name: "Context Menu",
+            description: "Right-click a row for its actions",
+            keys: vec!["Right-click"],
+            category: "Mouse",
+        },
+        GroupedShortcut {
+            action_id: "mouse_scroll",
+            action_name: "Scroll",
+            description: "Wheel scrolls the list under the pointer",
+            keys: vec!["Wheel"],
+            category: "Mouse",
+        },
+        GroupedShortcut {
+            action_id: "mouse_select_text",
+            action_name: "Select Text",
+            description: "Hold Shift to select text with the mouse",
+            keys: vec!["Shift+drag"],
+            category: "Mouse",
+        },
     ]
 }
 

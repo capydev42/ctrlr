@@ -36,6 +36,7 @@ pub fn render_collections_view(frame: &mut Frame, state: &mut AppState, area: Re
 }
 
 pub fn render_collection_list(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    state.hit.collections_list = area;
     let theme = &state.current_theme;
     let items: Vec<ListItem> = if state.collections.is_empty() {
         vec![ListItem::new("No collections yet")]
@@ -86,6 +87,9 @@ pub fn render_collection_list(frame: &mut Frame, state: &mut AppState, area: Rec
 }
 
 pub fn render_collection_commands(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    // Same hitbox slot as the history list: both draw `state.filtered`, and
+    // only one of them is ever on screen.
+    state.hit.list = area;
     let theme = &state.current_theme;
     let is_focused = state.active_pane == ActivePane::CollectionItems;
     let border_color = if is_focused {

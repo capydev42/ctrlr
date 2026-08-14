@@ -109,30 +109,7 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             }
             return Action::None;
         }
-        (KeyCode::Enter, _) => {
-            if state.view_mode == ViewMode::Collections {
-                match state.active_pane {
-                    ActivePane::CollectionsList => {
-                        state.load_collection_commands();
-                        state.active_pane = ActivePane::CollectionItems;
-                        state.selected_index = 0;
-                        state.list_state.select(Some(0));
-                        return Action::None;
-                    }
-                    ActivePane::CollectionItems => {
-                        let cmd = state.filtered.get(state.selected_index).cloned();
-                        if let Some(ref c) = cmd {
-                            state.mark_executed_for_text(&c.text);
-                        }
-                        return cmd.map(|c| Action::Execute(c.text)).unwrap_or(Action::None);
-                    }
-                    _ => return Action::None,
-                }
-            }
-            let cmd = state.selected_command();
-            state.mark_executed();
-            return cmd.map(Action::Execute).unwrap_or(Action::None);
-        }
+        (KeyCode::Enter, _) => return activate_selected(state),
         _ => {}
     }
 
@@ -341,19 +318,47 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
     Action::None
 }
 
-fn switch_view_history(state: &mut AppState) {
+/// What Enter does on the current selection: drill into a collection, or hand
+/// the chosen command back to the shell. Shared with the mouse handler so a
+/// double-click cannot drift from the keybinding.
+pub fn activate_selected(state: &mut AppState) -> Action {
+    if state.view_mode == ViewMode::Collections {
+        match state.active_pane {
+            ActivePane::CollectionsList => {
+                state.load_collection_commands();
+                state.active_pane = ActivePane::CollectionItems;
+                state.selected_index = 0;
+                state.list_state.select(Some(0));
+                return Action::None;
+            }
+            ActivePane::CollectionItems => {
+                let cmd = state.filtered.get(state.selected_index).cloned();
+                if let Some(ref c) = cmd {
+                    state.mark_executed_for_text(&c.text);
+                }
+                return cmd.map(|c| Action::Execute(c.text)).unwrap_or(Action::None);
+            }
+            _ => return Action::None,
+        }
+    }
+    let cmd = state.selected_command();
+    state.mark_executed();
+    cmd.map(Action::Execute).unwrap_or(Action::None)
+}
+
+pub fn switch_view_history(state: &mut AppState) {
     state.view_mode = ViewMode::History;
     state.active_pane = ActivePane::History;
     state.filter_commands();
 }
 
-fn switch_view_favorites(state: &mut AppState) {
+pub fn switch_view_favorites(state: &mut AppState) {
     state.view_mode = ViewMode::Favorites;
     state.active_pane = ActivePane::History;
     state.filter_commands();
 }
 
-fn switch_view_collections(state: &mut AppState) {
+pub fn switch_view_collections(state: &mut AppState) {
     state.view_mode = ViewMode::Collections;
     state.active_pane = ActivePane::CollectionsList;
     state.load_collection_commands();

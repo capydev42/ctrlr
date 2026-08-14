@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- ctrlr now responds to the mouse. The wheel scrolls whichever list is under the pointer, a click selects a row and focuses its pane, a double-click runs the command, and the tabs and search bar are clickable. Popups scroll with the wheel and close when you click outside them
+- Right-clicking a row opens a context menu with Run, Copy, Favorite, Tag, and Add to / Remove from collection — whichever of those apply to the current view. The menu takes the keyboard as well: `j` / `k` to move, Enter to pick, Esc to close
+- ctrlr holds the mouse for as long as it runs, so your terminal's own drag-to-select needs **Shift** held while ctrlr is open. Mouse reporting is released when ctrlr exits, including on a panic
+
 ---
 
 ## [0.7.0] - 2026-08-14

@@ -19,7 +19,7 @@
 - **Tags & collections** to organize commands
 - **Import/export** for backup and sharing (JSON format)
 - **Fast TUI** powered by `ratatui`
-- **Keyboard-first workflow**
+- **Keyboard-first workflow**, with mouse support when you want it
 - Works with bash, zsh, fish
 
 ---
@@ -189,6 +189,22 @@ mv target/release/ctrlr ~/.local/bin/
 | e     | Edit / rename collection      |
 | d     | Delete collection             |
 | r     | Remove command from collection |
+
+### Mouse
+
+| Input                 | Action                                                        |
+|-----------------------|---------------------------------------------------------------|
+| Click                 | Select a row / switch tab / focus the search bar               |
+| Double-click          | Run the command                                                |
+| Right-click           | Context menu for the row                                       |
+| Wheel                 | Scroll the list under the pointer                              |
+| Click outside a popup | Close it                                                       |
+
+The context menu offers Run, Copy, Favorite, Tag, and Add to / Remove from
+collection, and is driven by the keyboard too (`j` / `k`, Enter, Esc).
+
+ctrlr holds the mouse for as long as it runs, so your terminal's own
+drag-to-select needs **Shift** held while ctrlr is open.
 
 ---
 

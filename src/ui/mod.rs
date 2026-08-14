@@ -11,10 +11,14 @@ use ratatui::{
 };
 
 use crate::app::{AppState, CollectionInputMode, InputMode, ViewMode};
+use crate::ui::layout::Hitboxes;
 
 pub fn render(frame: &mut Frame, state: &mut AppState) {
     let area = frame.area();
     state.set_terminal_height(area.height);
+    // Rebuilt from scratch every frame so a hitbox can never outlive the
+    // widget that drew it; the renderers below fill in what they own.
+    state.hit = Hitboxes::default();
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -68,6 +72,12 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
                 popups::render_collection_popup(frame, state, area);
             }
         }
+    }
+
+    // Above the view but below the modal popups: the menu is dismissed
+    // whenever one of those opens.
+    if state.context_menu_open {
+        popups::render_context_menu(frame, state, area);
     }
 
     if state.help_open {

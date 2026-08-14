@@ -5,3 +5,7 @@
 .env
 .env.*
 .claude/
+
+# Agent guidance, kept local
+AGENTS.md
+CLAUDE.md

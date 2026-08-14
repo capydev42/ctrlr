@@ -8,6 +8,7 @@ use ratatui::widgets::ListState;
 use crate::input::help::GroupedShortcut;
 use crate::storage::collections::Collection;
 use crate::storage::import_export::{ImportMode, ImportPreview};
+use crate::ui::layout::Hitboxes;
 use crate::ui::theme::{CatppuccinFlavor, Theme};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -42,6 +43,37 @@ pub enum CollectionInputMode {
     AddToCollectionSearch,
     ConfirmDeleteCollection,
     ConfirmDeleteCommand,
+}
+
+/// An entry of the right-click menu. The list is built per open from the
+/// current view, so the menu never offers an action that cannot apply.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ContextMenuItem {
+    Execute,
+    Copy,
+    ToggleFavorite,
+    AddTag,
+    AddToCollection,
+    RemoveFromCollection,
+}
+
+impl ContextMenuItem {
+    pub fn label(&self, favorite: bool) -> &'static str {
+        match self {
+            ContextMenuItem::Execute => "Run",
+            ContextMenuItem::Copy => "Copy",
+            ContextMenuItem::ToggleFavorite => {
+                if favorite {
+                    "Unfavorite"
+                } else {
+                    "Favorite"
+                }
+            }
+            ContextMenuItem::AddTag => "Tag…",
+            ContextMenuItem::AddToCollection => "Add to collection…",
+            ContextMenuItem::RemoveFromCollection => "Remove from collection",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -135,6 +167,17 @@ pub struct AppState {
     /// Declining now retires the offer for this integration, so the popup says
     /// so instead of quietly never returning.
     pub integration_final_offer: bool,
+    /// Screen regions recorded by the last draw, for mouse hit-testing.
+    pub hit: Hitboxes,
+    /// Position and time of the last left click, for double-click detection —
+    /// crossterm reports no double-click event of its own.
+    pub last_click: Option<(u16, u16, Instant)>,
+    pub context_menu_open: bool,
+    /// Where the menu was opened, i.e. the pointer at right-click time.
+    pub context_menu_pos: (u16, u16),
+    pub context_menu_items: Vec<ContextMenuItem>,
+    pub context_menu_index: usize,
+    pub context_menu_list_state: ListState,
 }
 
 impl AppState {
@@ -443,6 +486,17 @@ impl AppState {
             integration_message: None,
             writes_to_output_file: false,
             integration_final_offer: false,
+            hit: Hitboxes::default(),
+            last_click: None,
+            context_menu_open: false,
+            context_menu_pos: (0, 0),
+            context_menu_items: Vec::new(),
+            context_menu_index: 0,
+            context_menu_list_state: {
+                let mut s = ListState::default();
+                s.select(Some(0));
+                s
+            },
         }
     }
 
@@ -665,6 +719,118 @@ impl AppState {
     pub fn navigate_page_up(&mut self) {
         let page_size = (self.terminal_height.saturating_sub(4) / 2).max(5) as usize;
         self.selected_index = self.selected_index.saturating_sub(page_size);
+    }
+
+    /// Selects a command by index, keeping `list_state` in sync. The keyboard
+    /// handlers do this by hand at every call site; mouse paths go through
+    /// here instead.
+    pub fn select_index(&mut self, index: usize) {
+        if self.filtered.is_empty() {
+            return;
+        }
+        self.selected_index = index.min(self.filtered.len() - 1);
+        self.list_state.select(Some(self.selected_index));
+    }
+
+    /// Moves the command selection by `delta` rows without wrapping —
+    /// [`AppState::navigate_up`] and [`AppState::navigate_down`] wrap, which is
+    /// right for `j`/`k` but wrong for a wheel that has hit the end of the list.
+    pub fn scroll_list(&mut self, delta: isize) {
+        if self.filtered.is_empty() {
+            return;
+        }
+        let last = self.filtered.len() - 1;
+        let next = (self.selected_index as isize + delta).clamp(0, last as isize) as usize;
+        self.select_index(next);
+    }
+
+    /// Selects a collection by index and reloads its commands.
+    pub fn select_collection_index(&mut self, index: usize) {
+        if self.collections.is_empty() {
+            return;
+        }
+        self.selected_collection_index = index.min(self.collections.len() - 1);
+        self.collection_list_state
+            .select(Some(self.selected_collection_index));
+        self.load_collection_commands();
+        self.filter_commands();
+    }
+
+    /// Wheel equivalent of [`AppState::scroll_list`] for the collections pane.
+    pub fn scroll_collections(&mut self, delta: isize) {
+        if self.collections.is_empty() {
+            return;
+        }
+        let last = self.collections.len() - 1;
+        let next =
+            (self.selected_collection_index as isize + delta).clamp(0, last as isize) as usize;
+        self.select_collection_index(next);
+    }
+
+    /// Opens the right-click menu at `(x, y)` for the current selection.
+    pub fn open_context_menu(&mut self, x: u16, y: u16) {
+        if self.filtered.get(self.selected_index).is_none() {
+            return;
+        }
+
+        let mut items = vec![
+            ContextMenuItem::Execute,
+            ContextMenuItem::Copy,
+            ContextMenuItem::ToggleFavorite,
+            ContextMenuItem::AddTag,
+        ];
+        // In the Collections view `filtered` holds one collection's commands,
+        // so removing from it is the action that applies; everywhere else the
+        // command is not in a collection context yet.
+        if self.view_mode == ViewMode::Collections {
+            items.push(ContextMenuItem::RemoveFromCollection);
+        } else {
+            items.push(ContextMenuItem::AddToCollection);
+        }
+
+        self.context_menu_items = items;
+        self.context_menu_index = 0;
+        self.context_menu_list_state.select(Some(0));
+        self.context_menu_pos = (x, y);
+        self.context_menu_open = true;
+    }
+
+    pub fn close_context_menu(&mut self) {
+        self.context_menu_open = false;
+        self.context_menu_items.clear();
+        self.context_menu_index = 0;
+    }
+
+    pub fn select_context_menu_index(&mut self, index: usize) {
+        if self.context_menu_items.is_empty() {
+            return;
+        }
+        self.context_menu_index = index.min(self.context_menu_items.len() - 1);
+        self.context_menu_list_state
+            .select(Some(self.context_menu_index));
+    }
+
+    pub fn navigate_context_menu(&mut self, delta: isize) {
+        if self.context_menu_items.is_empty() {
+            return;
+        }
+        let len = self.context_menu_items.len() as isize;
+        let next = (self.context_menu_index as isize + delta).rem_euclid(len) as usize;
+        self.select_context_menu_index(next);
+    }
+
+    /// Label of the currently selected menu entry, reflecting whether the
+    /// command under the cursor is already a favorite.
+    pub fn context_menu_labels(&self) -> Vec<&'static str> {
+        let favorite = self
+            .filtered
+            .get(self.selected_index)
+            .map(|c| c.favorite)
+            .unwrap_or(false);
+        self.context_menu_items
+            .iter()
+            .map(|item| item.label(favorite))
+            .collect()
     }
 
     pub fn add_to_search(&mut self, c: char) {

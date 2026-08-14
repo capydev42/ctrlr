@@ -18,6 +18,7 @@ pub fn section<'a>(title: &str, theme: &crate::ui::theme::Theme) -> Line<'a> {
 }
 
 pub fn render_history_list(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    state.hit.list = area;
     let theme = &state.current_theme;
     let items: Vec<ListItem> = if state.filtered.is_empty() {
         vec![ListItem::new("No results found")]
@@ -84,6 +85,7 @@ pub fn render_details(frame: &mut Frame, state: &mut AppState, area: Rect) {
     if area.width < 5 || area.height < 3 {
         return;
     }
+    state.hit.details = area;
 
     let theme = &state.current_theme;
 
