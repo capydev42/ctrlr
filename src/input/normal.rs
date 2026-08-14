@@ -5,7 +5,7 @@ use std::time::Instant;
 
 /// Columns `<` and `>` move a divider by. Wide enough to be worth a keypress,
 /// narrow enough to land where you meant.
-const RESIZE_STEP: i16 = 4;
+pub const RESIZE_STEP: i16 = 4;
 
 pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
     match (key.code, key.modifiers) {

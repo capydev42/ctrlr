@@ -243,14 +243,14 @@ pub fn get_all_shortcuts() -> Vec<GroupedShortcut> {
             action_id: "shrink_pane",
             action_name: "Narrow Pane",
             description: "Narrow the details or collections pane",
-            keys: vec!["<"],
+            keys: vec!["<", "Alt+<"],
             category: "Panels",
         },
         GroupedShortcut {
             action_id: "grow_pane",
             action_name: "Widen Pane",
             description: "Widen the details or collections pane",
-            keys: vec![">"],
+            keys: vec![">", "Alt+>"],
             category: "Panels",
         },
         // Reference only: these have no `action_id` arm in
@@ -334,10 +334,26 @@ fn drop_ctrl_u_from_page_up(mut sc: GroupedShortcut) -> GroupedShortcut {
     sc
 }
 
-pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
-    let all = get_all_shortcuts();
+/// Shortcuts that apply in every context. Appended after the per-context
+/// filter instead of being repeated in each arm below — every arm is an
+/// allow-list, so anything missing from all of them is invisible in the help
+/// popup no matter what `get_all_shortcuts` says.
+const UNIVERSAL_ACTIONS: &[&str] = &[
+    "shrink_pane",
+    "grow_pane",
+    "mouse_select",
+    "mouse_menu",
+    "mouse_scroll",
+    "mouse_select_text",
+];
 
-    match (&state.view_mode, &state.active_pane, &state.input_mode) {
+pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
+    let all: Vec<GroupedShortcut> = get_all_shortcuts()
+        .into_iter()
+        .filter(|sc| !UNIVERSAL_ACTIONS.contains(&sc.action_id))
+        .collect();
+
+    let mut shortcuts = match (&state.view_mode, &state.active_pane, &state.input_mode) {
         (ViewMode::History, ActivePane::Search, InputMode::Normal) => all
             .into_iter()
             .filter(|sc| {
@@ -520,7 +536,37 @@ pub fn get_shortcuts_for_context(state: &AppState) -> Vec<GroupedShortcut> {
             })
             .collect(),
         _ => all,
+    };
+
+    shortcuts.extend(
+        get_all_shortcuts()
+            .into_iter()
+            .filter(|sc| UNIVERSAL_ACTIONS.contains(&sc.action_id)),
+    );
+
+    // The popup starts a new header every time the category changes as it
+    // walks the list, so appending would print a second "Panels" heading at
+    // the bottom. Put every entry back under its own category, in the order
+    // `get_all_shortcuts` declares them.
+    let order = category_order();
+    shortcuts.sort_by_key(|sc| {
+        order
+            .iter()
+            .position(|c| *c == sc.category)
+            .unwrap_or(usize::MAX)
+    });
+    shortcuts
+}
+
+/// Categories in declaration order, for regrouping a filtered list.
+fn category_order() -> Vec<&'static str> {
+    let mut order: Vec<&'static str> = Vec::new();
+    for sc in get_all_shortcuts() {
+        if !order.contains(&sc.category) {
+            order.push(sc.category);
+        }
     }
+    order
 }
 
 pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
@@ -676,10 +722,10 @@ pub fn execute_help_action(state: &mut AppState, action_id: &str) -> Action {
             state.show_details = !state.show_details;
         }
         "shrink_pane" => {
-            state.nudge_divider(-4);
+            state.nudge_divider(-super::normal::RESIZE_STEP);
         }
         "grow_pane" => {
-            state.nudge_divider(4);
+            state.nudge_divider(super::normal::RESIZE_STEP);
         }
         "focus_search" | "show_help" => {
             state.active_pane = ActivePane::Search;
@@ -765,4 +811,106 @@ pub fn execute_help_action(state: &mut AppState, action_id: &str) -> Action {
     }
 
     Action::None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::AppState;
+
+    fn state() -> AppState {
+        AppState::new(Vec::new(), None)
+    }
+
+    /// Every context arm is an allow-list, so a shortcut that is not named in
+    /// any of them is invisible in the help popup however well
+    /// `get_all_shortcuts` describes it. Universal entries must survive.
+    #[test]
+    fn test_help_universal_shortcuts_survive_every_context() {
+        let contexts = [
+            (ViewMode::History, ActivePane::Search),
+            (ViewMode::History, ActivePane::History),
+            (ViewMode::Favorites, ActivePane::Search),
+            (ViewMode::Favorites, ActivePane::History),
+            (ViewMode::Collections, ActivePane::CollectionsList),
+            (ViewMode::Collections, ActivePane::CollectionItems),
+        ];
+
+        for (view_mode, active_pane) in contexts {
+            let mut state = state();
+            state.view_mode = view_mode.clone();
+            state.active_pane = active_pane.clone();
+            let ids: Vec<&str> = get_shortcuts_for_context(&state)
+                .iter()
+                .map(|sc| sc.action_id)
+                .collect();
+            for universal in UNIVERSAL_ACTIONS {
+                assert!(
+                    ids.contains(universal),
+                    "{universal} missing from help in {view_mode:?}/{active_pane:?}",
+                );
+            }
+        }
+    }
+
+    /// The popup opens a new header every time the category changes as it
+    /// walks the list, so a category split into two runs renders its heading
+    /// twice.
+    #[test]
+    fn test_help_categories_are_contiguous() {
+        for (view_mode, active_pane) in [
+            (ViewMode::History, ActivePane::History),
+            (ViewMode::Collections, ActivePane::CollectionItems),
+        ] {
+            let mut state = state();
+            state.view_mode = view_mode;
+            state.active_pane = active_pane;
+            let shortcuts = get_shortcuts_for_context(&state);
+
+            let mut seen: Vec<&str> = Vec::new();
+            let mut previous: Option<&str> = None;
+            for sc in &shortcuts {
+                if previous != Some(sc.category) {
+                    assert!(
+                        !seen.contains(&sc.category),
+                        "category {} appears in two separate runs",
+                        sc.category
+                    );
+                    seen.push(sc.category);
+                    previous = Some(sc.category);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_help_shortcuts_are_not_duplicated() {
+        let mut state = state();
+        state.view_mode = ViewMode::History;
+        state.active_pane = ActivePane::History;
+        let mut ids: Vec<&str> = get_shortcuts_for_context(&state)
+            .iter()
+            .map(|sc| sc.action_id)
+            .collect();
+        let total = ids.len();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), total, "a shortcut is listed twice");
+    }
+
+    /// Anything reachable from the help popup needs an arm in
+    /// `execute_help_action`, or pressing Enter on it does nothing.
+    #[test]
+    fn test_help_resize_actions_are_executable() {
+        let mut state = state();
+        state.set_terminal_size(120, 30);
+        let before = state.details_width;
+        execute_help_action(&mut state, "grow_pane");
+        assert_eq!(
+            state.details_width,
+            before + super::super::normal::RESIZE_STEP as u16
+        );
+        execute_help_action(&mut state, "shrink_pane");
+        assert_eq!(state.details_width, before);
+    }
 }
