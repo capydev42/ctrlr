@@ -150,6 +150,8 @@ mv target/release/ctrlr ~/.local/bin/
 | 3     | Show Collections            |
 | .     | Scope to current directory  |
 | c     | Add to collection           |
+| < / > | Narrow / widen the side pane |
+| Alt+< / Alt+> | Same, from the search bar too   |
 
 ### Navigation (History / Favorites)
 

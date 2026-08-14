@@ -15,6 +15,83 @@ pub fn center_rect(width: u16, height: u16, area: Rect) -> Rect {
     )
 }
 
+/// Columns the command list keeps for itself before a side pane may have any.
+pub const MIN_LIST_WIDTH: u16 = 24;
+
+/// Narrowest a side pane may be and still be worth drawing. `render_details`
+/// gives up under 5 columns, so this has to stay comfortably above that or a
+/// pane would silently vanish instead of shrinking.
+pub const MIN_SIDE_WIDTH: u16 = 16;
+
+/// The horizontal split of the content row.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ContentAreas {
+    pub collections: Option<Rect>,
+    pub list: Rect,
+    pub details: Option<Rect>,
+}
+
+/// Lays out the content row from requested side-pane widths in **columns**.
+///
+/// Widths are columns rather than percentages so a drag maps 1:1 onto them —
+/// a percentage round-trip lands on the same percent for small movements and
+/// makes the divider stick. The cost is that widening the terminal grows only
+/// the list, which is why the side panes are clamped here on every frame
+/// rather than trusted as stored.
+///
+/// `None` means the pane is not shown. A pane that cannot keep
+/// [`MIN_SIDE_WIDTH`] without pushing the list under [`MIN_LIST_WIDTH`] is
+/// trimmed, and dropped entirely only when trimming is not enough — details
+/// first, since the list it describes matters more than the description.
+pub fn split_content(area: Rect, collections: Option<u16>, details: Option<u16>) -> ContentAreas {
+    let mut coll = collections.map(|w| w.max(MIN_SIDE_WIDTH));
+    let mut det = details.map(|w| w.max(MIN_SIDE_WIDTH));
+
+    // Keep both panes if trimming can pay for the list. If it cannot, drop
+    // details and start over from the *requested* collections width — a pane
+    // on its way out should not leave its neighbour shrunken behind it.
+    if !trim_to_fit(area.width, &mut coll, &mut det) {
+        det = None;
+        coll = collections.map(|w| w.max(MIN_SIDE_WIDTH));
+        if !trim_to_fit(area.width, &mut coll, &mut det) {
+            coll = None;
+        }
+    }
+
+    let coll_width = coll.unwrap_or(0);
+    let det_width = det.unwrap_or(0);
+    let list_width = area.width.saturating_sub(coll_width + det_width);
+
+    ContentAreas {
+        collections: coll.map(|w| Rect::new(area.x, area.y, w, area.height)),
+        list: Rect::new(area.x + coll_width, area.y, list_width, area.height),
+        details: det.map(|w| Rect::new(area.x + coll_width + list_width, area.y, w, area.height)),
+    }
+}
+
+/// Columns the side panes must give back for the list to keep its minimum.
+fn shortfall(total: u16, collections: Option<u16>, details: Option<u16>) -> u16 {
+    let side = collections.unwrap_or(0) + details.unwrap_or(0);
+    (side + MIN_LIST_WIDTH).saturating_sub(total)
+}
+
+/// Shrinks the side panes toward [`MIN_SIDE_WIDTH`], details first, until the
+/// list has its minimum. False when even the minimums do not fit.
+fn trim_to_fit(total: u16, collections: &mut Option<u16>, details: &mut Option<u16>) -> bool {
+    let mut over = shortfall(total, *collections, *details);
+    for pane in [details, collections] {
+        if over == 0 {
+            break;
+        }
+        if let Some(w) = pane.as_mut() {
+            let give = over.min(w.saturating_sub(MIN_SIDE_WIDTH));
+            *w -= give;
+            over -= give;
+        }
+    }
+    over == 0
+}
+
 /// Screen regions recorded during the last draw, for mouse hit-testing.
 ///
 /// `ui::render` runs immediately before every blocking `event::read()`, so
@@ -149,6 +226,63 @@ mod tests {
     fn test_layout_anchor_rect_clamps_when_oversized() {
         let r = anchor_rect(30, 8, 80, 40, area());
         assert_eq!(r, area());
+    }
+
+    #[test]
+    fn test_layout_split_content_honours_requested_widths() {
+        let areas = split_content(Rect::new(0, 4, 100, 20), None, Some(35));
+        assert_eq!(areas.collections, None);
+        assert_eq!(areas.list, Rect::new(0, 4, 65, 20));
+        assert_eq!(areas.details, Some(Rect::new(65, 4, 35, 20)));
+    }
+
+    #[test]
+    fn test_layout_split_content_three_panes_are_adjacent() {
+        let areas = split_content(Rect::new(2, 4, 120, 20), Some(24), Some(35));
+        let coll = areas.collections.unwrap();
+        let det = areas.details.unwrap();
+        assert_eq!(coll, Rect::new(2, 4, 24, 20));
+        assert_eq!(areas.list, Rect::new(26, 4, 61, 20));
+        assert_eq!(det, Rect::new(87, 4, 35, 20));
+        assert_eq!(coll.width + areas.list.width + det.width, 120);
+    }
+
+    #[test]
+    fn test_layout_split_content_raises_undersized_request() {
+        let areas = split_content(Rect::new(0, 0, 100, 10), None, Some(3));
+        assert_eq!(areas.details.unwrap().width, MIN_SIDE_WIDTH);
+    }
+
+    #[test]
+    fn test_layout_split_content_trims_details_before_collections() {
+        // 24 + 60 leaves the list 16, under its minimum: details gives back 8.
+        let areas = split_content(Rect::new(0, 0, 100, 10), Some(24), Some(60));
+        assert_eq!(areas.collections.unwrap().width, 24);
+        assert_eq!(areas.details.unwrap().width, 52);
+        assert_eq!(areas.list.width, MIN_LIST_WIDTH);
+    }
+
+    #[test]
+    fn test_layout_split_content_drops_details_when_trimming_is_not_enough() {
+        // 24 + 16 + 24 needs 64 columns; 55 cannot hold all three.
+        let areas = split_content(Rect::new(0, 0, 55, 10), Some(24), Some(20));
+        assert_eq!(areas.details, None);
+        assert_eq!(areas.collections.unwrap().width, 24);
+        assert_eq!(areas.list.width, 31);
+    }
+
+    #[test]
+    fn test_layout_split_content_drops_both_on_a_tiny_terminal() {
+        let areas = split_content(Rect::new(0, 0, 30, 10), Some(24), Some(20));
+        assert_eq!(areas.collections, None);
+        assert_eq!(areas.details, None);
+        assert_eq!(areas.list, Rect::new(0, 0, 30, 10));
+    }
+
+    #[test]
+    fn test_layout_split_content_without_side_panes() {
+        let areas = split_content(Rect::new(0, 0, 80, 10), None, None);
+        assert_eq!(areas.list, Rect::new(0, 0, 80, 10));
     }
 
     #[test]

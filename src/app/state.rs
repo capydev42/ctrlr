@@ -76,6 +76,13 @@ impl ContextMenuItem {
     }
 }
 
+/// A resizable seam between two panes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Divider {
+    Collections,
+    Details,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum ImportExportMode {
     Export,
@@ -178,6 +185,12 @@ pub struct AppState {
     pub context_menu_items: Vec<ContextMenuItem>,
     pub context_menu_index: usize,
     pub context_menu_list_state: ListState,
+    /// Width of the details pane, in columns. Stored rather than derived from
+    /// a percentage so that resizing moves it one column at a time.
+    pub details_width: u16,
+    /// Width of the collections pane, in columns.
+    pub collections_width: u16,
+    pub terminal_width: u16,
 }
 
 impl AppState {
@@ -281,6 +294,7 @@ impl AppState {
         let mut state = AppState::new(commands, db);
         state.cwd = cwd;
         state.load_theme_from_db();
+        state.load_pane_widths();
         state.load_collections();
         state.check_integration();
         state
@@ -288,6 +302,12 @@ impl AppState {
 
     /// Key under which a dismissed offer is remembered.
     const INTEGRATION_DISMISSED_KEY: &'static str = "integration_prompt_dismissed";
+    const DETAILS_WIDTH_KEY: &'static str = "details_width";
+    const COLLECTIONS_WIDTH_KEY: &'static str = "collections_width";
+    /// Roughly the old 35% of a 100-column terminal.
+    const DEFAULT_DETAILS_WIDTH: u16 = 35;
+    /// Roughly the old 20% of a 120-column terminal.
+    const DEFAULT_COLLECTIONS_WIDTH: u16 = 24;
 
     /// Decides whether to offer installing or updating the shell integration.
     ///
@@ -497,11 +517,91 @@ impl AppState {
                 s.select(Some(0));
                 s
             },
+            details_width: Self::DEFAULT_DETAILS_WIDTH,
+            collections_width: Self::DEFAULT_COLLECTIONS_WIDTH,
+            terminal_width: 80,
         }
     }
 
-    pub fn set_terminal_height(&mut self, height: u16) {
+    pub fn set_terminal_size(&mut self, width: u16, height: u16) {
+        self.terminal_width = width;
         self.terminal_height = height;
+    }
+
+    /// Widest a side pane may be asked to become, given the terminal. The
+    /// per-frame clamp lives in `ui::layout::split_content`; this one keeps
+    /// the *stored* value from drifting past anything reachable, so that
+    /// nudging into the edge and back is symmetric instead of dead for a few
+    /// keypresses.
+    fn max_side_width(&self) -> u16 {
+        self.terminal_width
+            .saturating_sub(crate::ui::layout::MIN_LIST_WIDTH)
+            .max(crate::ui::layout::MIN_SIDE_WIDTH)
+    }
+
+    /// Which pane `<` and `>` resize, given where focus is.
+    fn active_divider(&self) -> Divider {
+        if self.view_mode == ViewMode::Collections
+            && self.active_pane == ActivePane::CollectionsList
+        {
+            Divider::Collections
+        } else {
+            Divider::Details
+        }
+    }
+
+    /// Moves the focused divider by `delta` columns and remembers the result.
+    /// Positive widens the side pane.
+    pub fn nudge_divider(&mut self, delta: i16) {
+        let divider = self.active_divider();
+        let (current, min, max) = match divider {
+            Divider::Collections => (
+                self.collections_width,
+                crate::ui::layout::MIN_SIDE_WIDTH,
+                self.max_side_width(),
+            ),
+            Divider::Details => (
+                self.details_width,
+                crate::ui::layout::MIN_SIDE_WIDTH,
+                self.max_side_width(),
+            ),
+        };
+        let next = (current as i32 + delta as i32).clamp(min as i32, max as i32) as u16;
+        match divider {
+            Divider::Collections => self.collections_width = next,
+            Divider::Details => self.details_width = next,
+        }
+        self.persist_pane_widths();
+    }
+
+    /// Widths outlive the session; they live beside the theme in `settings`,
+    /// which is plain key/value, so no migration is involved.
+    pub fn persist_pane_widths(&self) {
+        let Some(ref conn) = self.db else { return };
+        let _ = crate::storage::save_setting(
+            conn,
+            Self::DETAILS_WIDTH_KEY,
+            &self.details_width.to_string(),
+        );
+        let _ = crate::storage::save_setting(
+            conn,
+            Self::COLLECTIONS_WIDTH_KEY,
+            &self.collections_width.to_string(),
+        );
+    }
+
+    pub fn load_pane_widths(&mut self) {
+        let Some(ref conn) = self.db else { return };
+        if let Some(w) = crate::storage::load_setting(conn, Self::DETAILS_WIDTH_KEY)
+            .and_then(|v| v.parse::<u16>().ok())
+        {
+            self.details_width = w.max(crate::ui::layout::MIN_SIDE_WIDTH);
+        }
+        if let Some(w) = crate::storage::load_setting(conn, Self::COLLECTIONS_WIDTH_KEY)
+            .and_then(|v| v.parse::<u16>().ok())
+        {
+            self.collections_width = w.max(crate::ui::layout::MIN_SIDE_WIDTH);
+        }
     }
 
     pub fn set_status_message(&mut self, msg: String) {
@@ -1844,6 +1944,86 @@ mod tests {
 
     fn state_with(texts: &[&str]) -> AppState {
         AppState::new(texts.iter().map(|t| cmd(t)).collect(), None)
+    }
+
+    fn test_conn() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::storage::init_db_with_conn(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn test_state_nudge_divider_resizes_details() {
+        let mut state = state_with(&["a"]);
+        state.set_terminal_size(120, 30);
+        let before = state.details_width;
+        state.nudge_divider(4);
+        assert_eq!(state.details_width, before + 4);
+        state.nudge_divider(-4);
+        assert_eq!(state.details_width, before);
+    }
+
+    #[test]
+    fn test_state_nudge_divider_clamps_at_both_ends() {
+        let mut state = state_with(&["a"]);
+        state.set_terminal_size(120, 30);
+        for _ in 0..50 {
+            state.nudge_divider(-4);
+        }
+        assert_eq!(state.details_width, crate::ui::layout::MIN_SIDE_WIDTH);
+        for _ in 0..50 {
+            state.nudge_divider(4);
+        }
+        assert_eq!(state.details_width, 120 - crate::ui::layout::MIN_LIST_WIDTH);
+    }
+
+    #[test]
+    fn test_state_nudge_divider_targets_collections_when_that_pane_is_focused() {
+        let mut state = state_with(&["a"]);
+        state.set_terminal_size(120, 30);
+        state.view_mode = ViewMode::Collections;
+        state.active_pane = ActivePane::CollectionsList;
+        let details_before = state.details_width;
+        let collections_before = state.collections_width;
+        state.nudge_divider(4);
+        assert_eq!(state.collections_width, collections_before + 4);
+        assert_eq!(state.details_width, details_before);
+    }
+
+    #[test]
+    fn test_state_nudge_divider_targets_details_from_collection_items() {
+        let mut state = state_with(&["a"]);
+        state.set_terminal_size(120, 30);
+        state.view_mode = ViewMode::Collections;
+        state.active_pane = ActivePane::CollectionItems;
+        let before = state.details_width;
+        state.nudge_divider(4);
+        assert_eq!(state.details_width, before + 4);
+    }
+
+    #[test]
+    fn test_state_pane_widths_round_trip_through_settings() {
+        let conn = test_conn();
+        let mut state = AppState::new(Vec::new(), Some(conn));
+        state.set_terminal_size(200, 30);
+        state.nudge_divider(8);
+        let saved = state.details_width;
+
+        // A fresh state over the same DB comes back where the last one left off.
+        let mut reopened = AppState::new(Vec::new(), state.db.take());
+        assert_ne!(reopened.details_width, saved);
+        reopened.load_pane_widths();
+        assert_eq!(reopened.details_width, saved);
+    }
+
+    #[test]
+    fn test_state_load_pane_widths_ignores_junk() {
+        let conn = test_conn();
+        crate::storage::save_setting(&conn, "details_width", "not-a-number").unwrap();
+        let mut state = AppState::new(Vec::new(), Some(conn));
+        let before = state.details_width;
+        state.load_pane_widths();
+        assert_eq!(state.details_width, before);
     }
 
     /// A state where `here` was recorded in the current directory and the rest

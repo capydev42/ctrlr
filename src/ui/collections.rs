@@ -1,6 +1,6 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::Style,
     text::Line,
     widgets::{Block, BorderType, List, ListItem},
@@ -11,27 +11,19 @@ use crate::app::{ActivePane, AppState};
 use super::components::command_with_right_tags;
 
 pub fn render_collections_view(frame: &mut Frame, state: &mut AppState, area: Rect) {
-    if state.active_pane == ActivePane::CollectionItems && state.show_details {
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(20),
-                Constraint::Percentage(45),
-                Constraint::Percentage(35),
-            ])
-            .split(area);
+    let show_details = state.active_pane == ActivePane::CollectionItems && state.show_details;
+    let areas = super::layout::split_content(
+        area,
+        Some(state.collections_width),
+        show_details.then_some(state.details_width),
+    );
 
-        render_collection_list(frame, state, chunks[0]);
-        render_collection_commands(frame, state, chunks[1]);
-        super::history::render_details(frame, state, chunks[2]);
-    } else {
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
-            .split(area);
-
-        render_collection_list(frame, state, chunks[0]);
-        render_collection_commands(frame, state, chunks[1]);
+    if let Some(collections_area) = areas.collections {
+        render_collection_list(frame, state, collections_area);
+    }
+    render_collection_commands(frame, state, areas.list);
+    if let Some(details_area) = areas.details {
+        super::history::render_details(frame, state, details_area);
     }
 }
 

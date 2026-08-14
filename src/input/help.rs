@@ -239,6 +239,20 @@ pub fn get_all_shortcuts() -> Vec<GroupedShortcut> {
             keys: vec!["r"],
             category: "Collections",
         },
+        GroupedShortcut {
+            action_id: "shrink_pane",
+            action_name: "Narrow Pane",
+            description: "Narrow the details or collections pane",
+            keys: vec!["<"],
+            category: "Panels",
+        },
+        GroupedShortcut {
+            action_id: "grow_pane",
+            action_name: "Widen Pane",
+            description: "Widen the details or collections pane",
+            keys: vec![">"],
+            category: "Panels",
+        },
         // Reference only: these have no `action_id` arm in
         // `execute_help_action`, since there is no key to press for them.
         GroupedShortcut {
@@ -660,6 +674,12 @@ pub fn execute_help_action(state: &mut AppState, action_id: &str) -> Action {
         }
         "toggle_details" => {
             state.show_details = !state.show_details;
+        }
+        "shrink_pane" => {
+            state.nudge_divider(-4);
+        }
+        "grow_pane" => {
+            state.nudge_divider(4);
         }
         "focus_search" | "show_help" => {
             state.active_pane = ActivePane::Search;
