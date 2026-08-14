@@ -121,6 +121,20 @@ pub struct AppState {
     pub cwd: Option<String>,
     /// Restricts the list to commands recorded in [`AppState::cwd`].
     pub scope_to_cwd: bool,
+    /// Offers to install or update the shell integration on startup.
+    pub integration_popup_open: bool,
+    pub integration_shell: Option<crate::cli::shells::Shell>,
+    pub integration_state: Option<crate::cli::shells::IntegrationState>,
+    /// Set once the popup has written the config, switching it to its result
+    /// view.
+    pub integration_installed: bool,
+    pub integration_message: Option<String>,
+    /// Whether the selection is handed back through `--output-file`, i.e.
+    /// whether ctrlr can put a shell reload on the prompt line.
+    pub writes_to_output_file: bool,
+    /// Declining now retires the offer for this integration, so the popup says
+    /// so instead of quietly never returning.
+    pub integration_final_offer: bool,
 }
 
 impl AppState {
@@ -225,7 +239,112 @@ impl AppState {
         state.cwd = cwd;
         state.load_theme_from_db();
         state.load_collections();
+        state.check_integration();
         state
+    }
+
+    /// Key under which a dismissed offer is remembered.
+    const INTEGRATION_DISMISSED_KEY: &'static str = "integration_prompt_dismissed";
+
+    /// Decides whether to offer installing or updating the shell integration.
+    ///
+    /// The stdout warning this backs up is printed before the alternate screen
+    /// opens, so the user only sees it after quitting — which is how an
+    /// out-of-date integration stays unnoticed.
+    fn check_integration(&mut self) {
+        use crate::cli::shells::{self, IntegrationState};
+
+        let Some((shell, state)) = shells::detect_integration_state() else {
+            return;
+        };
+
+        if state == IntegrationState::Current {
+            return;
+        }
+
+        let stored = self
+            .db
+            .as_ref()
+            .and_then(|conn| crate::storage::load_setting(conn, Self::INTEGRATION_DISMISSED_KEY));
+
+        let decision = integration_offer(stored.as_deref(), &shells::script_fingerprint(shell));
+
+        if let (Some(conn), Some(record)) = (self.db.as_ref(), &decision.record) {
+            let _ = crate::storage::save_setting(conn, Self::INTEGRATION_DISMISSED_KEY, record);
+        }
+
+        if !decision.show {
+            return;
+        }
+
+        self.integration_final_offer = decision.final_offer;
+        self.integration_shell = Some(shell);
+        self.integration_state = Some(state);
+        self.integration_popup_open = true;
+    }
+
+    /// Writes the integration and switches the popup to its result view.
+    ///
+    /// Returns the command that reloads the shell when ctrlr can put one on the
+    /// prompt line, which is only possible through `--output-file`: ctrlr is a
+    /// child process and cannot source anything into the shell that started it.
+    pub fn install_integration(&mut self) -> Option<String> {
+        let shell = self.integration_shell?;
+
+        match crate::cli::init::install_integration(shell) {
+            Ok(outcome) => {
+                self.integration_installed = true;
+                self.integration_message = Some(match &outcome.backup {
+                    Some(backup) => format!(
+                        "Wrote {}\nPrevious config saved to {}",
+                        outcome.config_path.display(),
+                        backup.display()
+                    ),
+                    None => format!("Wrote {}", outcome.config_path.display()),
+                });
+
+                // With a reload on the prompt line ctrlr is about to exit, so
+                // the result view is never seen. Without one the popup stays
+                // up: "restart your shell" in a status message that expires
+                // after two seconds is too easy to miss.
+                if self.writes_to_output_file {
+                    self.integration_popup_open = false;
+                    return Some(crate::cli::shells::reload_command(shell).to_string());
+                }
+                None
+            }
+            Err(e) => {
+                self.integration_message = Some(format!("Could not update the config: {}", e));
+                None
+            }
+        }
+    }
+
+    /// Silences the popup for [`INTEGRATION_REASK_AFTER`] launches.
+    pub fn dismiss_integration_popup(&mut self) {
+        self.integration_popup_open = false;
+
+        let Some(shell) = self.integration_shell else {
+            return;
+        };
+
+        let fingerprint = crate::cli::shells::script_fingerprint(shell);
+        let previous = self
+            .db
+            .as_ref()
+            .and_then(|conn| crate::storage::load_setting(conn, Self::INTEGRATION_DISMISSED_KEY))
+            .and_then(|raw| serde_json::from_str::<Dismissal>(&raw).ok())
+            .filter(|d| d.fingerprint == fingerprint);
+
+        let record = Dismissal {
+            declines: previous.map(|d| d.declines).unwrap_or(0).saturating_add(1),
+            fingerprint,
+            launches: 0,
+        };
+
+        if let (Some(conn), Ok(encoded)) = (self.db.as_ref(), record.encode()) {
+            let _ = crate::storage::save_setting(conn, Self::INTEGRATION_DISMISSED_KEY, &encoded);
+        }
     }
 
     pub fn new(commands: Vec<Command>, db: Option<rusqlite::Connection>) -> Self {
@@ -317,6 +436,13 @@ impl AppState {
             import_export_mode: ImportExportMode::Export,
             cwd: None,
             scope_to_cwd: false,
+            integration_popup_open: false,
+            integration_shell: None,
+            integration_state: None,
+            integration_installed: false,
+            integration_message: None,
+            writes_to_output_file: false,
+            integration_final_offer: false,
         }
     }
 
@@ -1407,6 +1533,97 @@ impl AppState {
     }
 }
 
+/// Launches to stay quiet for after the integration offer is declined.
+///
+/// Counted in launches rather than days because ctrlr has no scheduler of its
+/// own, and kept high because the popup lands on the `Ctrl+R` hot path: a user
+/// who opened ctrlr to run a command does not want to answer a question first.
+const INTEGRATION_REASK_AFTER: u32 = 40;
+
+/// Declines after which the offer is dropped for this script. Three no's are an
+/// answer; only a changed integration is a new question worth asking.
+const INTEGRATION_MAX_DECLINES: u32 = 3;
+
+/// A declined integration offer, as stored in `settings`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct Dismissal {
+    /// The script that was declined. A different one is a different offer.
+    fingerprint: String,
+    /// Launches counted since the dismissal.
+    #[serde(default)]
+    launches: u32,
+    /// How often this script has been declined.
+    #[serde(default)]
+    declines: u32,
+}
+
+impl Dismissal {
+    fn encode(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+}
+
+/// What to do about the integration offer this launch.
+struct IntegrationOffer {
+    show: bool,
+    /// The record to persist, when it changed.
+    record: Option<String>,
+    /// Whether declining now is the last decline this script gets, so the
+    /// popup can say so rather than going quiet without explanation.
+    final_offer: bool,
+}
+
+/// Pure policy behind [`AppState::check_integration`], so the counting is
+/// testable without a shell config or a database.
+///
+/// A stored record for a different script is stale: that offer was never
+/// declined, so it is made again.
+fn integration_offer(stored: Option<&str>, fingerprint: &str) -> IntegrationOffer {
+    let dismissal = stored
+        .and_then(|raw| serde_json::from_str::<Dismissal>(raw).ok())
+        .filter(|d| d.fingerprint == fingerprint);
+
+    let Some(dismissal) = dismissal else {
+        return IntegrationOffer {
+            show: true,
+            record: None,
+            final_offer: INTEGRATION_MAX_DECLINES <= 1,
+        };
+    };
+
+    if dismissal.declines >= INTEGRATION_MAX_DECLINES {
+        // Answered often enough. No counting either: there is nothing left to
+        // count towards.
+        return IntegrationOffer {
+            show: false,
+            record: None,
+            final_offer: false,
+        };
+    }
+
+    let launches = dismissal.launches.saturating_add(1);
+    if launches >= INTEGRATION_REASK_AFTER {
+        // Asked again, and the count only resets once it is declined again.
+        return IntegrationOffer {
+            show: true,
+            record: None,
+            final_offer: dismissal.declines + 1 >= INTEGRATION_MAX_DECLINES,
+        };
+    }
+
+    IntegrationOffer {
+        show: false,
+        record: Dismissal {
+            fingerprint: fingerprint.to_string(),
+            launches,
+            declines: dismissal.declines,
+        }
+        .encode()
+        .ok(),
+        final_offer: false,
+    }
+}
+
 fn compute_ranking_score(cmd: &Command, fuzzy: i64, now: i64) -> i64 {
     let usage = cmd.use_count as i64 * 2;
 
@@ -1479,6 +1696,94 @@ mod tests {
         let mut state = AppState::new(commands, None);
         state.cwd = Some("/work/repo".to_string());
         state
+    }
+
+    fn dismissed(fingerprint: &str, launches: u32) -> String {
+        declined(fingerprint, launches, 1)
+    }
+
+    fn declined(fingerprint: &str, launches: u32, declines: u32) -> String {
+        Dismissal {
+            fingerprint: fingerprint.to_string(),
+            launches,
+            declines,
+        }
+        .encode()
+        .unwrap()
+    }
+
+    #[test]
+    fn test_integration_offered_when_never_dismissed() {
+        let offer = integration_offer(None, "abc");
+        assert!(offer.show);
+        assert!(offer.record.is_none(), "nothing to count yet");
+    }
+
+    #[test]
+    fn test_integration_silent_right_after_dismissal() {
+        let offer = integration_offer(Some(&dismissed("abc", 0)), "abc");
+        assert!(!offer.show);
+        assert_eq!(offer.record, Some(dismissed("abc", 1)));
+    }
+
+    #[test]
+    fn test_integration_counts_launches_until_the_threshold() {
+        let mut stored = dismissed("abc", 0);
+        for _ in 0..INTEGRATION_REASK_AFTER - 1 {
+            let offer = integration_offer(Some(&stored), "abc");
+            assert!(!offer.show);
+            stored = offer.record.unwrap();
+        }
+
+        let offer = integration_offer(Some(&stored), "abc");
+        assert!(offer.show, "asked again after {}", INTEGRATION_REASK_AFTER);
+    }
+
+    #[test]
+    fn test_integration_keeps_asking_until_dismissed_again() {
+        // The count is only reset by a dismissal, so quitting without
+        // answering does not buy another 40 launches of silence.
+        let stored = dismissed("abc", INTEGRATION_REASK_AFTER);
+        assert!(integration_offer(Some(&stored), "abc").show);
+        assert!(integration_offer(Some(&stored), "abc").show);
+    }
+
+    #[test]
+    fn test_integration_stops_asking_after_the_decline_cap() {
+        // Three no's are an answer; only a changed script asks again.
+        let stored = declined("abc", INTEGRATION_REASK_AFTER, INTEGRATION_MAX_DECLINES);
+        let offer = integration_offer(Some(&stored), "abc");
+
+        assert!(!offer.show);
+        assert!(offer.record.is_none(), "nothing left to count");
+        assert!(integration_offer(Some(&stored), "def").show);
+    }
+
+    #[test]
+    fn test_integration_announces_the_last_offer() {
+        let last = declined("abc", INTEGRATION_REASK_AFTER, INTEGRATION_MAX_DECLINES - 1);
+        assert!(integration_offer(Some(&last), "abc").final_offer);
+
+        let earlier = declined("abc", INTEGRATION_REASK_AFTER, 1);
+        assert!(!integration_offer(Some(&earlier), "abc").final_offer);
+    }
+
+    #[test]
+    fn test_integration_counting_preserves_the_decline_count() {
+        let offer = integration_offer(Some(&declined("abc", 0, 2)), "abc");
+        assert_eq!(offer.record, Some(declined("abc", 1, 2)));
+    }
+
+    #[test]
+    fn test_integration_offered_again_when_the_script_changes() {
+        let offer = integration_offer(Some(&dismissed("abc", 1)), "def");
+        assert!(offer.show, "a different script is a different offer");
+    }
+
+    #[test]
+    fn test_integration_tolerates_a_corrupt_record() {
+        assert!(integration_offer(Some("not json"), "abc").show);
+        assert!(integration_offer(Some(""), "abc").show);
     }
 
     #[test]

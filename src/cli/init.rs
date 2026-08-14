@@ -1,8 +1,8 @@
 use crate::cli::shells::{self, Shell};
 use color_eyre::Report;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
     let shell = match shell {
@@ -39,7 +39,6 @@ pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
 
     if is_installed && !is_current {
         println!("ctrlr integration found but outdated. Updating...");
-        remove_integration(&config_path, &config_content)?;
     }
 
     let script = shells::generate_script(shell);
@@ -68,12 +67,93 @@ pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
         return Ok(());
     }
 
-    install(&config_path, &script)?;
+    // Stripping the old block used to happen before this prompt, so answering
+    // "n" left the config with no integration at all.
+    let outcome = install_integration(shell)?;
 
     println!("✔ Installed ctrlr integration");
+    if let Some(backup) = &outcome.backup {
+        println!("→ Previous config saved to {}", backup.display());
+    }
     println!("→ Restart shell or run: source {}", config_path.display());
 
     Ok(())
+}
+
+/// Where the install wrote, and what it saved first.
+pub struct InstallOutcome {
+    pub config_path: PathBuf,
+    pub backup: Option<PathBuf>,
+}
+
+/// Replaces the integration block in the user's shell config.
+///
+/// No prompting and no printing: shared by `ctrlr init` and the in-TUI update
+/// popup. The existing config is copied aside first — this rewrites the file
+/// that decides whether the user's next shell starts correctly — and the strip
+/// and the append land in one write, so a failure cannot leave the config with
+/// the old block removed and nothing in its place.
+pub fn install_integration(shell: Shell) -> Result<InstallOutcome, Report> {
+    let config_path = shell.config_path();
+    let content = fs::read_to_string(&config_path).unwrap_or_default();
+
+    let backup = if content.is_empty() {
+        None
+    } else {
+        let backup_path = backup_path(&config_path);
+        fs::write(&backup_path, &content).map_err(|e| {
+            Report::new(std::io::Error::other(format!(
+                "Failed to back up {}: {}",
+                config_path.display(),
+                e
+            )))
+        })?;
+        Some(backup_path)
+    };
+
+    let mut new_content = strip_integration(&content);
+    while new_content.ends_with('\n') {
+        new_content.pop();
+    }
+    if !new_content.is_empty() {
+        new_content.push('\n');
+    }
+    new_content.push('\n');
+    new_content.push_str(&shells::generate_script(shell));
+    if !new_content.ends_with('\n') {
+        new_content.push('\n');
+    }
+
+    if let Some(dir) = config_path.parent()
+        && !dir.exists()
+    {
+        fs::create_dir_all(dir).map_err(|e| {
+            Report::new(std::io::Error::other(format!(
+                "Failed to create config directory: {}",
+                e
+            )))
+        })?;
+    }
+
+    fs::write(&config_path, new_content).map_err(|e| {
+        Report::new(std::io::Error::other(format!(
+            "Failed to update config: {}",
+            e
+        )))
+    })?;
+
+    Ok(InstallOutcome {
+        config_path,
+        backup,
+    })
+}
+
+/// `.bashrc` has no extension to replace, so the suffix is appended: using
+/// `with_extension` would turn `~/.bashrc` into `~/.bak`.
+fn backup_path(config_path: &Path) -> PathBuf {
+    let mut name = config_path.as_os_str().to_os_string();
+    name.push(".ctrlr.bak");
+    PathBuf::from(name)
 }
 
 const START_MARKER: &str = "# ctrlr integration";
@@ -113,49 +193,6 @@ fn strip_integration(content: &str) -> String {
     }
 
     kept.join("\n")
-}
-
-fn remove_integration(config_path: &PathBuf, content: &str) -> Result<(), Report> {
-    let new_content = strip_integration(content);
-    fs::write(config_path, new_content).map_err(|e| {
-        Report::new(std::io::Error::other(format!(
-            "Failed to update config: {}",
-            e
-        )))
-    })?;
-
-    Ok(())
-}
-
-fn install(config_path: &PathBuf, script: &str) -> Result<(), Report> {
-    let config_dir = config_path
-        .parent()
-        .ok_or_else(|| Report::new(std::io::Error::other("Invalid config path")))?;
-
-    if !config_dir.exists() {
-        fs::create_dir_all(config_dir).map_err(|e| {
-            Report::new(std::io::Error::other(format!(
-                "Failed to create config directory: {}",
-                e
-            )))
-        })?;
-    }
-
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(config_path)
-        .map_err(|e| {
-            Report::new(std::io::Error::other(format!(
-                "Failed to open config file: {}",
-                e
-            )))
-        })?;
-
-    writeln!(file)?;
-    writeln!(file, "{}", script)?;
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -233,5 +270,87 @@ bindkey '^R' _ctrlr_widget";
             START_MARKER, END_MARKER, START_MARKER, END_MARKER
         );
         assert_eq!(strip_integration(&content), "a\nb\nc");
+    }
+}
+
+#[cfg(test)]
+mod install_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// `install_integration` resolves the config path from the environment, so
+    /// these drive the pieces it is built from instead.
+    fn install_into(config: &Path, shell: Shell) -> String {
+        let content = fs::read_to_string(config).unwrap_or_default();
+        let mut new_content = strip_integration(&content);
+        while new_content.ends_with('\n') {
+            new_content.pop();
+        }
+        if !new_content.is_empty() {
+            new_content.push('\n');
+        }
+        new_content.push('\n');
+        new_content.push_str(&shells::generate_script(shell));
+        new_content.push('\n');
+        fs::write(config, &new_content).unwrap();
+        new_content
+    }
+
+    #[test]
+    fn test_backup_path_appends_rather_than_replacing() {
+        // with_extension would turn ~/.bashrc into ~/.bak.
+        let path = backup_path(Path::new("/home/u/.bashrc"));
+        assert_eq!(path, PathBuf::from("/home/u/.bashrc.ctrlr.bak"));
+
+        let fish = backup_path(Path::new("/home/u/.config/fish/config.fish"));
+        assert_eq!(
+            fish,
+            PathBuf::from("/home/u/.config/fish/config.fish.ctrlr.bak")
+        );
+    }
+
+    #[test]
+    fn test_reinstall_does_not_stack_blocks() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join(".bashrc");
+        fs::write(&config, "export FOO=1\n").unwrap();
+
+        install_into(&config, Shell::Bash);
+        let twice = install_into(&config, Shell::Bash);
+
+        assert_eq!(
+            twice.matches("# ctrlr integration\n").count(),
+            1,
+            "a second install replaces the block instead of appending another"
+        );
+        assert!(twice.contains("export FOO=1"), "user config survives");
+        assert_eq!(
+            shells::integration_state(Shell::Bash, &twice),
+            shells::IntegrationState::Current
+        );
+    }
+
+    #[test]
+    fn test_install_over_a_legacy_block_leaves_nothing_behind() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join(".bashrc");
+        fs::write(
+            &config,
+            "export FOO=1\n# ctrlr integration\nexport PROMPT_COMMAND=\"history -a\"\nbind -x '\"\\C-r\": _ctrlr_widget'\nexport BAR=2\n",
+        )
+        .unwrap();
+
+        let after = install_into(&config, Shell::Bash);
+
+        assert!(
+            !after.contains("export PROMPT_COMMAND"),
+            "old block is gone"
+        );
+        assert!(after.contains("export FOO=1") && after.contains("export BAR=2"));
+        assert_eq!(
+            shells::integration_state(Shell::Bash, &after),
+            shells::IntegrationState::Current
+        );
     }
 }

@@ -67,6 +67,9 @@ pub fn run_tui(output_file: Option<String>) -> color_eyre::Result<Option<String>
 
 fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Result<Option<String>> {
     let mut state = AppState::bootstrap();
+    // Only through --output-file can ctrlr hand the shell a command to run,
+    // which is what lets the integration popup offer a reload.
+    state.writes_to_output_file = _output_file.is_some();
     let mut result = Ok(None);
 
     loop {
@@ -82,6 +85,7 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
         terminal.draw(|f| ui::render(f, &mut state))?;
         if let Event::Key(key) = crossterm::event::read()? {
             if key.code == crossterm::event::KeyCode::Esc
+                && !state.integration_popup_open
                 && !state.help_open
                 && !state.theme_popup_open
                 && !state.export_popup_open

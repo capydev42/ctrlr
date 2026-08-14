@@ -81,4 +81,9 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
     if state.export_popup_open || state.import_popup_open {
         popups::render_import_export_popup(frame, state, area);
     }
+
+    // Drawn last so the startup offer sits above anything else on screen.
+    if state.integration_popup_open {
+        popups::render_integration_popup(frame, state, area);
+    }
 }

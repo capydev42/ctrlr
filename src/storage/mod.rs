@@ -116,6 +116,21 @@ pub fn init_db_with_conn(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+pub fn save_setting(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+        params![key, value],
+    )?;
+    Ok(())
+}
+
+pub fn load_setting(conn: &Connection, key: &str) -> Option<String> {
+    conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+        row.get(0)
+    })
+    .ok()
+}
+
 pub fn save_theme(conn: &Connection, theme_name: &str) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('theme', ?)",

@@ -863,3 +863,137 @@ pub fn render_import_export_popup(frame: &mut Frame, state: &mut AppState, area:
         chunks[chunk_idx],
     );
 }
+
+/// Offers to install or update the shell integration.
+///
+/// Shown on startup rather than printed, because the stdout warning is covered
+/// by the alternate screen the moment the TUI opens.
+pub fn render_integration_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    use crate::cli::shells::IntegrationState;
+
+    let theme = &state.current_theme;
+    let outdated = state.integration_state == Some(IntegrationState::Outdated);
+    let shell_name = state
+        .integration_shell
+        .map(|s| s.display_name())
+        .unwrap_or("your shell");
+
+    let title = if state.integration_installed {
+        " Shell integration installed "
+    } else if outdated {
+        " Shell integration out of date "
+    } else {
+        " Shell integration not installed "
+    };
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    if state.integration_installed {
+        let reload = state
+            .integration_shell
+            .map(crate::cli::shells::reload_command)
+            .unwrap_or("exec $SHELL");
+        lines.push(Line::from("Restart your shell to load it:"));
+        lines.push(Line::from(Span::styled(
+            format!("    {}", reload),
+            Style::new()
+                .fg(theme.input_text)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "It takes effect in your next shell.",
+            Style::new().fg(theme.hint_fg),
+        )));
+    } else if outdated {
+        // Deliberately unspecific about which features are affected: this text
+        // outlives whatever the current version happens to add.
+        lines.push(Line::from(format!(
+            "The ctrlr block in your {} config is not up to date.",
+            shell_name
+        )));
+        lines.push(Line::from(
+            "Ctrl+R still works, but features added since then",
+        ));
+        lines.push(Line::from("probably do not."));
+    } else {
+        lines.push(Line::from(format!(
+            "ctrlr is not hooked into {} yet.",
+            shell_name
+        )));
+        lines.push(Line::from(
+            "Installing it binds Ctrl+R and enables the features",
+        ));
+        lines.push(Line::from("that need shell support."));
+    }
+
+    if !state.integration_installed {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Your current config is backed up first.",
+            Style::new().fg(theme.hint_fg),
+        )));
+        lines.push(Line::from(Span::styled(
+            "Prefer doing it yourself? Run: ctrlr init",
+            Style::new().fg(theme.hint_fg),
+        )));
+
+        if state.integration_final_offer {
+            lines.push(Line::from(Span::styled(
+                "This is the last reminder for this version.",
+                Style::new().fg(theme.hint_fg),
+            )));
+        }
+    }
+
+    if let Some(message) = &state.integration_message {
+        lines.push(Line::from(""));
+        for line in message.lines() {
+            lines.push(Line::from(Span::styled(
+                line.to_string(),
+                Style::new().fg(theme.hint_fg),
+            )));
+        }
+    }
+
+    let key_style = Style::new()
+        .fg(theme.input_text)
+        .add_modifier(Modifier::BOLD);
+
+    let hint = if state.integration_installed {
+        Line::from(vec![
+            Span::styled(" Any key ", key_style),
+            Span::styled("Close", Style::new().fg(theme.hint_fg)),
+        ])
+    } else {
+        let action = if outdated { "Update" } else { "Install" };
+        Line::from(vec![
+            Span::styled(" Enter ", key_style),
+            Span::styled(format!("{}   ", action), Style::new().fg(theme.hint_fg)),
+            Span::styled("Esc ", key_style),
+            Span::styled("Not now", Style::new().fg(theme.hint_fg)),
+        ])
+    };
+
+    let popup_width = 62u16.min(area.width.saturating_sub(4));
+    let popup_height = (lines.len() as u16 + 4).min(area.height.saturating_sub(2));
+    let centered = center_rect(popup_width, popup_height, area);
+
+    frame.render_widget(Clear, centered);
+
+    let block = Block::bordered()
+        .title(title)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(theme.focus_border));
+
+    let inner = block.inner(centered);
+    frame.render_widget(block, centered);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(1)])
+        .split(inner);
+
+    frame.render_widget(Paragraph::new(lines), chunks[0]);
+    frame.render_widget(Paragraph::new(hint).alignment(Alignment::Center), chunks[1]);
+}
