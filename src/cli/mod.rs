@@ -75,23 +75,57 @@ fn get_import_input_path(args: &[String]) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+/// What the installed shell integration looks like, from ctrlr's side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IntegrationState {
+    Missing,
+    Outdated,
+    Current,
+}
+
+fn integration_state(shell: Shell, config_content: &str) -> IntegrationState {
+    if !shells::is_installed(shell, config_content) {
+        IntegrationState::Missing
+    } else if !shells::is_up_to_date(shell, config_content) {
+        IntegrationState::Outdated
+    } else {
+        IntegrationState::Current
+    }
+}
+
 fn check_integration_warning() {
-    let warning = Shell::detect().and_then(|shell| {
+    let state = Shell::detect().and_then(|shell| {
         let config_path = shell.config_path();
         std::fs::read_to_string(&config_path)
             .ok()
-            .map(|content| (shell, !shells::is_installed(shell, &content)))
+            .map(|content| integration_state(shell, &content))
     });
 
-    if let Some((_, true)) = warning {
-        println!();
-        println!("⚡ ctrlr shell integration not found");
-        println!();
-        println!("Run:");
-        println!("    ctrlr init");
-        println!();
-        println!("to enable keybindings (Ctrl+R)");
-        println!();
+    match state {
+        Some(IntegrationState::Missing) => {
+            println!();
+            println!("⚡ ctrlr shell integration not found");
+            println!();
+            println!("Run:");
+            println!("    ctrlr init");
+            println!();
+            println!("to enable keybindings (Ctrl+R)");
+            println!();
+        }
+        // Without this an upgraded ctrlr looks broken: the old block still
+        // binds Ctrl+R, so nothing seems wrong, while the features it has no
+        // hooks for stay silently empty.
+        Some(IntegrationState::Outdated) => {
+            println!();
+            println!("⚡ ctrlr shell integration is outdated");
+            println!();
+            println!("Run:");
+            println!("    ctrlr init");
+            println!();
+            println!("then restart your shell to record where commands run");
+            println!();
+        }
+        _ => {}
     }
 }
 
@@ -142,4 +176,53 @@ fn print_import_help() {
     println!("  --replace         Replace all existing data");
     println!("  --dry-run         Preview changes without applying");
     println!("  --help, -h        Show this help");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LEGACY_BASH: &str = "# ctrlr integration
+export PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND; } history -a\"
+bind -x '\"\\C-r\": _ctrlr_widget'";
+
+    #[test]
+    fn test_integration_state_missing() {
+        assert_eq!(
+            integration_state(Shell::Bash, "export FOO=1"),
+            IntegrationState::Missing
+        );
+    }
+
+    #[test]
+    fn test_integration_state_outdated() {
+        // The pre-run-log block still binds Ctrl+R, so nothing looks broken
+        // while the run log is never written.
+        assert_eq!(
+            integration_state(Shell::Bash, LEGACY_BASH),
+            IntegrationState::Outdated
+        );
+    }
+
+    #[test]
+    fn test_integration_state_current() {
+        let installed = shells::generate_script(Shell::Bash);
+        assert_eq!(
+            integration_state(Shell::Bash, &installed),
+            IntegrationState::Current
+        );
+    }
+
+    #[test]
+    fn test_integration_state_per_shell() {
+        for shell in [Shell::Bash, Shell::Zsh, Shell::Fish] {
+            let installed = shells::generate_script(shell);
+            assert_eq!(
+                integration_state(shell, &installed),
+                IntegrationState::Current,
+                "{} reports its own script as current",
+                shell
+            );
+        }
+    }
 }
