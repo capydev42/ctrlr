@@ -4,5 +4,6 @@ pub mod state;
 
 pub use action::Action;
 pub use state::{
-    ActivePane, AppState, CollectionInputMode, Command, ImportExportMode, InputMode, ViewMode,
+    ActivePane, AppState, CollectionInputMode, Command, ContextMenuItem, ImportExportMode,
+    InputMode, ViewMode,
 };

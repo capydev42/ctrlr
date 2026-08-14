@@ -1,4 +1,5 @@
-use crossterm::event::Event;
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event};
+use crossterm::execute;
 use ratatui::DefaultTerminal;
 
 mod app;
@@ -21,7 +22,30 @@ fn main() -> color_eyre::Result<()> {
 
 pub fn run_tui(output_file: Option<String>) -> color_eyre::Result<Option<String>> {
     let mut terminal = ratatui::init();
+    // Best-effort: a terminal that refuses mouse reporting still runs ctrlr,
+    // it just stays keyboard-only.
+    //
+    // This also turns on motion tracking (?1002 drag, ?1003 any motion), which
+    // ctrlr has no use for. Resetting those two to save the redraws is not
+    // worth it: xterm treats 1000/1002/1003 as independent, but a terminal
+    // that keeps one tracking-mode variable can read `?1003l` as "tracking
+    // off" and stop reporting clicks altogether — untested here, and the
+    // failure looks exactly like mouse support never having been built. The
+    // cost of leaving them on is one diffed frame per pointer move, which
+    // writes nothing; `input::mouse::handle` drops the events.
+    let _ = execute!(io::stdout(), EnableMouseCapture);
+    // ratatui's own panic hook restores the screen but knows nothing about
+    // mouse capture, so chain onto it — otherwise a panic leaves the terminal
+    // emitting escape sequences on every pointer move.
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = execute!(io::stdout(), DisableMouseCapture);
+        previous_hook(info);
+    }));
+
     let result = app(&mut terminal, output_file.clone());
+
+    let _ = execute!(io::stdout(), DisableMouseCapture);
 
     // Leave the alternate screen first, then restore cursor visibility on the
     // normal screen: ?1049 does not save/restore DECTCEM, and the draw loop
@@ -83,45 +107,53 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
         }
 
         terminal.draw(|f| ui::render(f, &mut state))?;
-        if let Event::Key(key) = crossterm::event::read()? {
-            if key.code == crossterm::event::KeyCode::Esc
-                && !state.integration_popup_open
-                && !state.help_open
-                && !state.theme_popup_open
-                && !state.export_popup_open
-                && !state.import_popup_open
-                && state.input_mode != InputMode::TagInput
-                && state.input_mode != InputMode::CollectionInput
-                && state.handle_esc()
-            {
+        let action = match crossterm::event::read()? {
+            Event::Key(key) => {
+                if key.code == crossterm::event::KeyCode::Esc
+                    && !state.integration_popup_open
+                    && !state.context_menu_open
+                    && !state.help_open
+                    && !state.theme_popup_open
+                    && !state.export_popup_open
+                    && !state.import_popup_open
+                    && state.input_mode != InputMode::TagInput
+                    && state.input_mode != InputMode::CollectionInput
+                    && state.handle_esc()
+                {
+                    break;
+                }
+                input::handle(&mut state, key)
+            }
+            // Hit-tested against the rects the draw above just recorded.
+            Event::Mouse(mouse) => input::mouse::handle(&mut state, mouse),
+            _ => Action::None,
+        };
+
+        match action {
+            Action::Execute(cmd) => {
+                result = Ok(Some(cmd));
                 break;
             }
-            match input::handle(&mut state, key) {
-                Action::Execute(cmd) => {
-                    result = Ok(Some(cmd));
-                    break;
-                }
-                Action::Exit => {
-                    break;
-                }
-                Action::CloseHelp => {
-                    state.help_open = false;
-                    state.help_search_query.clear();
-                }
-                Action::ExecuteHelpShortcut(action_id) => {
-                    match help::execute_help_action(&mut state, &action_id) {
-                        Action::Execute(cmd) => {
-                            result = Ok(Some(cmd));
-                            break;
-                        }
-                        Action::Exit => {
-                            break;
-                        }
-                        _ => {}
-                    }
-                }
-                Action::None => {}
+            Action::Exit => {
+                break;
             }
+            Action::CloseHelp => {
+                state.help_open = false;
+                state.help_search_query.clear();
+            }
+            Action::ExecuteHelpShortcut(action_id) => {
+                match help::execute_help_action(&mut state, &action_id) {
+                    Action::Execute(cmd) => {
+                        result = Ok(Some(cmd));
+                        break;
+                    }
+                    Action::Exit => {
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            Action::None => {}
         }
     }
 

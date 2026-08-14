@@ -1,6 +1,7 @@
 pub mod collection;
 pub mod help;
 pub mod import_export;
+pub mod mouse;
 pub mod normal;
 pub mod tag;
 
@@ -12,6 +13,10 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
     // anything else.
     if state.integration_popup_open {
         return handle_integration_popup(state, key);
+    }
+    // The right-click menu is modal too: it takes the keys before any pane.
+    if state.context_menu_open {
+        return handle_context_menu(state, key);
     }
     if state.theme_popup_open {
         return handle_theme_popup(state, key);
@@ -49,6 +54,25 @@ fn handle_integration_popup(state: &mut AppState, key: KeyEvent) -> Action {
         }
         KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('q') => {
             state.dismiss_integration_popup();
+            Action::None
+        }
+        _ => Action::None,
+    }
+}
+
+fn handle_context_menu(state: &mut AppState, key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => {
+            state.navigate_context_menu(1);
+            Action::None
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            state.navigate_context_menu(-1);
+            Action::None
+        }
+        KeyCode::Enter => mouse::activate_context_menu(state),
+        KeyCode::Esc | KeyCode::Char('q') => {
+            state.close_context_menu();
             Action::None
         }
         _ => Action::None,
