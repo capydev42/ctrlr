@@ -76,32 +76,47 @@ pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
     Ok(())
 }
 
-fn remove_integration(config_path: &PathBuf, content: &str) -> Result<(), Report> {
-    let marker = "# ctrlr integration";
+const START_MARKER: &str = "# ctrlr integration";
+const END_MARKER: &str = "# ctrlr integration end";
+
+/// Strips the integration block from a shell config.
+///
+/// Blocks written by current versions are delimited by [`END_MARKER`]. Older
+/// ones are not, so they are cut at their last line — the key binding — which
+/// every one of the three scripts ends with. Counting a fixed number of lines,
+/// as this used to, left the tail of the block behind whenever a script grew.
+fn strip_integration(content: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
-    let mut new_lines: Vec<&str> = Vec::new();
-    let mut skip_until: Option<usize> = None;
+    let mut kept: Vec<&str> = Vec::new();
+    let mut i = 0;
 
-    for (i, line) in lines.iter().enumerate() {
-        if let Some(skip_to) = skip_until {
-            if i <= skip_to {
-                continue;
-            }
-            skip_until = None;
-        }
-
-        if line.contains(marker) {
-            skip_until = Some(i + 8);
-            if line.contains("bind -x") || line.contains("bindkey") || line.contains("bind \\") {
-                skip_until = Some(i + 10);
-            }
+    while i < lines.len() {
+        if !lines[i].trim_start().starts_with(START_MARKER) {
+            kept.push(lines[i]);
+            i += 1;
             continue;
         }
 
-        new_lines.push(line);
+        let end = lines[i + 1..]
+            .iter()
+            .position(|l| l.trim_start().starts_with(END_MARKER))
+            .or_else(|| {
+                lines[i + 1..].iter().position(|l| {
+                    let l = l.trim_start();
+                    l.starts_with("bind -x") || l.starts_with("bindkey") || l.starts_with("bind \\")
+                })
+            });
+
+        // No terminator at all: drop only the marker line rather than guessing
+        // at a length and eating unrelated config.
+        i += end.map(|e| e + 2).unwrap_or(1);
     }
 
-    let new_content = new_lines.join("\n");
+    kept.join("\n")
+}
+
+fn remove_integration(config_path: &PathBuf, content: &str) -> Result<(), Report> {
+    let new_content = strip_integration(content);
     fs::write(config_path, new_content).map_err(|e| {
         Report::new(std::io::Error::other(format!(
             "Failed to update config: {}",
@@ -141,4 +156,82 @@ fn install(config_path: &PathBuf, script: &str) -> Result<(), Report> {
     writeln!(file, "{}", script)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LEGACY_ZSH: &str = "# ctrlr integration
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd _flush_zsh_history
+_flush_zsh_history() { fc -W }
+
+_ctrlr_widget() {
+    local tmpfile=$(mktemp)
+    ctrlr --output-file \"$tmpfile\"
+    if [[ -s \"$tmpfile\" ]]; then
+        BUFFER=$(cat \"$tmpfile\")
+        CURSOR=$#BUFFER
+    fi
+    rm -f \"$tmpfile\"
+}
+zle -N _ctrlr_widget
+bindkey '^R' _ctrlr_widget";
+
+    #[test]
+    fn test_strip_removes_block_with_end_marker() {
+        let content = format!(
+            "export FOO=1\n\n{}\nline\nline\n{}\n\nexport BAR=2",
+            START_MARKER, END_MARKER
+        );
+        assert_eq!(
+            strip_integration(&content),
+            "export FOO=1\n\n\nexport BAR=2"
+        );
+    }
+
+    #[test]
+    fn test_strip_removes_legacy_zsh_block_entirely() {
+        // The old block had no end marker and was longer than the fixed line
+        // count the previous implementation skipped.
+        let content = format!("export FOO=1\n{}\nexport BAR=2", LEGACY_ZSH);
+        let stripped = strip_integration(&content);
+        assert_eq!(stripped, "export FOO=1\nexport BAR=2");
+        assert!(!stripped.contains("_ctrlr_widget"));
+        assert!(!stripped.contains("bindkey"));
+    }
+
+    #[test]
+    fn test_strip_removes_legacy_bash_block() {
+        let content = "export FOO=1\n# ctrlr integration\nexport PROMPT_COMMAND=\"history -a\"\n_ctrlr_widget() {\n  :\n}\nbind -x '\"\\C-r\": _ctrlr_widget'\nexport BAR=2";
+        assert_eq!(strip_integration(content), "export FOO=1\nexport BAR=2");
+    }
+
+    #[test]
+    fn test_strip_removes_legacy_fish_block() {
+        let content = "set -g FOO 1\n# ctrlr integration\nfunction _ctrlr_widget\nend\nbind \\cr _ctrlr_widget\nset -g BAR 2";
+        assert_eq!(strip_integration(content), "set -g FOO 1\nset -g BAR 2");
+    }
+
+    #[test]
+    fn test_strip_leaves_unrelated_config_alone() {
+        let content = "export FOO=1\n# some other integration\nexport BAR=2";
+        assert_eq!(strip_integration(content), content);
+    }
+
+    #[test]
+    fn test_strip_unterminated_block_drops_only_the_marker() {
+        let content = "export FOO=1\n# ctrlr integration\nexport BAR=2";
+        assert_eq!(strip_integration(content), "export FOO=1\nexport BAR=2");
+    }
+
+    #[test]
+    fn test_strip_removes_every_block() {
+        let content = format!(
+            "a\n{}\nx\n{}\nb\n{}\ny\n{}\nc",
+            START_MARKER, END_MARKER, START_MARKER, END_MARKER
+        );
+        assert_eq!(strip_integration(&content), "a\nb\nc");
+    }
 }

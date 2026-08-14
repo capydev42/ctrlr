@@ -5,6 +5,7 @@ pub mod collections;
 pub mod commands;
 pub mod import_export;
 pub mod migrations;
+pub mod runs;
 pub mod tags;
 
 pub fn get_db_path() -> PathBuf {
@@ -15,6 +16,17 @@ pub fn get_db_path() -> PathBuf {
     let dir = base.join("ctrlr");
     std::fs::create_dir_all(&dir).ok();
     dir.join("ctrlr.db")
+}
+
+/// Where the shell integration appends its run log.
+///
+/// Sits beside the database rather than in the shell's own history location:
+/// it is ctrlr's own data, and the hooks only ever append to it.
+pub fn runs_log_path() -> PathBuf {
+    let base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
+    let dir = base.join("ctrlr");
+    std::fs::create_dir_all(&dir).ok();
+    dir.join("runs.log")
 }
 
 pub fn init_db() -> rusqlite::Result<Connection> {
@@ -84,10 +96,21 @@ pub fn init_db_with_conn(conn: &Connection) -> rusqlite::Result<()> {
             value TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS command_runs (
+            id INTEGER PRIMARY KEY,
+            command_id TEXT NOT NULL REFERENCES commands(id) ON DELETE CASCADE,
+            cwd TEXT NOT NULL,
+            exit_code INTEGER,
+            ran_at INTEGER NOT NULL,
+            host TEXT
+        );
+
         CREATE INDEX IF NOT EXISTS idx_commands_text ON commands(text);
         CREATE INDEX IF NOT EXISTS idx_commands_favorite ON commands(favorite);
         CREATE INDEX IF NOT EXISTS idx_commands_use_count ON commands(use_count DESC);
         CREATE INDEX IF NOT EXISTS idx_command_collections_collection ON command_collections(collection_id);
+        CREATE INDEX IF NOT EXISTS idx_command_runs_cwd ON command_runs(cwd);
+        CREATE INDEX IF NOT EXISTS idx_command_runs_command ON command_runs(command_id);
         ",
     )?;
     Ok(())

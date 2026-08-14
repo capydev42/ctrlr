@@ -61,6 +61,9 @@ pub struct Command {
     pub _context: Vec<String>,
     pub use_count: i32,
     pub last_used: Option<i64>,
+    /// Times this command was recorded in the directory ctrlr was launched
+    /// from. Populated from `command_runs`; 0 when nothing was recorded.
+    pub runs_here: i32,
 }
 
 pub struct AppState {
@@ -113,6 +116,11 @@ pub struct AppState {
     pub import_mode_index: usize,
     pub import_preview: Option<ImportPreview>,
     pub import_export_mode: ImportExportMode,
+    /// Canonical directory ctrlr was launched from, i.e. the shell's. `None`
+    /// when it cannot be read.
+    pub cwd: Option<String>,
+    /// Restricts the list to commands recorded in [`AppState::cwd`].
+    pub scope_to_cwd: bool,
 }
 
 impl AppState {
@@ -124,6 +132,24 @@ impl AppState {
                 None
             }
         };
+
+        // Drained before the history is read so this session's commands are
+        // already counted, and before `ensure_commands_exist` so a command that
+        // ran but has not reached the history file yet still gets a row.
+        if let Some(ref mut conn) = db {
+            let entries: Vec<crate::history::runs::RunEntry> =
+                crate::history::runs::take_run_log(&crate::storage::runs_log_path())
+                    .into_iter()
+                    .map(|mut entry| {
+                        entry.cwd = crate::history::runs::canonical_dir(&entry.cwd);
+                        entry
+                    })
+                    .collect();
+
+            if let Err(e) = crate::storage::runs::record_runs(conn, &entries) {
+                eprintln!("Failed to record command runs: {}", e);
+            }
+        }
 
         let mut commands = crate::history::load_history();
         commands = crate::history::deduplicate(commands);
@@ -156,6 +182,7 @@ impl AppState {
                                 _context: vec![],
                                 use_count: 0,
                                 last_used: None,
+                                runs_here: 0,
                             };
                             if let Some(meta) = crate::storage::load_metadata(conn, &db_text) {
                                 cmd.favorite = meta.favorite;
@@ -183,7 +210,19 @@ impl AppState {
             }
         }
 
+        let cwd = crate::history::runs::current_dir();
+
+        // One grouped query for the whole list rather than a lookup per
+        // command: this runs on every launch.
+        if let (Some(conn), Some(dir)) = (&db, &cwd) {
+            let counts = crate::storage::runs::runs_in_dir(conn, dir);
+            for cmd in &mut commands {
+                cmd.runs_here = counts.get(&cmd.id).copied().unwrap_or(0);
+            }
+        }
+
         let mut state = AppState::new(commands, db);
+        state.cwd = cwd;
         state.load_theme_from_db();
         state.load_collections();
         state
@@ -276,6 +315,8 @@ impl AppState {
             import_mode_index: 0,
             import_preview: None,
             import_export_mode: ImportExportMode::Export,
+            cwd: None,
+            scope_to_cwd: false,
         }
     }
 
@@ -522,7 +563,57 @@ impl AppState {
         self.list_state.select(Some(0));
     }
 
+    /// Flips the directory scope and returns the message to show for it.
+    ///
+    /// Refuses when there is nothing recorded for this directory, rather than
+    /// scoping the list down to nothing: the run log only fills going forward,
+    /// so an empty result is the normal state right after installing.
+    pub fn toggle_cwd_scope(&mut self) -> String {
+        if self.cwd.is_none() {
+            return "Current directory unknown".to_string();
+        }
+
+        if !self.scope_to_cwd && !self.commands.iter().any(|c| c.runs_here > 0) {
+            return "Nothing recorded in this directory yet".to_string();
+        }
+
+        self.scope_to_cwd = !self.scope_to_cwd;
+        self.filter_commands();
+        self.selected_index = 0;
+        self.list_state.select(Some(0));
+
+        if self.scope_to_cwd {
+            format!("Scoped to {}", self.cwd_display())
+        } else {
+            "Showing all directories".to_string()
+        }
+    }
+
+    /// The current directory shortened for display: `~` for home, and only the
+    /// last two components of anything longer.
+    pub fn cwd_display(&self) -> String {
+        let Some(cwd) = &self.cwd else {
+            return "?".to_string();
+        };
+
+        let home = dirs::home_dir().map(|h| h.to_string_lossy().into_owned());
+        let shortened = match &home {
+            Some(home) if cwd == home => return "~".to_string(),
+            Some(home) => cwd.strip_prefix(home).map(|rest| format!("~{}", rest)),
+            None => None,
+        };
+        let path = shortened.unwrap_or_else(|| cwd.clone());
+
+        let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+        if parts.len() > 2 {
+            format!(".../{}", parts[parts.len() - 2..].join("/"))
+        } else {
+            path
+        }
+    }
+
     pub fn filter_commands(&mut self) {
+        let scope_to_cwd = self.scope_to_cwd;
         let base_commands: Vec<&Command> = match self.view_mode {
             ViewMode::History => self.commands.iter().collect(),
             ViewMode::Favorites => self.commands.iter().filter(|c| c.favorite).collect(),
@@ -538,6 +629,17 @@ impl AppState {
                 };
                 self.collection_commands.iter().collect()
             }
+        };
+
+        // Applied to the base list, so it holds with an empty query too — the
+        // branch below only sorts when there is something to score.
+        let base_commands: Vec<&Command> = if scope_to_cwd {
+            base_commands
+                .into_iter()
+                .filter(|c| c.runs_here > 0)
+                .collect()
+        } else {
+            base_commands
         };
 
         if self.search_query.is_empty() {
@@ -849,6 +951,7 @@ impl AppState {
                 _context: vec![],
                 use_count: 0,
                 last_used: None,
+                runs_here: 0,
             });
         }
 
@@ -976,6 +1079,7 @@ impl AppState {
                 _context: vec![],
                 use_count: 0,
                 last_used: None,
+                runs_here: 0,
             });
         }
 
@@ -1323,7 +1427,16 @@ fn compute_ranking_score(cmd: &Command, fuzzy: i64, now: i64) -> i64 {
 
     let favorite = if cmd.favorite { 100 } else { 0 };
 
-    fuzzy * 10 + usage + recency + favorite
+    // Weighted above recency and below an explicit favourite: what you ran in
+    // this directory is usually what you want here, but not more than what you
+    // deliberately starred. Capped so one hot command cannot dominate.
+    let here = if cmd.runs_here > 0 {
+        60 + cmd.runs_here.min(20) as i64
+    } else {
+        0
+    };
+
+    fuzzy * 10 + usage + recency + favorite + here
 }
 
 impl AppState {}
@@ -1342,11 +1455,122 @@ mod tests {
             _context: vec![],
             use_count: 0,
             last_used: None,
+            runs_here: 0,
         }
     }
 
     fn state_with(texts: &[&str]) -> AppState {
         AppState::new(texts.iter().map(|t| cmd(t)).collect(), None)
+    }
+
+    /// A state where `here` was recorded in the current directory and the rest
+    /// were not.
+    fn state_with_runs_here(texts: &[&str], here: &[&str]) -> AppState {
+        let commands = texts
+            .iter()
+            .map(|t| {
+                let mut c = cmd(t);
+                if here.contains(t) {
+                    c.runs_here = 3;
+                }
+                c
+            })
+            .collect();
+        let mut state = AppState::new(commands, None);
+        state.cwd = Some("/work/repo".to_string());
+        state
+    }
+
+    #[test]
+    fn test_scope_filters_with_empty_query() {
+        // The empty-query branch does no scoring, so the scope has to be
+        // applied to the base list or it looks broken until you type.
+        let mut state = state_with_runs_here(&["cargo build", "ssh box", "ls"], &["cargo build"]);
+        state.toggle_cwd_scope();
+
+        assert_eq!(state.filtered.len(), 1);
+        assert_eq!(state.filtered[0].text, "cargo build");
+    }
+
+    #[test]
+    fn test_scope_filters_with_query() {
+        let mut state =
+            state_with_runs_here(&["cargo build", "cargo test", "cargo fmt"], &["cargo test"]);
+        state.toggle_cwd_scope();
+        state.search_query = "cargo".to_string();
+        state.filter_commands();
+
+        assert_eq!(state.filtered.len(), 1);
+        assert_eq!(state.filtered[0].text, "cargo test");
+    }
+
+    #[test]
+    fn test_toggle_scope_off_restores_the_full_list() {
+        let mut state = state_with_runs_here(&["cargo build", "ssh box"], &["cargo build"]);
+        state.toggle_cwd_scope();
+        assert_eq!(state.filtered.len(), 1);
+
+        state.toggle_cwd_scope();
+        assert!(!state.scope_to_cwd);
+        assert_eq!(state.filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_toggle_scope_refuses_when_nothing_recorded_here() {
+        // Right after installing the integration nothing is recorded yet;
+        // scoping to an empty list would just look broken.
+        let mut state = state_with_runs_here(&["cargo build", "ssh box"], &[]);
+        let message = state.toggle_cwd_scope();
+
+        assert!(!state.scope_to_cwd);
+        assert_eq!(state.filtered.len(), 2);
+        assert!(message.contains("Nothing recorded"));
+    }
+
+    #[test]
+    fn test_toggle_scope_without_a_known_cwd() {
+        let mut state = state_with(&["cargo build"]);
+        let message = state.toggle_cwd_scope();
+
+        assert!(!state.scope_to_cwd);
+        assert!(message.contains("unknown"));
+    }
+
+    #[test]
+    fn test_ranking_prefers_commands_run_here() {
+        let mut state = state_with_runs_here(&["cargo build", "cargo test"], &["cargo test"]);
+        state.search_query = "cargo".to_string();
+        state.filter_commands();
+
+        assert_eq!(
+            state.filtered[0].text, "cargo test",
+            "a command recorded in this directory outranks an equal one that was not"
+        );
+    }
+
+    #[test]
+    fn test_favorite_still_outranks_the_directory() {
+        let mut commands = vec![cmd("cargo build"), cmd("cargo test")];
+        commands[0].favorite = true;
+        commands[1].runs_here = 20;
+        let mut state = AppState::new(commands, None);
+        state.search_query = "cargo".to_string();
+        state.filter_commands();
+
+        assert_eq!(state.filtered[0].text, "cargo build");
+    }
+
+    #[test]
+    fn test_cwd_display_shortens_long_paths() {
+        let mut state = state_with(&[]);
+        state.cwd = Some("/home/u/dev/rust/ctrlr".to_string());
+        assert_eq!(state.cwd_display(), ".../rust/ctrlr");
+
+        state.cwd = Some("/tmp".to_string());
+        assert_eq!(state.cwd_display(), "/tmp");
+
+        state.cwd = None;
+        assert_eq!(state.cwd_display(), "?");
     }
 
     #[test]

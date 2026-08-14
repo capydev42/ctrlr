@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- ctrlr now records **where** each command ran. No shell writes the working directory to its history file, so the shell integration appends one line per command to a run log (`~/.local/share/ctrlr/runs.log`) using a shell builtin — no process is spawned per prompt — and ctrlr drains it into a new `command_runs` table on launch. The details panel shows how often a command was recorded, how often in the current directory, its last exit code and the directories it runs in most. Data accumulates going forward; it cannot be recovered from existing history
+- zsh and fish capture the directory the command was *typed* in, so a `cd` is attributed correctly. On bash the same holds when bash-preexec is loaded (starship and atuin both bring it); without it ctrlr falls back to logging at prompt time, where a `cd` is attributed to the directory it moved to
+- Run the shell integration update with `ctrlr init` to start recording
+- Commands recorded in the current directory now rank above ones that were not, between recency and an explicit favourite, so searching in a repo surfaces what you run there without pressing anything
+- `.` (and `Alt+.` from the search bar) scopes the list to commands recorded in the current directory. The scoped directory stays visible in the footer. The toggle declines while nothing is recorded for the directory rather than emptying the list
+
+### Fixed
+- The bash integration no longer `export`s `PROMPT_COMMAND`. Exporting it leaks the hook into every child bash and subshell, which installs it a second time
+- Updating an outdated shell integration no longer leaves part of the old block behind in the shell config. Removal counted a fixed number of lines, which was already shorter than the block it was removing; blocks now carry an explicit end marker, and older ones are cut at their key binding
+
 ---
 
 ## [0.6.1] - 2026-07-21

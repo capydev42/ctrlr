@@ -195,17 +195,25 @@ pub fn render_footer(
 ) {
     use ratatui::widgets::Paragraph;
 
+    // An active scope changes what the list contains, so it stays visible
+    // instead of living in the transient status message.
+    let scope = if state.scope_to_cwd {
+        format!("[{}] ", state.cwd_display())
+    } else {
+        String::new()
+    };
+
     let footer_text = if let Some(msg) = &state.status_message {
-        msg.clone()
+        format!("{}{}", scope, msg)
     } else {
         match state.view_mode {
             ViewMode::History | ViewMode::Favorites => {
                 match state.active_pane {
                     ActivePane::Search => {
-                        format!("F1 Help | Ctrl+T: Theme ({}) | /: Search | Backspace: Delete | ↑/↓: Navigate | Enter: Select ", state.current_theme.name())
+                        format!("{}F1 Help | Ctrl+T: Theme ({}) | Alt+.: Here | /: Search | ↑/↓: Navigate | Enter: Select ", scope, state.current_theme.name())
                     }
                     ActivePane::History => {
-                        format!("? Help | Ctrl+T: Theme ({}) | c: Add to Collection | /: Search | d: Details | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ", state.current_theme.name())
+                        format!("{}? Help | Ctrl+T: Theme ({}) | c: Add to Collection | .: Here | d: Details | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ", scope, state.current_theme.name())
                     }
                     _ => "".into(),
                 }

@@ -42,6 +42,17 @@ ctrlr init
 
 Replaces your default reverse search with ctrlr.
 
+The integration also records where each command ran, which directory it was
+typed in and how it exited, by appending a line to
+`~/.local/share/ctrlr/runs.log`. ctrlr reads and clears that log on launch. No
+shell keeps the working directory in its history file, so this only covers
+commands run after the integration is installed.
+
+On zsh and fish the directory is always the one the command was typed in. On
+bash that needs [bash-preexec](https://github.com/rcaloras/bash-preexec) —
+already loaded if you use starship or atuin. Without it, a `cd` is recorded
+against the directory it moved to.
+
 ### Import/Export
 
 Export all data to JSON (stdout or file):
@@ -137,6 +148,7 @@ mv target/release/ctrlr ~/.local/bin/
 | 1     | Show History                |
 | 2     | Show Favorites              |
 | 3     | Show Collections            |
+| .     | Scope to current directory  |
 | c     | Add to collection           |
 
 ### Navigation (History / Favorites)

@@ -113,6 +113,24 @@ pub fn render_details(frame: &mut Frame, state: &mut AppState, area: Rect) {
         None => return,
     };
 
+    /// Coarse "how long ago", shared by the last-used and last-run lines.
+    fn ago(ts: i64) -> String {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let ago = now - ts;
+        if ago < 60 {
+            format!("{}s ago", ago)
+        } else if ago < 3600 {
+            format!("{}m ago", ago / 60)
+        } else if ago < 86400 {
+            format!("{}h ago", ago / 3600)
+        } else {
+            format!("{}d ago", ago / 86400)
+        }
+    }
+
     let mut lines: Vec<Line> = Vec::new();
 
     lines.push(section("Command", theme));
@@ -140,23 +158,41 @@ pub fn render_details(frame: &mut Frame, state: &mut AppState, area: Rect) {
     lines.push(section("Usage", theme));
     lines.push(Line::from(format!("Used: {}x", cmd.use_count)));
     if let Some(ts) = cmd.last_used {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-        let ago = now - ts;
-        let ago_str = if ago < 60 {
-            format!("{}s ago", ago)
-        } else if ago < 3600 {
-            format!("{}m ago", ago / 60)
-        } else if ago < 86400 {
-            format!("{}h ago", ago / 3600)
-        } else {
-            format!("{}d ago", ago / 86400)
-        };
-        lines.push(Line::from(format!("Last used: {}", ago_str)));
+        lines.push(Line::from(format!("Last used: {}", ago(ts))));
     }
     lines.push(Line::from(""));
+
+    // Only shown once the shell integration has recorded something: the run log
+    // fills going forward, so an older install has nothing here yet.
+    if let Some(summary) = state
+        .db
+        .as_ref()
+        .and_then(|conn| crate::storage::runs::run_summary(conn, &cmd.id))
+    {
+        lines.push(section("Runs", theme));
+        lines.push(Line::from(format!("Recorded: {}x", summary.total)));
+        if cmd.runs_here > 0 {
+            lines.push(Line::from(format!("Here: {}x", cmd.runs_here)));
+        }
+        if let Some(code) = summary.last_exit {
+            let style = if code == 0 {
+                Style::new()
+            } else {
+                Style::new().fg(theme.favorite_fg)
+            };
+            lines.push(Line::from(Span::styled(
+                format!("Last exit: {}", code),
+                style,
+            )));
+        }
+        if let Some(ts) = summary.last_run {
+            lines.push(Line::from(format!("Last run: {}", ago(ts))));
+        }
+        for (dir, count) in &summary.top_dirs {
+            lines.push(Line::from(format!("- {} ({}x)", dir, count)));
+        }
+        lines.push(Line::from(""));
+    }
 
     lines.push(section("Favorite", theme));
     let fav_text = if cmd.favorite { "* yes" } else { "○ no" };
