@@ -124,9 +124,10 @@ pub fn install_integration(shell: Shell) -> Result<InstallOutcome, Report> {
         new_content.push('\n');
     }
 
-    if let Some(dir) = config_path.parent()
-        && !dir.exists()
-    {
+    // Unconditional: create_dir_all succeeds on a directory that already
+    // exists, and guarding it would need either a let-chain (Rust 1.88, past
+    // the 1.86 MSRV) or a nested if that clippy rejects.
+    if let Some(dir) = config_path.parent() {
         fs::create_dir_all(dir).map_err(|e| {
             Report::new(std::io::Error::other(format!(
                 "Failed to create config directory: {}",
