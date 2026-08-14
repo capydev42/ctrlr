@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.7.0] - 2026-08-14
+
 ### Added
 - ctrlr now records **where** each command ran. No shell writes the working directory to its history file, so the shell integration appends one line per command to a run log (`~/.local/share/ctrlr/runs.log`) using a shell builtin — no process is spawned per prompt — and ctrlr drains it into a new `command_runs` table on launch. The details panel shows how often a command was recorded, how often in the current directory, its last exit code and the directories it runs in most. Data accumulates going forward; it cannot be recovered from existing history
 - zsh and fish capture the directory the command was *typed* in, so a `cd` is attributed correctly. On bash the same holds when bash-preexec is loaded (starship and atuin both bring it); without it ctrlr falls back to logging at prompt time, where a `cd` is attributed to the directory it moved to
