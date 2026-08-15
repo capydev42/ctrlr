@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
-use crate::app::{Action, ActivePane, AppState, ContextMenuItem, InputMode, ViewMode};
+use crate::app::{Action, ActivePane, AppState, ContextMenuItem, Divider, InputMode, ViewMode};
 use crate::input::normal;
 use crate::ui::layout::{hits, row_index};
 
@@ -18,6 +18,23 @@ const WHEEL_ROWS: isize = 3;
 /// produce. Hit-testing uses the rects recorded by the previous draw
 /// (`AppState::hit`), which is always the frame the user is looking at.
 pub fn handle(state: &mut AppState, ev: MouseEvent) -> Action {
+    // A live drag owns the mouse: it consumes the motion events the filter
+    // below would otherwise throw away, and swallows everything else so a
+    // divider drag can never also select a row. Ahead of the filter for that
+    // reason.
+    if let Some(divider) = state.dragging {
+        match ev.kind {
+            MouseEventKind::Drag(MouseButton::Left) => state.resize_divider(divider, ev.column),
+            MouseEventKind::Up(_) => {
+                state.dragging = None;
+                // Once per drag rather than per motion event.
+                state.persist_pane_widths();
+            }
+            _ => {}
+        }
+        return Action::None;
+    }
+
     // `EnableMouseCapture` turns on motion tracking too, and it has to stay on
     // (see `run_tui`). Nothing here reacts to hover, so drop these first.
     if matches!(
@@ -169,6 +186,26 @@ pub fn activate_context_menu(state: &mut AppState) -> Action {
             }
             Action::None
         }
+        // Enter on the collections pane drills into the collection, which is
+        // what "Open" means here.
+        ContextMenuItem::OpenCollection => {
+            state.active_pane = ActivePane::CollectionsList;
+            normal::activate_selected(state)
+        }
+        ContextMenuItem::NewCollection => {
+            state.begin_new_collection();
+            Action::None
+        }
+        ContextMenuItem::RenameCollection => {
+            state.begin_rename_collection();
+            Action::None
+        }
+        ContextMenuItem::DeleteCollection => {
+            // Opens the same confirm popup `d` does; nothing is removed until
+            // the user answers it.
+            state.delete_collection();
+            Action::None
+        }
     }
 }
 
@@ -181,6 +218,19 @@ fn scroll(state: &mut AppState, delta: isize, x: u16, y: u16) {
 }
 
 fn click(state: &mut AppState, x: u16, y: u16) -> Action {
+    // Checked before the panes: the seam sits on their borders, so whichever
+    // is tested first wins, and grabbing a divider must not also select.
+    for (i, divider) in [Divider::Collections, Divider::Details]
+        .into_iter()
+        .enumerate()
+    {
+        if hits(state.hit.dividers[i], x, y) {
+            state.dragging = Some(divider);
+            state.last_click = None;
+            return Action::None;
+        }
+    }
+
     if hits(state.hit.search, x, y) {
         state.active_pane = ActivePane::Search;
         state.last_click = None;
@@ -241,6 +291,25 @@ fn click(state: &mut AppState, x: u16, y: u16) -> Action {
 }
 
 fn right_click(state: &mut AppState, x: u16, y: u16) {
+    // The collections pane gets its own menu: it acts on the collection, not
+    // on a command inside it.
+    if hits(state.hit.collections_list, x, y) {
+        state.active_pane = ActivePane::CollectionsList;
+        let row = row_index(
+            state.hit.collections_list,
+            state.collection_list_state.offset(),
+            y,
+            state.collections.len(),
+        );
+        // No row under the pointer still opens the menu, so an empty pane can
+        // offer "New collection".
+        if let Some(row) = row {
+            state.select_collection_index(row);
+        }
+        state.open_collection_context_menu(x, y);
+        return;
+    }
+
     if !hits(state.hit.list, x, y) {
         return;
     }
@@ -466,6 +535,91 @@ mod tests {
         );
     }
 
+    /// A collections pane occupying rows 10..20 on the left.
+    fn state_with_collections(names: &[&str]) -> AppState {
+        let mut state = state_with(&["a", "b"]);
+        state.view_mode = ViewMode::Collections;
+        state.hit.collections_list = Rect::new(0, 10, 24, 10);
+        state.hit.list = Rect::new(24, 10, 40, 10);
+        state.collections = names
+            .iter()
+            .map(|n| crate::storage::collections::Collection {
+                id: crate::storage::collections::hash_collection_name(n),
+                name: n.to_string(),
+            })
+            .collect();
+        state
+    }
+
+    #[test]
+    fn test_mouse_right_click_on_a_collection_opens_the_collection_menu() {
+        let mut state = state_with_collections(&["work", "personal"]);
+
+        handle(&mut state, right(5, 12));
+
+        assert!(state.context_menu_open);
+        assert_eq!(state.active_pane, ActivePane::CollectionsList);
+        assert_eq!(state.selected_collection_index, 1);
+        assert_eq!(
+            state.context_menu_items,
+            vec![
+                ContextMenuItem::OpenCollection,
+                ContextMenuItem::RenameCollection,
+                ContextMenuItem::DeleteCollection,
+                ContextMenuItem::NewCollection,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_mouse_right_click_on_an_empty_collections_pane_offers_new() {
+        let mut state = state_with_collections(&[]);
+
+        handle(&mut state, right(5, 12));
+
+        assert!(state.context_menu_open);
+        assert_eq!(
+            state.context_menu_items,
+            vec![ContextMenuItem::NewCollection]
+        );
+    }
+
+    #[test]
+    fn test_mouse_collection_menu_delete_opens_the_confirm_popup() {
+        let mut state = state_with_collections(&["work"]);
+        handle(&mut state, right(5, 11));
+        state.hit.context_menu = Rect::new(5, 11, 24, 6);
+
+        // Third entry: Open, Rename, Delete.
+        handle(&mut state, left(7, 14));
+
+        assert!(!state.context_menu_open);
+        assert_eq!(
+            state.collection_input_mode,
+            crate::app::CollectionInputMode::ConfirmDeleteCollection,
+            "delete must go through the confirm popup, not remove anything itself"
+        );
+        assert_eq!(state.delete_confirm_text, "work");
+        assert_eq!(state.collections.len(), 1, "nothing is deleted yet");
+    }
+
+    #[test]
+    fn test_mouse_collection_menu_rename_prefills_the_name() {
+        let mut state = state_with_collections(&["work"]);
+        handle(&mut state, right(5, 11));
+        state.hit.context_menu = Rect::new(5, 11, 24, 6);
+
+        // Second entry: Rename.
+        handle(&mut state, left(7, 13));
+
+        assert_eq!(
+            state.collection_input_mode,
+            crate::app::CollectionInputMode::EditCollection
+        );
+        assert_eq!(state.collection_input_text, "work");
+        assert!(state.editing_collection_id.is_some());
+    }
+
     #[test]
     fn test_mouse_right_click_on_empty_list_opens_nothing() {
         let mut state = state_with(&[]);
@@ -504,6 +658,80 @@ mod tests {
         handle(&mut state, left(7, 14));
         assert!(state.filtered[0].favorite);
         assert!(!state.context_menu_open);
+    }
+
+    /// A state whose details seam sits at columns 60-61 of a 100-wide content
+    /// row, with the list above it.
+    fn state_with_divider(texts: &[&str]) -> AppState {
+        let mut state = state_with(texts);
+        state.set_terminal_size(100, 30);
+        state.hit.content = Rect::new(0, 10, 100, 10);
+        state.hit.dividers[1] = Rect::new(60, 10, 2, 10);
+        state
+    }
+
+    fn drag(x: u16, y: u16) -> MouseEvent {
+        ev(MouseEventKind::Drag(MouseButton::Left), x, y)
+    }
+
+    #[test]
+    fn test_mouse_press_on_a_divider_starts_a_drag_without_selecting() {
+        let mut state = state_with_divider(&["a", "b", "c"]);
+        state.select_index(1);
+
+        handle(&mut state, left(60, 12));
+
+        assert_eq!(state.dragging, Some(Divider::Details));
+        assert_eq!(state.selected_index, 1, "grabbing a seam must not select");
+    }
+
+    #[test]
+    fn test_mouse_drag_resizes_and_release_ends_it() {
+        let mut state = state_with_divider(&["a"]);
+        handle(&mut state, left(60, 12));
+
+        handle(&mut state, drag(70, 12));
+        assert_eq!(state.details_width, 30);
+        handle(&mut state, drag(55, 12));
+        assert_eq!(state.details_width, 45);
+
+        handle(
+            &mut state,
+            ev(MouseEventKind::Up(MouseButton::Left), 55, 12),
+        );
+        assert_eq!(state.dragging, None);
+    }
+
+    #[test]
+    fn test_mouse_drag_swallows_everything_else() {
+        let mut state = state_with_divider(&["a", "b", "c"]);
+        state.select_index(0);
+        handle(&mut state, left(60, 12));
+
+        // A wheel notch or a stray press mid-drag must not scroll or select.
+        handle(&mut state, ev(MouseEventKind::ScrollDown, 5, 12));
+        handle(&mut state, left(5, 13));
+        assert_eq!(state.selected_index, 0);
+        assert_eq!(state.dragging, Some(Divider::Details));
+    }
+
+    #[test]
+    fn test_mouse_drag_past_the_minimum_collapses_details() {
+        let mut state = state_with_divider(&["a"]);
+        handle(&mut state, left(60, 12));
+        handle(&mut state, drag(95, 12));
+
+        assert!(!state.show_details);
+        assert_eq!(state.dragging, None);
+    }
+
+    #[test]
+    fn test_mouse_motion_without_a_drag_is_still_ignored() {
+        let mut state = state_with_divider(&["a"]);
+        let before = state.details_width;
+        handle(&mut state, drag(70, 12));
+        assert_eq!(state.details_width, before);
+        assert_eq!(state.dragging, None);
     }
 
     #[test]

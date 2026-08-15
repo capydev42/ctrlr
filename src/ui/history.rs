@@ -19,16 +19,35 @@ pub fn section<'a>(title: &str, theme: &crate::ui::theme::Theme) -> Line<'a> {
 
 pub fn render_history_list(frame: &mut Frame, state: &mut AppState, area: Rect) {
     state.hit.list = area;
+
+    // Only the rows about to be shown are built. `filtered` is the whole shell
+    // history, so building all of it every frame costs tens of milliseconds
+    // and makes anything that redraws continuously — a divider drag — trail
+    // the pointer. The offset is computed here and written back, so the rest
+    // of the code still reads it off the `ListState`.
+    let viewport = area.height.saturating_sub(2) as usize;
+    let offset = super::layout::scroll_offset(
+        state.list_state.offset(),
+        state.selected_index,
+        state.filtered.len(),
+        viewport,
+    );
+    *state.list_state.offset_mut() = offset;
+
     let theme = &state.current_theme;
     let items: Vec<ListItem> = if state.filtered.is_empty() {
         vec![ListItem::new("No results found")]
     } else {
         let width = area.width.saturating_sub(4);
+        let end = (offset + viewport).min(state.filtered.len());
         let mut result = std::vec::Vec::new();
-        for (i, c) in state.filtered.iter().enumerate() {
+        for (i, c) in state.filtered[offset..end].iter().enumerate() {
             let favorite_str = if c.favorite { "* " } else { "  " };
             let mut line = Line::from(ratatui::text::Span::raw(favorite_str));
-            let idx = state.matched_indices.get(i).and_then(|m| m.as_ref());
+            let idx = state
+                .matched_indices
+                .get(offset + i)
+                .and_then(|m| m.as_ref());
             let cmd_line = command_with_right_tags(&c.text, idx, &c.tags, width, theme);
             line.spans.extend(cmd_line.spans);
             result.push(ratatui::widgets::ListItem::new(line));
@@ -78,7 +97,14 @@ pub fn render_history_list(frame: &mut Frame, state: &mut AppState, area: Rect) 
         )
         .highlight_symbol("> ");
 
-    frame.render_stateful_widget(list, area, &mut state.list_state);
+    // The widget only ever sees the window, so its selection is relative to
+    // the offset. `state.list_state` keeps the absolute selection the input
+    // handlers set, and the absolute offset written above.
+    let mut window_state = ratatui::widgets::ListState::default();
+    if !state.filtered.is_empty() {
+        window_state.select(Some(state.selected_index.saturating_sub(offset)));
+    }
+    frame.render_stateful_widget(list, area, &mut window_state);
 }
 
 pub fn render_details(frame: &mut Frame, state: &mut AppState, area: Rect) {

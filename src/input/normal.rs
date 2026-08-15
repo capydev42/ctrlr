@@ -3,6 +3,10 @@ use crate::input::help;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::time::Instant;
 
+/// Columns `<` and `>` move a divider by. Wide enough to be worth a keypress,
+/// narrow enough to land where you meant.
+pub const RESIZE_STEP: i16 = 4;
+
 pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
     match (key.code, key.modifiers) {
         (KeyCode::Tab, _) => {
@@ -44,6 +48,30 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
         }
         (KeyCode::Char('.'), KeyModifiers::ALT) => {
             toggle_cwd_scope(state);
+            return Action::None;
+        }
+        // Same split again: outside the search bar these resize the focused
+        // divider, inside it they are ordinary characters — `<` and `>` are
+        // common enough in a command that the search bar has to keep them.
+        // Alt reaches the resize from anywhere, as with `.` and Help.
+        (KeyCode::Char('<'), KeyModifiers::NONE | KeyModifiers::SHIFT)
+            if state.active_pane != ActivePane::Search =>
+        {
+            state.nudge_divider(-RESIZE_STEP);
+            return Action::None;
+        }
+        (KeyCode::Char('>'), KeyModifiers::NONE | KeyModifiers::SHIFT)
+            if state.active_pane != ActivePane::Search =>
+        {
+            state.nudge_divider(RESIZE_STEP);
+            return Action::None;
+        }
+        (KeyCode::Char('<'), m) if m.contains(KeyModifiers::ALT) => {
+            state.nudge_divider(-RESIZE_STEP);
+            return Action::None;
+        }
+        (KeyCode::Char('>'), m) if m.contains(KeyModifiers::ALT) => {
+            state.nudge_divider(RESIZE_STEP);
             return Action::None;
         }
         (KeyCode::Char('j'), KeyModifiers::CONTROL) => {
@@ -230,19 +258,10 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.active_pane = ActivePane::Search;
             }
             (KeyCode::Char('n'), KeyModifiers::NONE) => {
-                state.collection_input_mode = CollectionInputMode::NewCollection;
-                state.collection_input_text.clear();
-                state.input_mode = InputMode::CollectionInput;
+                state.begin_new_collection();
             }
             (KeyCode::Char('e'), KeyModifiers::NONE) => {
-                if let Some(col) = state.selected_collection() {
-                    let col_id = col.id.clone();
-                    let col_name = col.name.clone();
-                    state.editing_collection_id = Some(col_id);
-                    state.collection_input_text = col_name;
-                    state.collection_input_mode = CollectionInputMode::EditCollection;
-                    state.input_mode = InputMode::CollectionInput;
-                }
+                state.begin_rename_collection();
             }
             (KeyCode::Char('d'), KeyModifiers::NONE) => {
                 state.delete_collection();

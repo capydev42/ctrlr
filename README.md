@@ -150,6 +150,8 @@ mv target/release/ctrlr ~/.local/bin/
 | 3     | Show Collections            |
 | .     | Scope to current directory  |
 | c     | Add to collection           |
+| < / > | Narrow / widen the side pane |
+| Alt+< / Alt+> | Same, from the search bar too   |
 
 ### Navigation (History / Favorites)
 
@@ -196,12 +198,16 @@ mv target/release/ctrlr ~/.local/bin/
 |-----------------------|---------------------------------------------------------------|
 | Click                 | Select a row / switch tab / focus the search bar               |
 | Double-click          | Run the command                                                |
-| Right-click           | Context menu for the row                                       |
+| Right-click a command | Context menu for the row                                        |
+| Right-click a collection | Open, rename, delete, or create a collection                 |
+| Drag a pane border    | Resize the pane; drag past the minimum to hide details          |
 | Wheel                 | Scroll the list under the pointer                              |
 | Click outside a popup | Close it                                                       |
 
-The context menu offers Run, Copy, Favorite, Tag, and Add to / Remove from
-collection, and is driven by the keyboard too (`j` / `k`, Enter, Esc).
+On a command the context menu offers Run, Copy, Favorite, Tag, and Add to /
+Remove from collection. On the collections pane it offers Open, Rename,
+Delete and New collection — right-clicking an empty pane still offers to
+create one. Either menu is driven by the keyboard too (`j` / `k`, Enter, Esc).
 
 ctrlr holds the mouse for as long as it runs, so your terminal's own
 drag-to-select needs **Shift** held while ctrlr is open.

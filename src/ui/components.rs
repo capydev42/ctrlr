@@ -19,6 +19,15 @@ pub fn tag_span<'a>(tag: &'a str, theme: &Theme) -> Span<'a> {
     )
 }
 
+/// A run of command text, highlighted when it matched the search query.
+fn matched_span(text: String, matched: bool, theme: &Theme) -> Span<'static> {
+    if matched {
+        Span::styled(text, Style::new().fg(theme.match_highlight_fg).bold())
+    } else {
+        Span::raw(text)
+    }
+}
+
 pub fn tags_overflow_span(overflow: usize, theme: &Theme) -> Span<'static> {
     Span::styled(
         format!("+{} more", overflow),
@@ -50,24 +59,31 @@ pub fn command_with_right_tags<'a>(
     let mut line = Line::default();
 
     if let Some(indices) = cmd_indices {
-        let truncated: String = cmd_text.chars().take(cmd_width as usize).collect();
-        let chars: Vec<char> = truncated.chars().collect();
         let mut char_idx = 0;
 
-        for c in chars {
-            let idx_in_truncated = indices
+        // Consecutive characters that share a highlight state go into one
+        // span. Emitting one span per character costs ~40 allocations a row,
+        // and the history list rebuilds every row on every frame — with a
+        // thousand commands that alone is tens of milliseconds per redraw.
+        let mut run = String::new();
+        let mut run_matched = false;
+        for c in cmd_text.chars().take(cmd_width as usize) {
+            // A linear scan beats hashing here: a query matches a handful of
+            // positions, so the set is tiny and `contains` measured slower.
+            let matched = indices
                 .iter()
                 .any(|&i| i >= char_idx && i < char_idx + c.len_utf8());
 
-            if idx_in_truncated {
-                line.spans.push(Span::styled(
-                    c.to_string(),
-                    Style::new().fg(theme.match_highlight_fg).bold(),
-                ));
-            } else {
-                line.spans.push(Span::raw(c.to_string()));
+            if !run.is_empty() && matched != run_matched {
+                line.spans
+                    .push(matched_span(std::mem::take(&mut run), run_matched, theme));
             }
+            run_matched = matched;
+            run.push(c);
             char_idx += c.len_utf8();
+        }
+        if !run.is_empty() {
+            line.spans.push(matched_span(run, run_matched, theme));
         }
 
         if cmd_text.chars().count() > cmd_width as usize {
@@ -84,9 +100,8 @@ pub fn command_with_right_tags<'a>(
     let actual_cmd_len = line.spans.iter().fold(0usize, |acc, s| acc + s.width());
     let right_padding = (available_width as usize).saturating_sub(tags_width + actual_cmd_len + 1);
     if right_padding > 0 {
-        for _ in 0..right_padding {
-            line.spans.push(Span::raw(" "));
-        }
+        // One span, not one per space: this is most of a row's width.
+        line.spans.push(Span::raw(" ".repeat(right_padding)));
     }
 
     for tag in tags.iter().take(MAX_VISIBLE_TAGS) {
@@ -252,4 +267,77 @@ pub fn render_footer(
     };
 
     frame.render_widget(Paragraph::new(footer_text), area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn theme() -> Theme {
+        Theme::default()
+    }
+
+    /// The rendered text must not depend on how the spans are grouped.
+    fn rendered(line: &Line) -> String {
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn test_components_highlight_runs_are_coalesced() {
+        let indices: HashSet<usize> = [0, 1, 2, 6, 7].into_iter().collect();
+        let line = command_with_right_tags("git status", Some(&indices), &[], 40, &theme());
+
+        // g-i-t matched, " st" not, "at" matched, "us" not — four runs, not
+        // ten single-character spans.
+        let text_spans: Vec<&str> = line
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .take(4)
+            .collect();
+        assert_eq!(text_spans, vec!["git", " st", "at", "us"]);
+    }
+
+    #[test]
+    fn test_components_highlighted_style_follows_the_match() {
+        let indices: HashSet<usize> = [0, 1, 2].into_iter().collect();
+        let line = command_with_right_tags("git status", Some(&indices), &[], 40, &theme());
+
+        assert_eq!(line.spans[0].content.as_ref(), "git");
+        assert_eq!(line.spans[0].style.fg, Some(theme().match_highlight_fg));
+        assert_eq!(line.spans[1].style.fg, None, "unmatched text is unstyled");
+    }
+
+    #[test]
+    fn test_components_text_matches_the_unhighlighted_render() {
+        let indices: HashSet<usize> = [1, 4, 5].into_iter().collect();
+        let with = command_with_right_tags("cargo build", Some(&indices), &[], 40, &theme());
+        let without = command_with_right_tags("cargo build", None, &[], 40, &theme());
+        assert_eq!(rendered(&with), rendered(&without));
+    }
+
+    #[test]
+    fn test_components_padding_is_a_single_span() {
+        let line = command_with_right_tags("ls", None, &[], 40, &theme());
+        // Command, then one padding span — not one span per column.
+        assert_eq!(line.spans.len(), 2);
+        assert_eq!(line.spans[1].content.as_ref().trim(), "");
+        assert_eq!(line.width(), 39);
+    }
+
+    #[test]
+    fn test_components_long_command_is_truncated_with_ellipsis() {
+        let long = "x".repeat(200);
+        let indices: HashSet<usize> = [0].into_iter().collect();
+        let line = command_with_right_tags(&long, Some(&indices), &[], 40, &theme());
+        assert!(rendered(&line).contains('…'));
+        assert!(line.width() <= 40);
+    }
+
+    #[test]
+    fn test_components_multibyte_command_is_not_split() {
+        let indices: HashSet<usize> = [0].into_iter().collect();
+        let line = command_with_right_tags("écho héllo", Some(&indices), &[], 40, &theme());
+        assert!(rendered(&line).starts_with("écho héllo"));
+    }
 }

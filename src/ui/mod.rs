@@ -15,7 +15,7 @@ use crate::ui::layout::Hitboxes;
 
 pub fn render(frame: &mut Frame, state: &mut AppState) {
     let area = frame.area();
-    state.set_terminal_height(area.height);
+    state.set_terminal_size(area.width, area.height);
     // Rebuilt from scratch every frame so a hitbox can never outlive the
     // widget that drew it; the renderers below fill in what they own.
     state.hit = Hitboxes::default();
@@ -36,17 +36,12 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     match state.view_mode {
         ViewMode::History | ViewMode::Favorites => {
-            let (list_area, details_area) = if state.show_details {
-                let content_chunks = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
-                    .split(chunks[2]);
-                (content_chunks[0], Some(content_chunks[1]))
-            } else {
-                (chunks[2], None)
-            };
-            history::render_history_list(frame, state, list_area);
-            if let Some(details_area) = details_area {
+            let details = state.show_details.then_some(state.details_width);
+            let areas = layout::split_content(chunks[2], None, details);
+            state.hit.content = chunks[2];
+            state.hit.dividers = areas.dividers;
+            history::render_history_list(frame, state, areas.list);
+            if let Some(details_area) = areas.details {
                 history::render_details(frame, state, details_area);
             }
         }

@@ -15,6 +15,127 @@ pub fn center_rect(width: u16, height: u16, area: Rect) -> Rect {
     )
 }
 
+/// Columns the command list keeps for itself before a side pane may have any.
+pub const MIN_LIST_WIDTH: u16 = 24;
+
+/// Narrowest a side pane may be and still be worth drawing. `render_details`
+/// gives up under 5 columns, so this has to stay comfortably above that or a
+/// pane would silently vanish instead of shrinking.
+pub const MIN_SIDE_WIDTH: u16 = 16;
+
+/// The horizontal split of the content row.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ContentAreas {
+    pub collections: Option<Rect>,
+    pub list: Rect,
+    pub details: Option<Rect>,
+    /// Grab targets for resizing, indexed by [`crate::app::Divider`]. Each is
+    /// the two-column seam where one pane's border meets the next one's; a
+    /// pane that is not shown leaves a zero-sized rect, which hit-tests false.
+    pub dividers: [Rect; 2],
+}
+
+/// Seam between a pane ending at `left_end` and the pane starting after it.
+fn seam(left_pane: Rect) -> Rect {
+    Rect::new(
+        left_pane.x + left_pane.width.saturating_sub(1),
+        left_pane.y,
+        2,
+        left_pane.height,
+    )
+}
+
+/// Lays out the content row from requested side-pane widths in **columns**.
+///
+/// Widths are columns rather than percentages so a drag maps 1:1 onto them —
+/// a percentage round-trip lands on the same percent for small movements and
+/// makes the divider stick. The cost is that widening the terminal grows only
+/// the list, which is why the side panes are clamped here on every frame
+/// rather than trusted as stored.
+///
+/// `None` means the pane is not shown. A pane that cannot keep
+/// [`MIN_SIDE_WIDTH`] without pushing the list under [`MIN_LIST_WIDTH`] is
+/// trimmed, and dropped entirely only when trimming is not enough — details
+/// first, since the list it describes matters more than the description.
+pub fn split_content(area: Rect, collections: Option<u16>, details: Option<u16>) -> ContentAreas {
+    let mut coll = collections.map(|w| w.max(MIN_SIDE_WIDTH));
+    let mut det = details.map(|w| w.max(MIN_SIDE_WIDTH));
+
+    // Keep both panes if trimming can pay for the list. If it cannot, drop
+    // details and start over from the *requested* collections width — a pane
+    // on its way out should not leave its neighbour shrunken behind it.
+    if !trim_to_fit(area.width, &mut coll, &mut det) {
+        det = None;
+        coll = collections.map(|w| w.max(MIN_SIDE_WIDTH));
+        if !trim_to_fit(area.width, &mut coll, &mut det) {
+            coll = None;
+        }
+    }
+
+    let coll_width = coll.unwrap_or(0);
+    let det_width = det.unwrap_or(0);
+    let list_width = area.width.saturating_sub(coll_width + det_width);
+
+    let collections = coll.map(|w| Rect::new(area.x, area.y, w, area.height));
+    let list = Rect::new(area.x + coll_width, area.y, list_width, area.height);
+    let details = det.map(|w| Rect::new(area.x + coll_width + list_width, area.y, w, area.height));
+
+    ContentAreas {
+        collections,
+        list,
+        details,
+        dividers: [
+            collections.map(seam).unwrap_or_default(),
+            details.map(|_| seam(list)).unwrap_or_default(),
+        ],
+    }
+}
+
+/// Columns the side panes must give back for the list to keep its minimum.
+fn shortfall(total: u16, collections: Option<u16>, details: Option<u16>) -> u16 {
+    let side = collections.unwrap_or(0) + details.unwrap_or(0);
+    (side + MIN_LIST_WIDTH).saturating_sub(total)
+}
+
+/// Shrinks the side panes toward [`MIN_SIDE_WIDTH`], details first, until the
+/// list has its minimum. False when even the minimums do not fit.
+fn trim_to_fit(total: u16, collections: &mut Option<u16>, details: &mut Option<u16>) -> bool {
+    let mut over = shortfall(total, *collections, *details);
+    for pane in [details, collections] {
+        if over == 0 {
+            break;
+        }
+        if let Some(w) = pane.as_mut() {
+            let give = over.min(w.saturating_sub(MIN_SIDE_WIDTH));
+            *w -= give;
+            over -= give;
+        }
+    }
+    over == 0
+}
+
+/// Scroll offset that keeps `selected` inside a `height`-row viewport.
+///
+/// This is the arithmetic `List` does internally. Doing it here lets a
+/// renderer build only the rows it is about to show — the history list has as
+/// many items as you have shell history, and building all of them every frame
+/// is what makes a drag lag. The result is written back to the `ListState`, so
+/// the offset stays where the rest of the code (mouse hit-testing especially)
+/// expects to read it.
+pub fn scroll_offset(current: usize, selected: usize, len: usize, height: usize) -> usize {
+    if height == 0 || len == 0 {
+        return 0;
+    }
+    let mut offset = current.min(len.saturating_sub(1));
+    if selected < offset {
+        offset = selected;
+    } else if selected >= offset + height {
+        offset = selected + 1 - height;
+    }
+    // Never scroll past the point where the last row sits at the bottom.
+    offset.min(len.saturating_sub(height))
+}
+
 /// Screen regions recorded during the last draw, for mouse hit-testing.
 ///
 /// `ui::render` runs immediately before every blocking `event::read()`, so
@@ -31,6 +152,12 @@ pub struct Hitboxes {
     pub list: Rect,
     pub details: Rect,
     pub collections_list: Rect,
+    /// The content row the panes are laid out in — a drag turns a column
+    /// inside it into a pane width, so it needs the row's own bounds.
+    pub content: Rect,
+    /// Grab targets for the resizable seams, indexed by
+    /// [`crate::app::Divider`].
+    pub dividers: [Rect; 2],
     /// Outer rect of the topmost popup; a click outside it dismisses.
     pub popup: Rect,
     pub context_menu: Rect,
@@ -149,6 +276,117 @@ mod tests {
     fn test_layout_anchor_rect_clamps_when_oversized() {
         let r = anchor_rect(30, 8, 80, 40, area());
         assert_eq!(r, area());
+    }
+
+    #[test]
+    fn test_layout_split_content_honours_requested_widths() {
+        let areas = split_content(Rect::new(0, 4, 100, 20), None, Some(35));
+        assert_eq!(areas.collections, None);
+        assert_eq!(areas.list, Rect::new(0, 4, 65, 20));
+        assert_eq!(areas.details, Some(Rect::new(65, 4, 35, 20)));
+    }
+
+    #[test]
+    fn test_layout_split_content_three_panes_are_adjacent() {
+        let areas = split_content(Rect::new(2, 4, 120, 20), Some(24), Some(35));
+        let coll = areas.collections.unwrap();
+        let det = areas.details.unwrap();
+        assert_eq!(coll, Rect::new(2, 4, 24, 20));
+        assert_eq!(areas.list, Rect::new(26, 4, 61, 20));
+        assert_eq!(det, Rect::new(87, 4, 35, 20));
+        assert_eq!(coll.width + areas.list.width + det.width, 120);
+    }
+
+    #[test]
+    fn test_layout_split_content_raises_undersized_request() {
+        let areas = split_content(Rect::new(0, 0, 100, 10), None, Some(3));
+        assert_eq!(areas.details.unwrap().width, MIN_SIDE_WIDTH);
+    }
+
+    #[test]
+    fn test_layout_split_content_trims_details_before_collections() {
+        // 24 + 60 leaves the list 16, under its minimum: details gives back 8.
+        let areas = split_content(Rect::new(0, 0, 100, 10), Some(24), Some(60));
+        assert_eq!(areas.collections.unwrap().width, 24);
+        assert_eq!(areas.details.unwrap().width, 52);
+        assert_eq!(areas.list.width, MIN_LIST_WIDTH);
+    }
+
+    #[test]
+    fn test_layout_split_content_drops_details_when_trimming_is_not_enough() {
+        // 24 + 16 + 24 needs 64 columns; 55 cannot hold all three.
+        let areas = split_content(Rect::new(0, 0, 55, 10), Some(24), Some(20));
+        assert_eq!(areas.details, None);
+        assert_eq!(areas.collections.unwrap().width, 24);
+        assert_eq!(areas.list.width, 31);
+    }
+
+    #[test]
+    fn test_layout_split_content_drops_both_on_a_tiny_terminal() {
+        let areas = split_content(Rect::new(0, 0, 30, 10), Some(24), Some(20));
+        assert_eq!(areas.collections, None);
+        assert_eq!(areas.details, None);
+        assert_eq!(areas.list, Rect::new(0, 0, 30, 10));
+    }
+
+    #[test]
+    fn test_layout_split_content_dividers_sit_on_the_seams() {
+        let areas = split_content(Rect::new(0, 4, 120, 20), Some(24), Some(35));
+        // Collections spans 0..24, so its right border is column 23 and the
+        // list's left border is 24.
+        assert_eq!(areas.dividers[0], Rect::new(23, 4, 2, 20));
+        // The list spans 24..85, so its right border is 84 and details' left
+        // border is 85.
+        assert_eq!(areas.details.unwrap().x, 85);
+        assert_eq!(areas.dividers[1], Rect::new(84, 4, 2, 20));
+    }
+
+    #[test]
+    fn test_layout_split_content_hidden_panes_have_no_divider() {
+        let areas = split_content(Rect::new(0, 0, 100, 10), None, Some(30));
+        assert_eq!(areas.dividers[0], Rect::default());
+        assert!(!hits(areas.dividers[0], 0, 0));
+        assert_ne!(areas.dividers[1], Rect::default());
+
+        // A pane dropped for lack of room loses its grab target too.
+        let cramped = split_content(Rect::new(0, 0, 30, 10), Some(24), Some(20));
+        assert_eq!(cramped.dividers, [Rect::default(), Rect::default()]);
+    }
+
+    #[test]
+    fn test_layout_split_content_without_side_panes() {
+        let areas = split_content(Rect::new(0, 0, 80, 10), None, None);
+        assert_eq!(areas.list, Rect::new(0, 0, 80, 10));
+    }
+
+    #[test]
+    fn test_layout_scroll_offset_keeps_selection_visible() {
+        // Selection inside the window leaves the offset alone.
+        assert_eq!(scroll_offset(0, 5, 100, 20), 0);
+        // Below the window scrolls just far enough to show it.
+        assert_eq!(scroll_offset(0, 20, 100, 20), 1);
+        assert_eq!(scroll_offset(0, 25, 100, 20), 6);
+        // Above the window scrolls back to it.
+        assert_eq!(scroll_offset(30, 10, 100, 20), 10);
+    }
+
+    #[test]
+    fn test_layout_scroll_offset_stops_at_the_end() {
+        // The last row sits at the bottom; no scrolling into empty space.
+        assert_eq!(scroll_offset(0, 99, 100, 20), 80);
+        assert_eq!(scroll_offset(95, 99, 100, 20), 80);
+    }
+
+    #[test]
+    fn test_layout_scroll_offset_when_everything_fits() {
+        assert_eq!(scroll_offset(0, 4, 5, 20), 0);
+        assert_eq!(scroll_offset(3, 4, 5, 20), 0);
+    }
+
+    #[test]
+    fn test_layout_scroll_offset_degenerate_inputs() {
+        assert_eq!(scroll_offset(0, 0, 0, 20), 0);
+        assert_eq!(scroll_offset(5, 5, 100, 0), 0);
     }
 
     #[test]
