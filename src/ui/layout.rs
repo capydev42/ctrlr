@@ -114,6 +114,28 @@ fn trim_to_fit(total: u16, collections: &mut Option<u16>, details: &mut Option<u
     over == 0
 }
 
+/// Scroll offset that keeps `selected` inside a `height`-row viewport.
+///
+/// This is the arithmetic `List` does internally. Doing it here lets a
+/// renderer build only the rows it is about to show — the history list has as
+/// many items as you have shell history, and building all of them every frame
+/// is what makes a drag lag. The result is written back to the `ListState`, so
+/// the offset stays where the rest of the code (mouse hit-testing especially)
+/// expects to read it.
+pub fn scroll_offset(current: usize, selected: usize, len: usize, height: usize) -> usize {
+    if height == 0 || len == 0 {
+        return 0;
+    }
+    let mut offset = current.min(len.saturating_sub(1));
+    if selected < offset {
+        offset = selected;
+    } else if selected >= offset + height {
+        offset = selected + 1 - height;
+    }
+    // Never scroll past the point where the last row sits at the bottom.
+    offset.min(len.saturating_sub(height))
+}
+
 /// Screen regions recorded during the last draw, for mouse hit-testing.
 ///
 /// `ui::render` runs immediately before every blocking `event::read()`, so
@@ -335,6 +357,36 @@ mod tests {
     fn test_layout_split_content_without_side_panes() {
         let areas = split_content(Rect::new(0, 0, 80, 10), None, None);
         assert_eq!(areas.list, Rect::new(0, 0, 80, 10));
+    }
+
+    #[test]
+    fn test_layout_scroll_offset_keeps_selection_visible() {
+        // Selection inside the window leaves the offset alone.
+        assert_eq!(scroll_offset(0, 5, 100, 20), 0);
+        // Below the window scrolls just far enough to show it.
+        assert_eq!(scroll_offset(0, 20, 100, 20), 1);
+        assert_eq!(scroll_offset(0, 25, 100, 20), 6);
+        // Above the window scrolls back to it.
+        assert_eq!(scroll_offset(30, 10, 100, 20), 10);
+    }
+
+    #[test]
+    fn test_layout_scroll_offset_stops_at_the_end() {
+        // The last row sits at the bottom; no scrolling into empty space.
+        assert_eq!(scroll_offset(0, 99, 100, 20), 80);
+        assert_eq!(scroll_offset(95, 99, 100, 20), 80);
+    }
+
+    #[test]
+    fn test_layout_scroll_offset_when_everything_fits() {
+        assert_eq!(scroll_offset(0, 4, 5, 20), 0);
+        assert_eq!(scroll_offset(3, 4, 5, 20), 0);
+    }
+
+    #[test]
+    fn test_layout_scroll_offset_degenerate_inputs() {
+        assert_eq!(scroll_offset(0, 0, 0, 20), 0);
+        assert_eq!(scroll_offset(5, 5, 100, 0), 0);
     }
 
     #[test]

@@ -85,6 +85,16 @@ pub fn render_collection_commands(frame: &mut Frame, state: &mut AppState, area:
     // Same hitbox slot as the history list: both draw `state.filtered`, and
     // only one of them is ever on screen.
     state.hit.list = area;
+
+    let viewport = area.height.saturating_sub(2) as usize;
+    let offset = super::layout::scroll_offset(
+        state.collection_items_list_state.offset(),
+        state.selected_index,
+        state.filtered.len(),
+        viewport,
+    );
+    *state.collection_items_list_state.offset_mut() = offset;
+
     let theme = &state.current_theme;
     let is_focused = state.active_pane == ActivePane::CollectionItems;
     let border_color = if is_focused {
@@ -111,11 +121,15 @@ pub fn render_collection_commands(frame: &mut Frame, state: &mut AppState, area:
         vec![ListItem::new("No commands match search")]
     } else if state.selected_collection().is_some() {
         let width = area.width.saturating_sub(4);
+        let end = (offset + viewport).min(state.filtered.len());
         let mut result = std::vec::Vec::new();
-        for (i, c) in state.filtered.iter().enumerate() {
+        for (i, c) in state.filtered[offset..end].iter().enumerate() {
             let fav = if c.favorite { "* " } else { "  " };
             let mut line = Line::from(ratatui::text::Span::raw(fav));
-            let indices = state.matched_indices.get(i).and_then(|m| m.as_ref());
+            let indices = state
+                .matched_indices
+                .get(offset + i)
+                .and_then(|m| m.as_ref());
             let line_with_tags = command_with_right_tags(&c.text, indices, &c.tags, width, theme);
             line.spans.extend(line_with_tags.spans);
             result.push(ratatui::widgets::ListItem::new(line));
@@ -139,8 +153,14 @@ pub fn render_collection_commands(frame: &mut Frame, state: &mut AppState, area:
         )
         .highlight_symbol("> ");
 
+    // Windowed like the history list: the widget sees only the visible rows,
+    // so its selection is relative to the offset.
     state
         .collection_items_list_state
         .select(Some(state.selected_index));
-    frame.render_stateful_widget(list, area, &mut state.collection_items_list_state);
+    let mut window_state = ratatui::widgets::ListState::default();
+    if !state.filtered.is_empty() {
+        window_state.select(Some(state.selected_index.saturating_sub(offset)));
+    }
+    frame.render_stateful_widget(list, area, &mut window_state);
 }

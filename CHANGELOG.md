@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The History list draws several times faster. It used to build a styled line for every command in your history on every frame — a thousand commands meant tens of milliseconds per redraw, which showed up as lag while dragging a pane divider. Only the visible rows are built now, so redraw cost no longer grows with the size of your history
+
 ### Added
 - Pane widths are yours to set. `<` and `>` narrow and widen the details pane, or the collections pane when that one has focus, and the width is remembered across launches. Panes shrink toward a minimum as the terminal narrows and step aside entirely when there is no room left, so a small window still shows a usable list
 - The same panes resize by dragging their border with the mouse. Dragging the details border past its minimum hides the pane, and `d` brings it back at the width it had
