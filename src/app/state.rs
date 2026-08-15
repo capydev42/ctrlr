@@ -55,6 +55,11 @@ pub enum ContextMenuItem {
     AddTag,
     AddToCollection,
     RemoveFromCollection,
+    /// Collections pane: act on the collection itself, not a command in it.
+    OpenCollection,
+    NewCollection,
+    RenameCollection,
+    DeleteCollection,
 }
 
 impl ContextMenuItem {
@@ -72,6 +77,10 @@ impl ContextMenuItem {
             ContextMenuItem::AddTag => "Tag…",
             ContextMenuItem::AddToCollection => "Add to collection…",
             ContextMenuItem::RemoveFromCollection => "Remove from collection",
+            ContextMenuItem::OpenCollection => "Open",
+            ContextMenuItem::NewCollection => "New collection…",
+            ContextMenuItem::RenameCollection => "Rename…",
+            ContextMenuItem::DeleteCollection => "Delete collection",
         }
     }
 }
@@ -924,11 +933,56 @@ impl AppState {
             items.push(ContextMenuItem::AddToCollection);
         }
 
+        self.show_context_menu(items, x, y);
+    }
+
+    /// The right-click menu for the collections pane. Acts on the collection
+    /// itself rather than on a command, so it is a different item list.
+    ///
+    /// Offered even with no collections, where creating one is the only thing
+    /// left to do — a right-click on an empty pane that does nothing reads as
+    /// broken.
+    pub fn open_collection_context_menu(&mut self, x: u16, y: u16) {
+        let items = if self.collections.is_empty() {
+            vec![ContextMenuItem::NewCollection]
+        } else {
+            vec![
+                ContextMenuItem::OpenCollection,
+                ContextMenuItem::RenameCollection,
+                ContextMenuItem::DeleteCollection,
+                ContextMenuItem::NewCollection,
+            ]
+        };
+        self.show_context_menu(items, x, y);
+    }
+
+    fn show_context_menu(&mut self, items: Vec<ContextMenuItem>, x: u16, y: u16) {
         self.context_menu_items = items;
         self.context_menu_index = 0;
         self.context_menu_list_state.select(Some(0));
         self.context_menu_pos = (x, y);
         self.context_menu_open = true;
+    }
+
+    /// Opens the "new collection" prompt. Shared by `n` and the context menu.
+    pub fn begin_new_collection(&mut self) {
+        self.collection_input_mode = CollectionInputMode::NewCollection;
+        self.collection_input_text.clear();
+        self.input_mode = InputMode::CollectionInput;
+    }
+
+    /// Opens the rename prompt for the selected collection, prefilled with its
+    /// current name. Shared by `e` and the context menu.
+    pub fn begin_rename_collection(&mut self) {
+        let Some(col) = self.selected_collection() else {
+            return;
+        };
+        let col_id = col.id.clone();
+        let col_name = col.name.clone();
+        self.editing_collection_id = Some(col_id);
+        self.collection_input_text = col_name;
+        self.collection_input_mode = CollectionInputMode::EditCollection;
+        self.input_mode = InputMode::CollectionInput;
     }
 
     pub fn close_context_menu(&mut self) {

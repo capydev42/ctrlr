@@ -258,19 +258,10 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.active_pane = ActivePane::Search;
             }
             (KeyCode::Char('n'), KeyModifiers::NONE) => {
-                state.collection_input_mode = CollectionInputMode::NewCollection;
-                state.collection_input_text.clear();
-                state.input_mode = InputMode::CollectionInput;
+                state.begin_new_collection();
             }
             (KeyCode::Char('e'), KeyModifiers::NONE) => {
-                if let Some(col) = state.selected_collection() {
-                    let col_id = col.id.clone();
-                    let col_name = col.name.clone();
-                    state.editing_collection_id = Some(col_id);
-                    state.collection_input_text = col_name;
-                    state.collection_input_mode = CollectionInputMode::EditCollection;
-                    state.input_mode = InputMode::CollectionInput;
-                }
+                state.begin_rename_collection();
             }
             (KeyCode::Char('d'), KeyModifiers::NONE) => {
                 state.delete_collection();

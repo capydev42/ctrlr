@@ -186,6 +186,26 @@ pub fn activate_context_menu(state: &mut AppState) -> Action {
             }
             Action::None
         }
+        // Enter on the collections pane drills into the collection, which is
+        // what "Open" means here.
+        ContextMenuItem::OpenCollection => {
+            state.active_pane = ActivePane::CollectionsList;
+            normal::activate_selected(state)
+        }
+        ContextMenuItem::NewCollection => {
+            state.begin_new_collection();
+            Action::None
+        }
+        ContextMenuItem::RenameCollection => {
+            state.begin_rename_collection();
+            Action::None
+        }
+        ContextMenuItem::DeleteCollection => {
+            // Opens the same confirm popup `d` does; nothing is removed until
+            // the user answers it.
+            state.delete_collection();
+            Action::None
+        }
     }
 }
 
@@ -271,6 +291,25 @@ fn click(state: &mut AppState, x: u16, y: u16) -> Action {
 }
 
 fn right_click(state: &mut AppState, x: u16, y: u16) {
+    // The collections pane gets its own menu: it acts on the collection, not
+    // on a command inside it.
+    if hits(state.hit.collections_list, x, y) {
+        state.active_pane = ActivePane::CollectionsList;
+        let row = row_index(
+            state.hit.collections_list,
+            state.collection_list_state.offset(),
+            y,
+            state.collections.len(),
+        );
+        // No row under the pointer still opens the menu, so an empty pane can
+        // offer "New collection".
+        if let Some(row) = row {
+            state.select_collection_index(row);
+        }
+        state.open_collection_context_menu(x, y);
+        return;
+    }
+
     if !hits(state.hit.list, x, y) {
         return;
     }
@@ -494,6 +533,91 @@ mod tests {
             state.context_menu_items.last(),
             Some(&ContextMenuItem::RemoveFromCollection)
         );
+    }
+
+    /// A collections pane occupying rows 10..20 on the left.
+    fn state_with_collections(names: &[&str]) -> AppState {
+        let mut state = state_with(&["a", "b"]);
+        state.view_mode = ViewMode::Collections;
+        state.hit.collections_list = Rect::new(0, 10, 24, 10);
+        state.hit.list = Rect::new(24, 10, 40, 10);
+        state.collections = names
+            .iter()
+            .map(|n| crate::storage::collections::Collection {
+                id: crate::storage::collections::hash_collection_name(n),
+                name: n.to_string(),
+            })
+            .collect();
+        state
+    }
+
+    #[test]
+    fn test_mouse_right_click_on_a_collection_opens_the_collection_menu() {
+        let mut state = state_with_collections(&["work", "personal"]);
+
+        handle(&mut state, right(5, 12));
+
+        assert!(state.context_menu_open);
+        assert_eq!(state.active_pane, ActivePane::CollectionsList);
+        assert_eq!(state.selected_collection_index, 1);
+        assert_eq!(
+            state.context_menu_items,
+            vec![
+                ContextMenuItem::OpenCollection,
+                ContextMenuItem::RenameCollection,
+                ContextMenuItem::DeleteCollection,
+                ContextMenuItem::NewCollection,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_mouse_right_click_on_an_empty_collections_pane_offers_new() {
+        let mut state = state_with_collections(&[]);
+
+        handle(&mut state, right(5, 12));
+
+        assert!(state.context_menu_open);
+        assert_eq!(
+            state.context_menu_items,
+            vec![ContextMenuItem::NewCollection]
+        );
+    }
+
+    #[test]
+    fn test_mouse_collection_menu_delete_opens_the_confirm_popup() {
+        let mut state = state_with_collections(&["work"]);
+        handle(&mut state, right(5, 11));
+        state.hit.context_menu = Rect::new(5, 11, 24, 6);
+
+        // Third entry: Open, Rename, Delete.
+        handle(&mut state, left(7, 14));
+
+        assert!(!state.context_menu_open);
+        assert_eq!(
+            state.collection_input_mode,
+            crate::app::CollectionInputMode::ConfirmDeleteCollection,
+            "delete must go through the confirm popup, not remove anything itself"
+        );
+        assert_eq!(state.delete_confirm_text, "work");
+        assert_eq!(state.collections.len(), 1, "nothing is deleted yet");
+    }
+
+    #[test]
+    fn test_mouse_collection_menu_rename_prefills_the_name() {
+        let mut state = state_with_collections(&["work"]);
+        handle(&mut state, right(5, 11));
+        state.hit.context_menu = Rect::new(5, 11, 24, 6);
+
+        // Second entry: Rename.
+        handle(&mut state, left(7, 13));
+
+        assert_eq!(
+            state.collection_input_mode,
+            crate::app::CollectionInputMode::EditCollection
+        );
+        assert_eq!(state.collection_input_text, "work");
+        assert!(state.editing_collection_id.is_some());
     }
 
     #[test]
