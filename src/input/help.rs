@@ -253,20 +253,35 @@ pub fn get_all_shortcuts() -> Vec<GroupedShortcut> {
             keys: vec![">", "Alt+>"],
             category: "Panels",
         },
-        // Reference only: these have no `action_id` arm in
-        // `execute_help_action`, since there is no key to press for them.
+        // Reference only: every `mouse_*` entry documents a gesture, so none
+        // has an arm in `execute_help_action` — there is no key to press.
+        // Enter on one of these does nothing, deliberately.
         GroupedShortcut {
             action_id: "mouse_select",
-            action_name: "Select / Run",
-            description: "Click selects a row, double-click runs it",
+            action_name: "Select",
+            description: "Click a row, a tab, or the search bar",
             keys: vec!["Click"],
+            category: "Mouse",
+        },
+        GroupedShortcut {
+            action_id: "mouse_run",
+            action_name: "Run Command",
+            description: "Double-click a command to run it",
+            keys: vec!["Double-click"],
             category: "Mouse",
         },
         GroupedShortcut {
             action_id: "mouse_menu",
             action_name: "Context Menu",
-            description: "Right-click a row for its actions",
+            description: "Right-click a command, or the collections pane",
             keys: vec!["Right-click"],
+            category: "Mouse",
+        },
+        GroupedShortcut {
+            action_id: "mouse_resize",
+            action_name: "Resize Pane",
+            description: "Drag a pane border; past the minimum hides details",
+            keys: vec!["Drag border"],
             category: "Mouse",
         },
         GroupedShortcut {
@@ -274,6 +289,13 @@ pub fn get_all_shortcuts() -> Vec<GroupedShortcut> {
             action_name: "Scroll",
             description: "Wheel scrolls the list under the pointer",
             keys: vec!["Wheel"],
+            category: "Mouse",
+        },
+        GroupedShortcut {
+            action_id: "mouse_close_popup",
+            action_name: "Close Popup",
+            description: "Click outside a popup to close it",
+            keys: vec!["Click outside"],
             category: "Mouse",
         },
         GroupedShortcut {
@@ -342,8 +364,11 @@ const UNIVERSAL_ACTIONS: &[&str] = &[
     "shrink_pane",
     "grow_pane",
     "mouse_select",
+    "mouse_run",
     "mouse_menu",
+    "mouse_resize",
     "mouse_scroll",
+    "mouse_close_popup",
     "mouse_select_text",
 ];
 
@@ -881,6 +906,38 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The mouse entries document gestures, so they have no arm in
+    /// `execute_help_action`. Pressing Enter on one must be a harmless no-op
+    /// rather than doing something unrelated.
+    #[test]
+    fn test_help_mouse_entries_are_inert() {
+        let mut state = state();
+        state.set_terminal_size(120, 30);
+        let before = (
+            state.details_width,
+            state.show_details,
+            state.view_mode.clone(),
+            state.active_pane.clone(),
+        );
+
+        for sc in get_all_shortcuts()
+            .iter()
+            .filter(|sc| sc.category == "Mouse")
+        {
+            assert_eq!(execute_help_action(&mut state, sc.action_id), Action::None);
+        }
+
+        assert_eq!(
+            (
+                state.details_width,
+                state.show_details,
+                state.view_mode.clone(),
+                state.active_pane.clone()
+            ),
+            before
+        );
     }
 
     #[test]
