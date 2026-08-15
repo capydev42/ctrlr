@@ -18,6 +18,9 @@ pub fn render_collections_view(frame: &mut Frame, state: &mut AppState, area: Re
         show_details.then_some(state.details_width),
     );
 
+    state.hit.content = area;
+    state.hit.dividers = areas.dividers;
+
     if let Some(collections_area) = areas.collections {
         render_collection_list(frame, state, collections_area);
     }

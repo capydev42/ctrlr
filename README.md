@@ -199,6 +199,7 @@ mv target/release/ctrlr ~/.local/bin/
 | Click                 | Select a row / switch tab / focus the search bar               |
 | Double-click          | Run the command                                                |
 | Right-click           | Context menu for the row                                       |
+| Drag a pane border    | Resize the pane; drag past the minimum to hide details          |
 | Wheel                 | Scroll the list under the pointer                              |
 | Click outside a popup | Close it                                                       |
 

@@ -38,6 +38,8 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
         ViewMode::History | ViewMode::Favorites => {
             let details = state.show_details.then_some(state.details_width);
             let areas = layout::split_content(chunks[2], None, details);
+            state.hit.content = chunks[2];
+            state.hit.dividers = areas.dividers;
             history::render_history_list(frame, state, areas.list);
             if let Some(details_area) = areas.details {
                 history::render_details(frame, state, details_area);

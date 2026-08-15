@@ -29,6 +29,20 @@ pub struct ContentAreas {
     pub collections: Option<Rect>,
     pub list: Rect,
     pub details: Option<Rect>,
+    /// Grab targets for resizing, indexed by [`crate::app::Divider`]. Each is
+    /// the two-column seam where one pane's border meets the next one's; a
+    /// pane that is not shown leaves a zero-sized rect, which hit-tests false.
+    pub dividers: [Rect; 2],
+}
+
+/// Seam between a pane ending at `left_end` and the pane starting after it.
+fn seam(left_pane: Rect) -> Rect {
+    Rect::new(
+        left_pane.x + left_pane.width.saturating_sub(1),
+        left_pane.y,
+        2,
+        left_pane.height,
+    )
 }
 
 /// Lays out the content row from requested side-pane widths in **columns**.
@@ -62,10 +76,18 @@ pub fn split_content(area: Rect, collections: Option<u16>, details: Option<u16>)
     let det_width = det.unwrap_or(0);
     let list_width = area.width.saturating_sub(coll_width + det_width);
 
+    let collections = coll.map(|w| Rect::new(area.x, area.y, w, area.height));
+    let list = Rect::new(area.x + coll_width, area.y, list_width, area.height);
+    let details = det.map(|w| Rect::new(area.x + coll_width + list_width, area.y, w, area.height));
+
     ContentAreas {
-        collections: coll.map(|w| Rect::new(area.x, area.y, w, area.height)),
-        list: Rect::new(area.x + coll_width, area.y, list_width, area.height),
-        details: det.map(|w| Rect::new(area.x + coll_width + list_width, area.y, w, area.height)),
+        collections,
+        list,
+        details,
+        dividers: [
+            collections.map(seam).unwrap_or_default(),
+            details.map(|_| seam(list)).unwrap_or_default(),
+        ],
     }
 }
 
@@ -108,6 +130,12 @@ pub struct Hitboxes {
     pub list: Rect,
     pub details: Rect,
     pub collections_list: Rect,
+    /// The content row the panes are laid out in — a drag turns a column
+    /// inside it into a pane width, so it needs the row's own bounds.
+    pub content: Rect,
+    /// Grab targets for the resizable seams, indexed by
+    /// [`crate::app::Divider`].
+    pub dividers: [Rect; 2],
     /// Outer rect of the topmost popup; a click outside it dismisses.
     pub popup: Rect,
     pub context_menu: Rect,
@@ -277,6 +305,30 @@ mod tests {
         assert_eq!(areas.collections, None);
         assert_eq!(areas.details, None);
         assert_eq!(areas.list, Rect::new(0, 0, 30, 10));
+    }
+
+    #[test]
+    fn test_layout_split_content_dividers_sit_on_the_seams() {
+        let areas = split_content(Rect::new(0, 4, 120, 20), Some(24), Some(35));
+        // Collections spans 0..24, so its right border is column 23 and the
+        // list's left border is 24.
+        assert_eq!(areas.dividers[0], Rect::new(23, 4, 2, 20));
+        // The list spans 24..85, so its right border is 84 and details' left
+        // border is 85.
+        assert_eq!(areas.details.unwrap().x, 85);
+        assert_eq!(areas.dividers[1], Rect::new(84, 4, 2, 20));
+    }
+
+    #[test]
+    fn test_layout_split_content_hidden_panes_have_no_divider() {
+        let areas = split_content(Rect::new(0, 0, 100, 10), None, Some(30));
+        assert_eq!(areas.dividers[0], Rect::default());
+        assert!(!hits(areas.dividers[0], 0, 0));
+        assert_ne!(areas.dividers[1], Rect::default());
+
+        // A pane dropped for lack of room loses its grab target too.
+        let cramped = split_content(Rect::new(0, 0, 30, 10), Some(24), Some(20));
+        assert_eq!(cramped.dividers, [Rect::default(), Rect::default()]);
     }
 
     #[test]

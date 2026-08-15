@@ -191,6 +191,8 @@ pub struct AppState {
     /// Width of the collections pane, in columns.
     pub collections_width: u16,
     pub terminal_width: u16,
+    /// The seam currently being dragged, if any.
+    pub dragging: Option<Divider>,
 }
 
 impl AppState {
@@ -520,6 +522,7 @@ impl AppState {
             details_width: Self::DEFAULT_DETAILS_WIDTH,
             collections_width: Self::DEFAULT_COLLECTIONS_WIDTH,
             terminal_width: 80,
+            dragging: None,
         }
     }
 
@@ -572,6 +575,39 @@ impl AppState {
             Divider::Details => self.details_width = next,
         }
         self.persist_pane_widths();
+    }
+
+    /// Sets a divider from the column the pointer is on, clamped the same way
+    /// a keyboard nudge is.
+    ///
+    /// Dragging the details seam past its minimum hides the pane outright
+    /// rather than pinning it at the minimum — otherwise "collapsed by drag"
+    /// and "hidden with `d`" would be two states meaning the same thing. The
+    /// stored width is left alone so `d` brings it back the size it was.
+    pub fn resize_divider(&mut self, divider: Divider, column: u16) {
+        let content = self.hit.content;
+        if content.width == 0 {
+            return;
+        }
+        let min = crate::ui::layout::MIN_SIDE_WIDTH;
+        let max = self.max_side_width();
+
+        match divider {
+            Divider::Collections => {
+                let requested = column.saturating_sub(content.x) + 1;
+                self.collections_width = requested.clamp(min, max);
+            }
+            Divider::Details => {
+                let right_edge = content.x + content.width;
+                let requested = right_edge.saturating_sub(column);
+                if requested < min {
+                    self.show_details = false;
+                    self.dragging = None;
+                    return;
+                }
+                self.details_width = requested.min(max);
+            }
+        }
     }
 
     /// Widths outlive the session; they live beside the theme in `settings`,
@@ -1999,6 +2035,53 @@ mod tests {
         let before = state.details_width;
         state.nudge_divider(4);
         assert_eq!(state.details_width, before + 4);
+    }
+
+    #[test]
+    fn test_state_resize_divider_sets_details_from_a_column() {
+        let mut state = state_with(&["a"]);
+        state.set_terminal_size(120, 30);
+        state.hit.content = ratatui::layout::Rect::new(0, 4, 120, 20);
+        // Dropping the seam on column 80 leaves 40 columns to the right.
+        state.resize_divider(Divider::Details, 80);
+        assert_eq!(state.details_width, 40);
+        state.resize_divider(Divider::Details, 100);
+        assert_eq!(state.details_width, 20);
+    }
+
+    #[test]
+    fn test_state_resize_divider_sets_collections_from_a_column() {
+        let mut state = state_with(&["a"]);
+        state.set_terminal_size(120, 30);
+        state.hit.content = ratatui::layout::Rect::new(0, 4, 120, 20);
+        state.resize_divider(Divider::Collections, 29);
+        assert_eq!(state.collections_width, 30);
+    }
+
+    #[test]
+    fn test_state_resize_divider_past_the_minimum_hides_details() {
+        let mut state = state_with(&["a"]);
+        state.set_terminal_size(120, 30);
+        state.hit.content = ratatui::layout::Rect::new(0, 4, 120, 20);
+        state.dragging = Some(Divider::Details);
+        let before = state.details_width;
+
+        state.resize_divider(Divider::Details, 118);
+
+        assert!(!state.show_details);
+        assert_eq!(state.dragging, None, "the drag ends with the pane");
+        assert_eq!(
+            state.details_width, before,
+            "the stored width survives so `d` restores the pane at its old size"
+        );
+    }
+
+    #[test]
+    fn test_state_resize_divider_without_a_drawn_frame_does_nothing() {
+        let mut state = state_with(&["a"]);
+        let before = state.details_width;
+        state.resize_divider(Divider::Details, 40);
+        assert_eq!(state.details_width, before);
     }
 
     #[test]
