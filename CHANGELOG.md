@@ -9,16 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- The History list draws several times faster. It used to build a styled line for every command in your history on every frame — a thousand commands meant tens of milliseconds per redraw, which showed up as lag while dragging a pane divider. Only the visible rows are built now, so redraw cost no longer grows with the size of your history
+---
+
+## [0.8.0] - 2026-08-15
 
 ### Added
-- Pane widths are yours to set. `<` and `>` narrow and widen the details pane, or the collections pane when that one has focus, and the width is remembered across launches. Panes shrink toward a minimum as the terminal narrows and step aside entirely when there is no room left, so a small window still shows a usable list
-- The same panes resize by dragging their border with the mouse. Dragging the details border past its minimum hides the pane, and `d` brings it back at the width it had
 - ctrlr now responds to the mouse. The wheel scrolls whichever list is under the pointer, a click selects a row and focuses its pane, a double-click runs the command, and the tabs and search bar are clickable. Popups scroll with the wheel and close when you click outside them
 - Right-clicking a row opens a context menu with Run, Copy, Favorite, Tag, and Add to / Remove from collection — whichever of those apply to the current view. The menu takes the keyboard as well: `j` / `k` to move, Enter to pick, Esc to close
 - Right-clicking the collections pane opens a menu for the collection itself: Open, Rename, Delete and New collection. Deleting still asks for confirmation, and right-clicking an empty pane offers to create the first collection
+- Pane widths are yours to set. `<` and `>` narrow and widen the details pane, or the collections pane when that one has focus, and the width is remembered across launches. Panes shrink toward a minimum as the terminal narrows and step aside entirely when there is no room left, so a small window still shows a usable list
+- The same panes resize by dragging their border with the mouse. Dragging the details border past its minimum hides the pane, and `d` brings it back at the width it had
+- The help popup (`?`) documents the mouse gestures and the resize keys, and it no longer hides shortcuts that apply everywhere
 - ctrlr holds the mouse for as long as it runs, so your terminal's own drag-to-select needs **Shift** held while ctrlr is open. Mouse reporting is released when ctrlr exits, including on a panic
+
+### Changed
+- Building ctrlr from source now needs Rust 1.88 (was 1.86). Several crates in the dependency tree raised their own minimum; the installer and the released binaries are unaffected
+- The History list draws several times faster. It used to build a styled line for every command in your history on every frame — a thousand commands meant tens of milliseconds per redraw, which showed up as lag while dragging a pane divider. Only the visible rows are built now, so redraw cost no longer grows with the size of your history
 
 ---
 
