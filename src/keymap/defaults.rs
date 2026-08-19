@@ -47,6 +47,7 @@ pub const TABLE: &[(C, &str, A)] = &[
     (C::Global, "<, alt+<",         A::ShrinkPane),
     (C::Global, ">, alt+>",         A::GrowPane),
     (C::Global, "?, F1",            A::ShowHelp),
+    (C::Global, "ctrl+g",           A::EditKeybindings),
     (C::Global, "ctrl+t",           A::ChangeTheme),
     (C::Global, "ctrl+e",           A::ExportData),
     (C::Global, "ctrl+o",           A::ImportData),
@@ -132,6 +133,16 @@ pub const TABLE: &[(C, &str, A)] = &[
 
     (C::IntegrationPopup, "Enter, u, y",    A::Confirm),
     (C::IntegrationPopup, "esc, ctrl+c, n, q", A::Decline),
+
+    (C::KeybindPopup, "Enter",        A::Confirm),
+    (C::KeybindPopup, "Up, ctrl+p",   A::NavigateUp),
+    (C::KeybindPopup, "Down, ctrl+n", A::NavigateDown),
+    (C::KeybindPopup, "PageUp",       A::PageUp),
+    (C::KeybindPopup, "PageDown",     A::PageDown),
+    (C::KeybindPopup, "Backspace",    A::DeleteCharBackward),
+    (C::KeybindPopup, "ctrl+u",       A::KillLine),
+    (C::KeybindPopup, "ctrl+r",       A::ResetKeybindings),
+    (C::KeybindPopup, "esc, ctrl+c",  A::Cancel),
 
     (C::EditCommand, "Enter",       A::Confirm),
     (C::EditCommand, "Left",        A::CursorLeft),

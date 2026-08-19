@@ -10,7 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Keybindings are yours. `ctrlr config --print > ~/.config/ctrlr/config.toml` writes out every default, and editing it rebinds any key in any pane or popup. Listing an action replaces its defaults, so you can drop one you dislike; anything you leave out stays as it was
+- Keybindings are yours. `Ctrl+G` opens a list of every action; filter it, press Enter on a row, then press the key you want. The change applies immediately and is written to `~/.config/ctrlr/config.toml` when you close the popup, creating the file and its directory. `Ctrl+R` restores the defaults
+- Taking a key another action already owns asks first: the first press says what it would displace, the second confirms
+- Or edit the file yourself — `ctrlr config --print` writes out every default. Listing an action replaces its defaults, so you can drop one you dislike; anything you leave out stays as it was. ctrlr only records what differs from its defaults, so later changes to those still reach you
+- A config ctrlr overwrites is kept as `config.toml.ctrlr.bak`
 - A line ctrlr cannot read keeps its default and is listed under **Config** at the top of the help popup, with what was wrong. A broken config never stops ctrlr from starting
 - Commands can be edited before they run. `e` on a row opens it in an edit line with a real cursor — arrows, Home/End, Delete, Ctrl+U — and Enter hands the edited text to your prompt
 - `Ctrl+x` opens the selected command in `$VISUAL` / `$EDITOR` and puts what you save straight on the prompt line — no second keypress. From inside the edit line the same key is a detour instead: it comes back to the line so you can look before committing, the way readline's `Ctrl+X Ctrl+E` does. Quitting the editor with a non-zero status, or emptying the file, changes nothing

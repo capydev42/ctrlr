@@ -67,6 +67,124 @@ pub fn render_edit_command_popup(frame: &mut Frame, state: &mut AppState, area: 
     );
 }
 
+/// The keybinding editor.
+///
+/// Rows are windowed the way the command lists are: `filtered` here is every
+/// binding in the app, and building a `ListItem` per row each frame would cost
+/// for nothing. The offset is written back into the `ListState` so the input
+/// handler and mouse hit-testing read the same scroll position.
+pub fn render_keybind_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.current_theme;
+    let popup_width = area.width.saturating_sub(8).clamp(40, 96);
+    let popup_height = area.height.saturating_sub(4).clamp(10, 30);
+    let centered = center_rect(popup_width, popup_height, area);
+    state.hit.popup = centered;
+
+    frame.render_widget(Clear, centered);
+
+    let capturing = state.capturing.is_some();
+    let hint = if capturing {
+        "Press the key to bind  |  Esc: cancel"
+    } else {
+        "Enter: rebind  |  Ctrl+R: reset all  |  type to filter  |  Esc: save & close"
+    };
+
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .title("[Keybindings]")
+        .title_alignment(Alignment::Center)
+        .border_style(Style::new().fg(theme.popup_border));
+    let inner = block.inner(centered);
+    frame.render_widget(block, centered);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    frame.render_widget(
+        Paragraph::new(format!("Filter: {}▋", state.keybind_query))
+            .style(Style::new().fg(theme.input_text)),
+        chunks[0],
+    );
+
+    let list_area = chunks[1];
+    let viewport = list_area.height as usize;
+    let offset = super::layout::scroll_offset(
+        state.keybind_list_state.offset(),
+        state.keybind_selected_index,
+        state.keybind_rows.len(),
+        viewport,
+    );
+    *state.keybind_list_state.offset_mut() = offset;
+
+    let items: Vec<ListItem> = if state.keybind_rows.is_empty() {
+        vec![ListItem::new("No bindings match")]
+    } else {
+        let end = (offset + viewport).min(state.keybind_rows.len());
+        let context_width = 17usize;
+        let action_width = 24usize;
+        state.keybind_rows[offset..end]
+            .iter()
+            .enumerate()
+            .map(|(i, row)| {
+                let selected = offset + i == state.keybind_selected_index;
+                let keys = if selected && capturing {
+                    "press a key…".to_owned()
+                } else {
+                    crate::input::keybind::keys_display(row)
+                };
+                // A sequence cannot be recorded by pressing it, so say why
+                // rather than letting Enter look broken on that row.
+                let keys = if row.editable {
+                    keys
+                } else {
+                    format!("{}  (file only)", keys)
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(
+                        format!("{:width$}", row.context.as_str(), width = context_width),
+                        Style::new().fg(theme.section_fg),
+                    ),
+                    Span::styled(
+                        format!("{:width$}", row.action.as_str(), width = action_width),
+                        Style::new().fg(theme.help_name_fg),
+                    ),
+                    Span::styled(keys, Style::new().fg(theme.help_keys_fg)),
+                ]))
+            })
+            .collect()
+    };
+
+    // A local state because the widget only sees the window: its selection is
+    // relative, while `keybind_list_state` keeps the absolute one.
+    let mut windowed = ratatui::widgets::ListState::default();
+    if !state.keybind_rows.is_empty() {
+        windowed.select(Some(state.keybind_selected_index.saturating_sub(offset)));
+    }
+    frame.render_stateful_widget(
+        List::new(items).highlight_style(
+            Style::new()
+                .bg(theme.highlight_bg)
+                .fg(theme.highlight_fg)
+                .add_modifier(Modifier::BOLD),
+        ),
+        list_area,
+        &mut windowed,
+    );
+
+    frame.render_widget(
+        Paragraph::new(hint)
+            .style(Style::new().fg(theme.hint_fg))
+            .alignment(Alignment::Center),
+        chunks[2],
+    );
+}
+
 /// The right-click menu, anchored at the pointer.
 pub fn render_context_menu(frame: &mut Frame, state: &mut AppState, area: Rect) {
     let labels = state.context_menu_labels();

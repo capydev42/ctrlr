@@ -136,6 +136,7 @@ pub fn dispatch(state: &mut AppState, context: KeyContext, action: KeyAction) ->
 
         // Overlays.
         (_, KeyAction::ShowHelp) => open_help(state),
+        (_, KeyAction::EditKeybindings) => state.open_keybind_popup(),
         (_, KeyAction::ChangeTheme) => state.open_theme_popup(),
         (_, KeyAction::ExportData) => state.open_export_popup(),
         (_, KeyAction::ImportData) => state.open_import_popup(),

@@ -136,6 +136,20 @@ pub struct AppState {
     /// Entries of `config.toml` that could not be applied. Each kept its
     /// default; the help popup lists them.
     pub config_problems: Vec<crate::config::ConfigProblem>,
+    pub keybind_popup_open: bool,
+    pub keybind_rows: Vec<crate::input::keybind::KeybindRow>,
+    pub keybind_selected_index: usize,
+    pub keybind_list_state: ListState,
+    pub keybind_query: String,
+    /// Set by any successful rebind, so closing without one writes no file and
+    /// takes no backup.
+    keybind_dirty: bool,
+    /// The row waiting for a key press. While this is set, `input::handle`
+    /// takes the next press raw instead of resolving it.
+    pub capturing: Option<(crate::keymap::KeyContext, crate::keymap::KeyAction)>,
+    /// A chord that is already taken, held until the user presses it again to
+    /// confirm taking it.
+    pub capture_conflict: Option<crate::keymap::Binding>,
     pub input_mode: InputMode,
     /// The line being edited in [`InputMode::EditCommand`].
     pub edit_input: TextInput,
@@ -329,6 +343,143 @@ impl AppState {
         state
     }
 
+    pub fn open_keybind_popup(&mut self) {
+        self.keybind_popup_open = true;
+        self.keybind_query.clear();
+        self.keybind_dirty = false;
+        self.capturing = None;
+        self.capture_conflict = None;
+        self.refresh_keybind_rows();
+    }
+
+    /// Writes the file on the way out, once, rather than after every rebind:
+    /// fewer writes and a single backup. A failed write is reported and does
+    /// not undo the change — the keys still work for this session.
+    pub fn close_keybind_popup(&mut self) {
+        self.keybind_popup_open = false;
+        self.capturing = None;
+        self.capture_conflict = None;
+        if !self.keybind_dirty {
+            return;
+        }
+        self.keybind_dirty = false;
+        match crate::config::save(&self.keymap) {
+            Ok(saved) => {
+                // The warnings described a file that no longer exists.
+                self.config_problems.clear();
+                let mut message = format!("Saved {}", saved.path.display());
+                if let Some(backup) = saved.backup {
+                    message.push_str(&format!(" (previous kept as {})", backup.display()));
+                }
+                self.set_status(message);
+            }
+            Err(e) => self.set_status(format!("Could not save keybindings: {}", e)),
+        }
+    }
+
+    pub fn refresh_keybind_rows(&mut self) {
+        let all = crate::input::keybind::rows(self);
+        self.keybind_rows = crate::input::keybind::filter(&all, &self.keybind_query);
+        let last = self.keybind_rows.len().saturating_sub(1);
+        self.select_keybind_row(self.keybind_selected_index.min(last));
+    }
+
+    pub fn select_keybind_row(&mut self, index: usize) {
+        let last = self.keybind_rows.len().saturating_sub(1);
+        self.keybind_selected_index = index.min(last);
+        self.keybind_list_state
+            .select(Some(self.keybind_selected_index));
+        // Moving off a row abandons whatever it was waiting for.
+        self.capturing = None;
+        self.capture_conflict = None;
+    }
+
+    pub fn selected_keybind_row(&self) -> Option<&crate::input::keybind::KeybindRow> {
+        self.keybind_rows.get(self.keybind_selected_index)
+    }
+
+    /// Arms capture for the selected row. Refuses rows whose binding is a
+    /// two-key sequence, which a single press cannot express.
+    pub fn begin_capture(&mut self) {
+        let Some(row) = self.selected_keybind_row() else {
+            return;
+        };
+        if !row.editable {
+            self.set_status("Two-key sequences can only be changed in config.toml".into());
+            return;
+        }
+        self.capturing = Some((row.context, row.action));
+        self.capture_conflict = None;
+    }
+
+    /// Applies a captured chord. Returns a message to show, if any.
+    ///
+    /// A chord another action already owns is not taken silently: the first
+    /// press warns and the second confirms. Once confirmed the old owner is
+    /// evicted rather than left in place, or the new binding would be shadowed
+    /// by it and appear not to work — the same rule `config::from_str` applies
+    /// to a file that does this.
+    pub fn apply_capture(&mut self, chord: crate::keymap::KeyChord) {
+        use crate::keymap::Binding;
+        let Some((context, action)) = self.capturing else {
+            return;
+        };
+        let binding = Binding::Single(chord);
+
+        let owner = crate::input::keybind::current_owner(self, context, &binding);
+        if let Some(owner) = owner
+            && owner != action
+            && self.capture_conflict.as_ref() != Some(&binding)
+        {
+            self.capture_conflict = Some(binding.clone());
+            self.set_status(format!(
+                "{} is {} here — press it again to take it",
+                crate::input::keybind::describe(&binding),
+                owner.as_str()
+            ));
+            return;
+        }
+
+        self.keymap.evict(context, &binding);
+        self.keymap.clear_action(context, action);
+        self.keymap.bind(context, binding.clone(), action);
+        self.keybind_dirty = true;
+        self.capturing = None;
+        self.capture_conflict = None;
+        self.refresh_keybind_rows();
+        self.set_status(format!(
+            "{} is now {}",
+            crate::input::keybind::describe(&binding),
+            action.as_str()
+        ));
+    }
+
+    pub fn cancel_capture(&mut self) {
+        self.capturing = None;
+        self.capture_conflict = None;
+    }
+
+    /// Back to the built-in keymap.
+    ///
+    /// Deliberately not a file delete: it marks the keymap dirty and lets the
+    /// normal save on close write it out. `to_toml` records only differences
+    /// from the defaults, so a reset keymap produces a file with no overrides
+    /// in it — the same end state as deleting, through one write path, with
+    /// the same backup, and without a `remove_file` that would have to be kept
+    /// away from tests.
+    pub fn reset_keybindings(&mut self) {
+        self.keymap = crate::keymap::defaults::keymap();
+        self.keybind_dirty = true;
+        self.config_problems.clear();
+        self.refresh_keybind_rows();
+        self.set_status("Keybindings back to the defaults".into());
+    }
+
+    fn set_status(&mut self, message: String) {
+        self.status_message = Some(message);
+        self.status_timestamp = Some(Instant::now());
+    }
+
     /// Reads `~/.config/ctrlr/config.toml`. Only `bootstrap` calls this —
     /// `AppState::new` must stay filesystem-free or every test would depend on
     /// the developer's own config.
@@ -506,6 +657,14 @@ impl AppState {
             show_details: true,
             keymap: crate::keymap::defaults::keymap(),
             config_problems: Vec::new(),
+            keybind_popup_open: false,
+            keybind_rows: Vec::new(),
+            keybind_selected_index: 0,
+            keybind_list_state: ListState::default(),
+            keybind_query: String::new(),
+            keybind_dirty: false,
+            capturing: None,
+            capture_conflict: None,
             input_mode: InputMode::Normal,
             edit_input: TextInput::default(),
             edit_origin: None,
@@ -1254,6 +1413,10 @@ impl AppState {
         }
         if self.context_menu_open {
             self.close_context_menu();
+            return false;
+        }
+        if self.keybind_popup_open {
+            self.close_keybind_popup();
             return false;
         }
         if self.theme_popup_open {

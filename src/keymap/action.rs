@@ -77,6 +77,8 @@ key_actions! {
 
     // Overlays
     ShowHelp => "show_help",
+    EditKeybindings => "edit_keybindings",
+    ResetKeybindings => "reset_keybindings",
     ChangeTheme => "change_theme",
     ExportData => "export_data",
     ImportData => "import_data",

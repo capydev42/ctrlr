@@ -35,6 +35,7 @@ pub enum KeyContext {
     ContextMenu,
     IntegrationPopup,
     EditCommand,
+    KeybindPopup,
 }
 
 impl KeyContext {
@@ -54,6 +55,7 @@ impl KeyContext {
                 | KeyContext::CollectionInput
                 | KeyContext::ImportExport
                 | KeyContext::EditCommand
+                | KeyContext::KeybindPopup
         )
     }
 
@@ -68,6 +70,12 @@ impl KeyContext {
                 | KeyContext::CollectionsList
                 | KeyContext::CollectionItems
         )
+    }
+
+    /// A modal that owns the screen: not a pane, and not the shared `Global`
+    /// fallback. Exactly the contexts a click outside should dismiss.
+    pub fn is_overlay(self) -> bool {
+        self != KeyContext::Global && !self.falls_through_to_global()
     }
 
     pub const fn as_str(self) -> &'static str {
@@ -85,6 +93,7 @@ impl KeyContext {
             KeyContext::ContextMenu => "context_menu",
             KeyContext::IntegrationPopup => "integration_popup",
             KeyContext::EditCommand => "edit_command",
+            KeyContext::KeybindPopup => "keybind_popup",
         }
     }
 
@@ -106,6 +115,7 @@ impl KeyContext {
         KeyContext::ContextMenu,
         KeyContext::IntegrationPopup,
         KeyContext::EditCommand,
+        KeyContext::KeybindPopup,
     ];
 }
 

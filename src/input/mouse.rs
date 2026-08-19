@@ -72,14 +72,12 @@ pub fn handle(state: &mut AppState, ev: MouseEvent) -> Action {
     Action::None
 }
 
+/// Derived from the context chain rather than kept as a third hand-maintained
+/// copy of the overlay list — `input::active_context` and
+/// `AppState::cancel_or_quit` are the other two, and a new overlay missing from
+/// this one used to mean the wheel and click-outside silently did nothing.
 fn popup_open(state: &AppState) -> bool {
-    state.theme_popup_open
-        || state.help_open
-        || state.export_popup_open
-        || state.import_popup_open
-        || state.input_mode == InputMode::TagInput
-        || state.input_mode == InputMode::CollectionInput
-        || state.input_mode == InputMode::EditCommand
+    super::active_context(state).is_overlay()
 }
 
 /// Modal popups are driven through the same dispatcher their keys use, rather

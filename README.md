@@ -184,11 +184,24 @@ Press `?` (or `F1`) inside ctrlr for a searchable version of this table.
 | `Ctrl+e`  | Export popup                                 |
 | `Ctrl+o`  | Import popup                                 |
 | `?` / `F1`| Help                                         |
+| `Ctrl+g`  | Rebind keys                                  |
 | `Esc` / `Ctrl+C` | Clear / close / exit                  |
 
 ### Rebinding
 
-Every key above can be changed. Start from the defaults:
+Press `Ctrl+G`. The list shows every action with the keys that reach it; type
+to filter, `Enter` on a row, then press the key you want. It takes effect at
+once and is written to `~/.config/ctrlr/config.toml` when you close the popup —
+the file and the directory are created for you. `Ctrl+R` puts everything back
+to the defaults.
+
+Two things the popup cannot do. `Esc` cancels a recording, so `Esc` itself has
+to be rebound in the file. Two-key sequences like `g g` are shown but marked
+`(file only)`, because recording reads a single press. If ctrlr overwrites a
+config you had written by hand, your version is kept as
+`config.toml.ctrlr.bak`.
+
+Or edit the file directly. Start from the defaults:
 
 ```bash
 mkdir -p ~/.config/ctrlr

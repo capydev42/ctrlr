@@ -2,13 +2,14 @@ pub mod collection;
 pub mod edit;
 pub mod help;
 pub mod import_export;
+pub mod keybind;
 pub mod mouse;
 pub mod normal;
 pub mod tag;
 
 use crate::app::{Action, ActivePane, AppState, InputMode};
 use crate::keymap::{KeyAction, KeyContext, Resolved};
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent};
 
 /// The pane a key would land in with no overlay open. Also what the help popup
 /// describes: while it is open `active_context` reports `Help`, but the user is
@@ -30,6 +31,11 @@ pub fn active_context(state: &AppState) -> KeyContext {
     // anything else.
     if state.integration_popup_open {
         return KeyContext::IntegrationPopup;
+    }
+    // Above help, because it is reachable from there and must take the keys
+    // back when it opens.
+    if state.keybind_popup_open {
+        return KeyContext::KeybindPopup;
     }
     // The right-click menu is modal too: it takes the keys before any pane.
     if state.context_menu_open {
@@ -56,6 +62,12 @@ pub fn active_context(state: &AppState) -> KeyContext {
 }
 
 pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
+    // Ahead of `active_context` and of any keymap lookup, and the only place
+    // allowed to skip resolution: recording a binding has to see the key the
+    // user actually pressed, not whatever it currently means.
+    if state.capturing.is_some() {
+        return capture(state, key);
+    }
     let context = active_context(state);
     state.check_key_buffer_timeout();
     let pending = state.key_buffer;
@@ -79,6 +91,24 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             Action::None
         }
     }
+}
+
+/// Takes one raw key press and binds it to the row the editor is on.
+///
+/// Esc cancels, which is why Esc itself cannot be bound from the UI — the
+/// popup says so, and `config.toml` can still do it. Any escape hatch built on
+/// another key would only move the same ambiguity somewhere less obvious.
+fn capture(state: &mut AppState, key: KeyEvent) -> Action {
+    if key.code == KeyCode::Esc {
+        state.cancel_capture();
+        return Action::None;
+    }
+    // A bare modifier is the first half of a chord, not a binding.
+    if matches!(key.code, KeyCode::Modifier(_) | KeyCode::Null) {
+        return Action::None;
+    }
+    state.apply_capture(crate::keymap::KeyChord::new(key.code, key.modifiers));
+    Action::None
 }
 
 /// Runs `action` as if it had been pressed in the pane behind any overlay.
@@ -109,6 +139,7 @@ pub fn dispatch(state: &mut AppState, context: KeyContext, action: KeyAction) ->
         KeyContext::TagInput => tag::dispatch(state, action),
         KeyContext::CollectionInput => collection::dispatch(state, action),
         KeyContext::EditCommand => edit::dispatch(state, action),
+        KeyContext::KeybindPopup => keybind::dispatch(state, action),
         KeyContext::Global
         | KeyContext::Search
         | KeyContext::History
@@ -125,6 +156,7 @@ fn insert_char(state: &mut AppState, context: KeyContext, c: char) {
         KeyContext::CollectionInput => collection::insert_char(state, c),
         KeyContext::ImportExport => import_export::insert_char(state, c),
         KeyContext::EditCommand => edit::insert_char(state, c),
+        KeyContext::KeybindPopup => keybind::insert_char(state, c),
         _ => {}
     }
 }

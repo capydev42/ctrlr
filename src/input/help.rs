@@ -45,6 +45,7 @@ const META: &[(A, &str, &str, &str)] = &[
     (A::FocusSearch, "Focus Search", "Move cursor to search field", "Actions"),
     (A::ClearSearch, "Clear Search", "Clear the search query", "Actions"),
     (A::ShowHelp, "Show Help", "Open this help popup", "Actions"),
+    (A::EditKeybindings, "Edit Keybindings", "Rebind any key and save it to config.toml", "Actions"),
     (A::SwitchPane, "Switch Pane", "Cycle through panes", "Panels"),
     (A::PaneDown, "Pane Down", "Focus pane below", "Panels"),
     (A::PaneUp, "Pane Up", "Focus pane above", "Panels"),
