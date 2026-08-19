@@ -1,9 +1,10 @@
 use std::time::{Duration, Instant};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 
 use crate::app::{Action, ActivePane, AppState, ContextMenuItem, Divider, InputMode, ViewMode};
 use crate::input::normal;
+use crate::keymap::KeyAction;
 use crate::ui::layout::{hits, row_index};
 
 /// How long after a click a second click on the same row counts as a
@@ -80,20 +81,23 @@ fn popup_open(state: &AppState) -> bool {
         || state.input_mode == InputMode::CollectionInput
 }
 
-fn key(code: KeyCode) -> KeyEvent {
-    KeyEvent::new(code, KeyModifiers::NONE)
-}
-
-/// Modal popups are driven through their own key handlers rather than by
-/// poking at their state: the wheel is Up/Down and a click outside is Esc.
-/// Rows inside them stay keyboard-driven — the help and tag lists interleave
+/// Modal popups are driven through the same dispatcher their keys use, rather
+/// than by poking at popup state — so the two routes cannot drift.
+///
+/// This names *actions*, not keys. It used to synthesize `KeyCode::Down` and
+/// `KeyCode::Esc` and feed them back through the key handler, which stops being
+/// correct the moment those keys are rebindable: the wheel would follow the
+/// user's `navigate_down` binding around, or stop working when they moved it.
+///
+/// Rows inside popups stay keyboard-driven — the help and tag lists interleave
 /// headers and a "create" entry, so a rendered row is not a selection index.
 fn handle_popup(state: &mut AppState, ev: MouseEvent, x: u16, y: u16) -> Action {
+    let context = super::active_context(state);
     match ev.kind {
-        MouseEventKind::ScrollDown => super::handle(state, key(KeyCode::Down)),
-        MouseEventKind::ScrollUp => super::handle(state, key(KeyCode::Up)),
+        MouseEventKind::ScrollDown => super::dispatch(state, context, KeyAction::NavigateDown),
+        MouseEventKind::ScrollUp => super::dispatch(state, context, KeyAction::NavigateUp),
         MouseEventKind::Down(MouseButton::Left) if !hits(state.hit.popup, x, y) => {
-            super::handle(state, key(KeyCode::Esc))
+            super::dispatch(state, context, KeyAction::Cancel)
         }
         _ => Action::None,
     }
@@ -350,6 +354,7 @@ fn double_click(state: &mut AppState, x: u16, y: u16) -> bool {
 mod tests {
     use super::*;
     use crate::app::Command;
+    use crossterm::event::KeyModifiers;
     use ratatui::layout::Rect;
 
     fn command(text: &str) -> Command {

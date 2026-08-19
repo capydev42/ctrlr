@@ -633,13 +633,13 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
             let keys_str: String = sc
                 .keys
                 .iter()
-                .map(|&k| match k {
+                .map(|k| match k.as_str() {
                     "PageDown" => "[PgDn]".to_owned(),
                     "PageUp" => "[PgUp]".to_owned(),
                     "Backspace" => "[BkSp]".to_owned(),
                     "Delete" => "[Del]".to_owned(),
-                    "Escape" => "[Esc]".to_owned(),
-                    "Return" => "[Ent]".to_owned(),
+                    "Esc" => "[Esc]".to_owned(),
+                    "Enter" => "[Ent]".to_owned(),
                     _ => format!("[{}]", k),
                 })
                 .collect::<Vec<_>>()
@@ -657,7 +657,7 @@ pub fn render_help_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(" "),
-                Span::styled(sc.description, Style::new().fg(theme.help_desc_fg)),
+                Span::styled(sc.description.clone(), Style::new().fg(theme.help_desc_fg)),
             ]);
             rendered_items.push(ListItem::new(line));
         }

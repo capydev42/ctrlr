@@ -1,340 +1,151 @@
 use crate::app::{Action, ActivePane, AppState, CollectionInputMode, InputMode, ViewMode};
-use crate::input::help;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crate::keymap::{KeyAction, KeyContext};
 use std::time::Instant;
 
 /// Columns `<` and `>` move a divider by. Wide enough to be worth a keypress,
 /// narrow enough to land where you meant.
 pub const RESIZE_STEP: i16 = 4;
 
-pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
-    match (key.code, key.modifiers) {
-        (KeyCode::Tab, _) => {
-            state.switch_pane();
-            return Action::None;
+pub fn insert_char(state: &mut AppState, c: char) {
+    state.add_to_search(c);
+}
+
+/// Keyed on the context as well as the action, because the panes genuinely
+/// disagree about what "navigate down" means: the collections list moves a
+/// different selection from the command list, and each pane keeps its own
+/// `ListState`. The `Global` arm is what `Up`/`Down` do from anywhere, which
+/// includes stealing focus away from the search bar.
+pub fn dispatch(state: &mut AppState, context: KeyContext, action: KeyAction) -> Action {
+    match (context, action) {
+        (_, KeyAction::Execute) => return activate_selected(state),
+
+        // Movement from anywhere.
+        (KeyContext::Global, KeyAction::NavigateUp) => handle_navigation_up(state),
+        (KeyContext::Global, KeyAction::NavigateDown) => handle_navigation_down(state),
+        (_, KeyAction::PageUp) => handle_page_up(state),
+        (_, KeyAction::PageDown) => handle_page_down(state),
+        (_, KeyAction::GoToTop) => handle_go_to_top(state),
+        (_, KeyAction::GoToBottom) => handle_go_to_bottom(state),
+
+        // Movement within a pane. Deliberately not routed through the two
+        // helpers above: `j` in the collection items pane has always driven
+        // `collection_items_list_state` while `Down` drives `list_state`.
+        (KeyContext::History, KeyAction::NavigateDown) => {
+            state.navigate_down();
+            state.list_state.select(Some(state.selected_index));
         }
-        // Plain digits switch views only outside the search bar. When the search
-        // pane is focused these fall through to the Search block below, which types
-        // the character into the query. Alt+digit switches views from any pane.
-        (KeyCode::Char('1'), KeyModifiers::NONE) if state.active_pane != ActivePane::Search => {
-            switch_view_history(state);
-            return Action::None;
+        (KeyContext::History, KeyAction::NavigateUp) => {
+            state.navigate_up();
+            state.list_state.select(Some(state.selected_index));
         }
-        (KeyCode::Char('2'), KeyModifiers::NONE) if state.active_pane != ActivePane::Search => {
-            switch_view_favorites(state);
-            return Action::None;
+        (KeyContext::CollectionsList, KeyAction::NavigateDown) => {
+            state.navigate_collection_down();
+            state
+                .collection_list_state
+                .select(Some(state.selected_collection_index));
         }
-        (KeyCode::Char('3'), KeyModifiers::NONE) if state.active_pane != ActivePane::Search => {
-            switch_view_collections(state);
-            return Action::None;
+        (KeyContext::CollectionsList, KeyAction::NavigateUp) => {
+            state.navigate_collection_up();
+            state
+                .collection_list_state
+                .select(Some(state.selected_collection_index));
         }
-        (KeyCode::Char('1'), KeyModifiers::ALT) => {
-            switch_view_history(state);
-            return Action::None;
+        (KeyContext::CollectionItems, KeyAction::NavigateDown) => {
+            state.navigate_down();
+            state
+                .collection_items_list_state
+                .select(Some(state.selected_index));
         }
-        (KeyCode::Char('2'), KeyModifiers::ALT) => {
-            switch_view_favorites(state);
-            return Action::None;
+        (KeyContext::CollectionItems, KeyAction::NavigateUp) => {
+            state.navigate_up();
+            state
+                .collection_items_list_state
+                .select(Some(state.selected_index));
         }
-        (KeyCode::Char('3'), KeyModifiers::ALT) => {
-            switch_view_collections(state);
-            return Action::None;
+
+        // Panes and views.
+        (_, KeyAction::SwitchPane) => state.switch_pane(),
+        (_, KeyAction::PaneDown) => state.pane_down(),
+        (_, KeyAction::PaneUp) => state.pane_up(),
+        (_, KeyAction::PaneLeft) => state.pane_left(),
+        (_, KeyAction::PaneRight) => state.pane_right(),
+        (_, KeyAction::ShrinkPane) => state.nudge_divider(-RESIZE_STEP),
+        (_, KeyAction::GrowPane) => state.nudge_divider(RESIZE_STEP),
+        (_, KeyAction::ViewHistory) => switch_view_history(state),
+        (_, KeyAction::ViewFavorites) => switch_view_favorites(state),
+        (_, KeyAction::ViewCollections) => switch_view_collections(state),
+        (_, KeyAction::ScopeCwd) => toggle_cwd_scope(state),
+
+        // Search.
+        (_, KeyAction::FocusSearch) => state.active_pane = ActivePane::Search,
+        (_, KeyAction::ClearSearch) => state.clear_search(),
+        (KeyContext::Search, KeyAction::DeleteCharBackward) => state.remove_from_search(),
+        // Backspace in a list pane both focuses the search bar and eats a
+        // character, so holding it walks back out of a query.
+        (_, KeyAction::DeleteCharBackward) => {
+            state.active_pane = ActivePane::Search;
+            state.remove_from_search();
         }
-        // Same split as the digits: `.` types into a focused search bar, and
-        // Alt+. reaches the toggle from anywhere.
-        (KeyCode::Char('.'), KeyModifiers::NONE) if state.active_pane != ActivePane::Search => {
-            toggle_cwd_scope(state);
-            return Action::None;
+
+        // The selection.
+        (_, KeyAction::ToggleFavorite) => state.toggle_favorite(),
+        (_, KeyAction::ToggleDetails) => state.show_details = !state.show_details,
+        (_, KeyAction::CopyToClipboard) => copy_selection(state),
+        (_, KeyAction::EditTags) => {
+            state.input_mode = InputMode::TagInput;
+            state.tag_input = String::new();
+            state.tag_selected_index = 0;
+            state.tag_cursor_index = None;
         }
-        (KeyCode::Char('.'), KeyModifiers::ALT) => {
-            toggle_cwd_scope(state);
-            return Action::None;
+        (_, KeyAction::AddToCollection) if !state.filtered.is_empty() => {
+            state.collection_input_mode = CollectionInputMode::AddToCollection;
+            state.collection_input_text.clear();
+            state.collection_popup_index = 0;
+            state.input_mode = InputMode::CollectionInput;
         }
-        // Same split again: outside the search bar these resize the focused
-        // divider, inside it they are ordinary characters — `<` and `>` are
-        // common enough in a command that the search bar has to keep them.
-        // Alt reaches the resize from anywhere, as with `.` and Help.
-        (KeyCode::Char('<'), KeyModifiers::NONE | KeyModifiers::SHIFT)
-            if state.active_pane != ActivePane::Search =>
-        {
-            state.nudge_divider(-RESIZE_STEP);
-            return Action::None;
+
+        // Collections.
+        (_, KeyAction::NewCollection) => state.begin_new_collection(),
+        (_, KeyAction::EditCollection) => state.begin_rename_collection(),
+        (_, KeyAction::DeleteCollection) => state.delete_collection(),
+        (_, KeyAction::SearchCollection) => {
+            state.collection_input_mode = CollectionInputMode::AddToCollectionSearch;
+            state.collection_input_text.clear();
+            state.input_mode = InputMode::CollectionInput;
+            state.add_command_search_index = 0;
         }
-        (KeyCode::Char('>'), KeyModifiers::NONE | KeyModifiers::SHIFT)
-            if state.active_pane != ActivePane::Search =>
-        {
-            state.nudge_divider(RESIZE_STEP);
-            return Action::None;
-        }
-        (KeyCode::Char('<'), m) if m.contains(KeyModifiers::ALT) => {
-            state.nudge_divider(-RESIZE_STEP);
-            return Action::None;
-        }
-        (KeyCode::Char('>'), m) if m.contains(KeyModifiers::ALT) => {
-            state.nudge_divider(RESIZE_STEP);
-            return Action::None;
-        }
-        (KeyCode::Char('j'), KeyModifiers::CONTROL) => {
-            state.pane_down();
-            return Action::None;
-        }
-        (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
-            state.pane_up();
-            return Action::None;
-        }
-        (KeyCode::Char('h'), KeyModifiers::CONTROL) => {
-            state.pane_left();
-            return Action::None;
-        }
-        (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
-            state.pane_right();
-            return Action::None;
-        }
-        // `?` opens Help only outside the search bar; inside it types into the query.
-        // F1 opens Help from any pane.
-        (KeyCode::Char('?'), KeyModifiers::NONE) if state.active_pane != ActivePane::Search => {
-            open_help(state);
-            return Action::None;
-        }
-        (KeyCode::F(1), _) => {
-            open_help(state);
-            return Action::None;
-        }
-        (KeyCode::Char('t'), KeyModifiers::CONTROL) => {
-            state.open_theme_popup();
-            return Action::None;
-        }
-        (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
-            state.open_export_popup();
-            return Action::None;
-        }
-        (KeyCode::Char('o'), KeyModifiers::CONTROL) => {
-            state.open_import_popup();
-            return Action::None;
-        }
-        // Guarded so that outside the search bar this falls through to the
-        // page-up arm below, which Ctrl+u shares with PageUp.
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) if state.active_pane == ActivePane::Search => {
-            state.clear_key_buffer();
-            state.clear_search();
-            return Action::None;
-        }
-        (KeyCode::Char('c'), KeyModifiers::NONE) => {
-            if state.active_pane == ActivePane::Search {
-                state.add_to_search('c');
-            } else {
-                let has_selection = match state.view_mode {
-                    ViewMode::Collections => {
-                        matches!(state.active_pane, ActivePane::CollectionItems)
-                            && !state.collection_commands.is_empty()
-                    }
-                    _ => !state.filtered.is_empty(),
-                };
-                if has_selection {
-                    state.collection_input_mode = CollectionInputMode::AddToCollection;
-                    state.input_mode = InputMode::CollectionInput;
-                }
+        (_, KeyAction::RemoveFromCollection) => {
+            if let Some(cmd) = state.filtered.get(state.selected_index) {
+                let text = cmd.text.clone();
+                state.remove_command_from_collection(&text);
             }
-            return Action::None;
         }
-        (KeyCode::Enter, _) => return activate_selected(state),
+
+        // Overlays.
+        (_, KeyAction::ShowHelp) => open_help(state),
+        (_, KeyAction::ChangeTheme) => state.open_theme_popup(),
+        (_, KeyAction::ExportData) => state.open_export_popup(),
+        (_, KeyAction::ImportData) => state.open_import_popup(),
+
         _ => {}
     }
-
-    match (key.code, key.modifiers) {
-        (KeyCode::Up, _) => {
-            state.clear_key_buffer();
-            handle_navigation_up(state);
-        }
-        (KeyCode::Down, _) => {
-            state.clear_key_buffer();
-            handle_navigation_down(state);
-        }
-        (KeyCode::PageDown, _) | (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
-            state.clear_key_buffer();
-            handle_page_down(state);
-        }
-        (KeyCode::PageUp, _) | (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
-            state.clear_key_buffer();
-            handle_page_up(state);
-        }
-        (KeyCode::Char('g'), KeyModifiers::NONE) | (KeyCode::Char('g'), KeyModifiers::SHIFT) => {
-            if !matches!(
-                state.active_pane,
-                ActivePane::History | ActivePane::CollectionsList | ActivePane::CollectionItems
-            ) {
-                state.clear_key_buffer();
-            } else {
-                state.check_key_buffer_timeout();
-                if state.key_buffer == Some('g') {
-                    state.clear_key_buffer();
-                    handle_go_to_top(state);
-                } else {
-                    state.set_key_buffer('g');
-                }
-            }
-        }
-        (KeyCode::Char('G'), KeyModifiers::NONE) | (KeyCode::Char('G'), KeyModifiers::SHIFT) => {
-            if !matches!(
-                state.active_pane,
-                ActivePane::History | ActivePane::CollectionsList | ActivePane::CollectionItems
-            ) {
-                state.clear_key_buffer();
-            } else {
-                state.clear_key_buffer();
-                handle_go_to_bottom(state);
-            }
-        }
-        (KeyCode::Esc, _) => {
-            state.clear_key_buffer();
-            state.handle_esc();
-        }
-        _ => {
-            state.clear_key_buffer();
-        }
-    }
-
-    match state.active_pane {
-        ActivePane::Search => match (key.code, key.modifiers) {
-            (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
-                state.add_to_search(c);
-            }
-            (KeyCode::Backspace, _) => {
-                state.remove_from_search();
-            }
-            _ => {}
-        },
-        ActivePane::History => match (key.code, key.modifiers) {
-            (KeyCode::Backspace, _) => {
-                state.active_pane = ActivePane::Search;
-                state.remove_from_search();
-            }
-            (KeyCode::Char('/'), KeyModifiers::NONE) => {
-                state.active_pane = ActivePane::Search;
-            }
-            (KeyCode::Char('t'), KeyModifiers::NONE) => {
-                state.input_mode = InputMode::TagInput;
-                state.tag_input = String::new();
-                state.tag_selected_index = 0;
-                state.tag_cursor_index = None;
-            }
-            (KeyCode::Char('j'), KeyModifiers::NONE) => {
-                state.navigate_down();
-                state.list_state.select(Some(state.selected_index));
-            }
-            (KeyCode::Char('k'), KeyModifiers::NONE) => {
-                state.navigate_up();
-                state.list_state.select(Some(state.selected_index));
-            }
-            (KeyCode::Char('f'), KeyModifiers::NONE) => {
-                state.toggle_favorite();
-            }
-            (KeyCode::Char('y'), KeyModifiers::NONE) => {
-                let text = state
-                    .filtered
-                    .get(state.selected_index)
-                    .map(|c| c.text.clone());
-                if let Some(text) = text {
-                    let (success, msg) = crate::app::clipboard::copy_to_clipboard(&text);
-                    if success {
-                        state.status_message = Some("📋 Copied to clipboard".into());
-                    } else if let Some(msg) = msg {
-                        state.status_message = Some(msg);
-                    }
-                    state.status_timestamp = Some(Instant::now());
-                }
-            }
-            (KeyCode::Char('d'), KeyModifiers::NONE) => {
-                state.show_details = !state.show_details;
-            }
-            _ => {}
-        },
-        ActivePane::CollectionsList => match (key.code, key.modifiers) {
-            (KeyCode::Backspace, _) => {
-                state.active_pane = ActivePane::Search;
-                state.remove_from_search();
-            }
-            (KeyCode::Char('/'), KeyModifiers::NONE) => {
-                state.active_pane = ActivePane::Search;
-            }
-            (KeyCode::Char('n'), KeyModifiers::NONE) => {
-                state.begin_new_collection();
-            }
-            (KeyCode::Char('e'), KeyModifiers::NONE) => {
-                state.begin_rename_collection();
-            }
-            (KeyCode::Char('d'), KeyModifiers::NONE) => {
-                state.delete_collection();
-            }
-            (KeyCode::Char('j'), KeyModifiers::NONE) => {
-                state.navigate_collection_down();
-                state
-                    .collection_list_state
-                    .select(Some(state.selected_collection_index));
-            }
-            (KeyCode::Char('k'), KeyModifiers::NONE) => {
-                state.navigate_collection_up();
-                state
-                    .collection_list_state
-                    .select(Some(state.selected_collection_index));
-            }
-            _ => {}
-        },
-        ActivePane::CollectionItems => match (key.code, key.modifiers) {
-            (KeyCode::Backspace, _) => {
-                state.active_pane = ActivePane::Search;
-                state.remove_from_search();
-            }
-            (KeyCode::Char('/'), KeyModifiers::NONE) => {
-                state.active_pane = ActivePane::Search;
-            }
-            (KeyCode::Char('d'), KeyModifiers::NONE) => {
-                state.show_details = !state.show_details;
-            }
-            (KeyCode::Char('a'), KeyModifiers::NONE) => {
-                state.collection_input_mode = CollectionInputMode::AddToCollectionSearch;
-                state.collection_input_text.clear();
-                state.input_mode = InputMode::CollectionInput;
-                state.add_command_search_index = 0;
-            }
-            (KeyCode::Char('r'), KeyModifiers::NONE) => {
-                if let Some(cmd) = state.filtered.get(state.selected_index) {
-                    let text = cmd.text.clone();
-                    state.remove_command_from_collection(&text);
-                }
-            }
-            (KeyCode::Char('y'), KeyModifiers::NONE) => {
-                let text = state
-                    .filtered
-                    .get(state.selected_index)
-                    .map(|c| c.text.clone());
-                if let Some(text) = text {
-                    let (success, msg) = crate::app::clipboard::copy_to_clipboard(&text);
-                    if success {
-                        state.status_message = Some("📋 Copied to clipboard".into());
-                    } else if let Some(msg) = msg {
-                        state.status_message = Some(msg);
-                    }
-                    state.status_timestamp = Some(Instant::now());
-                }
-            }
-            (KeyCode::Char('j'), KeyModifiers::NONE) => {
-                state.navigate_down();
-                state
-                    .collection_items_list_state
-                    .select(Some(state.selected_index));
-            }
-            (KeyCode::Char('k'), KeyModifiers::NONE) => {
-                state.navigate_up();
-                state
-                    .collection_items_list_state
-                    .select(Some(state.selected_index));
-            }
-            _ => {}
-        },
-    }
-
     Action::None
+}
+
+fn copy_selection(state: &mut AppState) {
+    let text = state
+        .filtered
+        .get(state.selected_index)
+        .map(|c| c.text.clone());
+    if let Some(text) = text {
+        let (success, msg) = crate::app::clipboard::copy_to_clipboard(&text);
+        if success {
+            state.status_message = Some("📋 Copied to clipboard".into());
+        } else if let Some(msg) = msg {
+            state.status_message = Some(msg);
+        }
+        state.status_timestamp = Some(Instant::now());
+    }
 }
 
 /// What Enter does on the current selection: drill into a collection, or hand
@@ -392,7 +203,7 @@ fn toggle_cwd_scope(state: &mut AppState) {
 fn open_help(state: &mut AppState) {
     state.help_open = true;
     state.help_search_query.clear();
-    state.help_filtered_shortcuts = help::get_shortcuts_for_context(state);
+    state.help_filtered_shortcuts = super::help::get_shortcuts_for_context(state);
     state.help_selected_index = 0;
     state.help_list_state.select(Some(0));
 }
@@ -570,6 +381,8 @@ fn handle_go_to_bottom(state: &mut AppState) {
 mod tests {
     use super::*;
     use crate::app::Command;
+    use crate::input;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn cmd(text: &str) -> Command {
         Command {
@@ -610,7 +423,7 @@ mod tests {
     fn test_digit_types_into_search_when_focused() {
         let mut state = state_with_query(ActivePane::Search, "");
 
-        handle(&mut state, plain('1'));
+        input::handle(&mut state, plain('1'));
 
         assert_eq!(state.search_query, "1");
         assert_eq!(state.view_mode, ViewMode::History, "view must not change");
@@ -621,7 +434,7 @@ mod tests {
     fn test_question_mark_types_into_search() {
         let mut state = state_with_query(ActivePane::Search, "");
 
-        handle(&mut state, plain('?'));
+        input::handle(&mut state, plain('?'));
 
         assert_eq!(state.search_query, "?");
         assert!(!state.help_open, "help must not open from the search bar");
@@ -631,7 +444,7 @@ mod tests {
     fn test_digit_switches_view_in_list_pane() {
         let mut state = state_with_query(ActivePane::History, "command");
 
-        handle(&mut state, plain('2'));
+        input::handle(&mut state, plain('2'));
 
         assert_eq!(state.view_mode, ViewMode::Favorites);
         assert_eq!(state.search_query, "command", "typing must not occur here");
@@ -641,7 +454,7 @@ mod tests {
     fn test_alt_digit_switches_view_from_search() {
         let mut state = state_with_query(ActivePane::Search, "git");
 
-        handle(&mut state, alt('3'));
+        input::handle(&mut state, alt('3'));
 
         assert_eq!(state.view_mode, ViewMode::Collections);
         assert_eq!(state.search_query, "git", "query must be untouched");
@@ -651,7 +464,7 @@ mod tests {
     fn test_f1_opens_help_from_search() {
         let mut state = state_with_query(ActivePane::Search, "");
 
-        handle(&mut state, KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE));
+        input::handle(&mut state, KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE));
 
         assert!(state.help_open);
     }
@@ -660,7 +473,7 @@ mod tests {
     fn test_ctrl_u_clears_search_and_keeps_focus() {
         let mut state = state_with_query(ActivePane::Search, "command 1");
 
-        handle(&mut state, ctrl('u'));
+        input::handle(&mut state, ctrl('u'));
 
         assert!(state.search_query.is_empty());
         // Must not fall through to page-up, which steals focus to History.
@@ -673,7 +486,7 @@ mod tests {
         let mut state = state_with_query(ActivePane::History, "command");
         state.selected_index = 30;
 
-        handle(&mut state, ctrl('u'));
+        input::handle(&mut state, ctrl('u'));
 
         assert_eq!(state.search_query, "command", "query must be untouched");
         assert!(state.selected_index < 30, "should have paged up");
@@ -684,7 +497,7 @@ mod tests {
         let mut state = state_with_query(ActivePane::Search, "command");
         state.selected_index = 30;
 
-        handle(
+        input::handle(
             &mut state,
             KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
         );
@@ -698,7 +511,7 @@ mod tests {
     fn test_ctrl_u_on_empty_search_does_not_quit() {
         let mut state = state_with_query(ActivePane::Search, "");
 
-        let action = handle(&mut state, ctrl('u'));
+        let action = input::handle(&mut state, ctrl('u'));
 
         assert!(matches!(action, Action::None), "must never signal exit");
         assert_eq!(state.active_pane, ActivePane::Search);

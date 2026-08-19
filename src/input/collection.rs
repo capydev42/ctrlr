@@ -1,22 +1,18 @@
 use crate::app::{Action, AppState, CollectionInputMode, InputMode};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crate::keymap::KeyAction;
 
-pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
-    match (key.code, key.modifiers) {
-        (KeyCode::Char(c), KeyModifiers::NONE) => match state.collection_input_mode {
-            CollectionInputMode::AddToCollection => {
-                state.collection_input_text.push(c);
-                state.collection_popup_index = 0;
-            }
-            CollectionInputMode::AddToCollectionSearch => {
-                state.collection_input_text.push(c);
-                state.add_command_search_index = 0;
-            }
-            _ => {
-                state.collection_input_text.push(c);
-            }
-        },
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+pub fn insert_char(state: &mut AppState, c: char) {
+    state.collection_input_text.push(c);
+    match state.collection_input_mode {
+        CollectionInputMode::AddToCollection => state.collection_popup_index = 0,
+        CollectionInputMode::AddToCollectionSearch => state.add_command_search_index = 0,
+        _ => {}
+    }
+}
+
+pub fn dispatch(state: &mut AppState, action: KeyAction) -> Action {
+    match action {
+        KeyAction::KillLine => {
             state.collection_input_text.clear();
             match state.collection_input_mode {
                 CollectionInputMode::AddToCollection => state.collection_popup_index = 0,
@@ -24,7 +20,7 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 _ => {}
             }
         }
-        (KeyCode::Backspace, _) => match state.collection_input_mode {
+        KeyAction::DeleteCharBackward => match state.collection_input_mode {
             CollectionInputMode::AddToCollection => {
                 if !state.collection_input_text.is_empty() {
                     state.collection_input_text.pop();
@@ -41,9 +37,7 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.collection_input_text.pop();
             }
         },
-        (KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => match state
-            .collection_input_mode
-        {
+        KeyAction::NavigateUp => match state.collection_input_mode {
             CollectionInputMode::AddToCollection => {
                 state.collection_popup_index = state.collection_popup_index.saturating_sub(1);
             }
@@ -52,9 +46,7 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             }
             _ => {}
         },
-        (KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => match state
-            .collection_input_mode
-        {
+        KeyAction::NavigateDown => match state.collection_input_mode {
             CollectionInputMode::AddToCollection => {
                 let search_text = &state.collection_input_text;
                 let show_create = !search_text.is_empty()
@@ -91,7 +83,7 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             }
             _ => {}
         },
-        (KeyCode::Enter, _) => {
+        KeyAction::Confirm => {
             match state.collection_input_mode {
                 CollectionInputMode::NewCollection => {
                     if !state.collection_input_text.is_empty() {
@@ -156,13 +148,6 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 }
                 CollectionInputMode::None => {}
             }
-            state.input_mode = InputMode::Normal;
-            state.collection_input_mode = CollectionInputMode::None;
-            state.collection_input_text.clear();
-            state.editing_collection_id = None;
-            state.add_command_search_index = 0;
-        }
-        (KeyCode::Esc, _) => {
             state.input_mode = InputMode::Normal;
             state.collection_input_mode = CollectionInputMode::None;
             state.collection_input_text.clear();

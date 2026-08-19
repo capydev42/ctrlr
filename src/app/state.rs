@@ -6,6 +6,7 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::widgets::ListState;
 
 use crate::input::help::GroupedShortcut;
+use crate::keymap::Keymap;
 use crate::storage::collections::Collection;
 use crate::storage::import_export::{ImportMode, ImportPreview};
 use crate::ui::layout::Hitboxes;
@@ -125,6 +126,12 @@ pub struct AppState {
     pub active_pane: ActivePane,
     pub view_mode: ViewMode,
     pub show_details: bool,
+    /// Which key does what. Built from the defaults, then overlaid with
+    /// `config.toml`.
+    pub keymap: Keymap,
+    /// Entries of `config.toml` that could not be applied. Each kept its
+    /// default; the help popup lists them.
+    pub config_problems: Vec<crate::config::ConfigProblem>,
     pub input_mode: InputMode,
     pub tag_input: String,
     pub tag_selected_index: usize,
@@ -146,7 +153,8 @@ pub struct AppState {
     pub add_command_search_index: usize,
     pub delete_confirm_text: String,
     pub terminal_height: u16,
-    pub key_buffer: Option<char>,
+    /// First half of a pending chord, e.g. the first `g` of `gg`.
+    pub key_buffer: Option<crate::keymap::KeyChord>,
     pub key_buffer_timestamp: Option<Instant>,
     pub help_open: bool,
     pub help_search_query: String,
@@ -304,11 +312,33 @@ impl AppState {
 
         let mut state = AppState::new(commands, db);
         state.cwd = cwd;
+        state.load_config();
         state.load_theme_from_db();
         state.load_pane_widths();
         state.load_collections();
         state.check_integration();
         state
+    }
+
+    /// Reads `~/.config/ctrlr/config.toml`. Only `bootstrap` calls this —
+    /// `AppState::new` must stay filesystem-free or every test would depend on
+    /// the developer's own config.
+    ///
+    /// A problem is surfaced with `status_timestamp: None`, which makes the
+    /// message stick: the expiry in the event loop is `if let Some(ts)`, and a
+    /// config error the user never sees is worse than a footer that stays busy
+    /// until the next keypress. The full list lives in the help popup.
+    fn load_config(&mut self) {
+        let (keymap, problems) = crate::config::load();
+        self.keymap = keymap;
+        if let Some(first) = problems.first() {
+            self.status_message = Some(match problems.len() {
+                1 => format!("⚠ config.toml — {}", first),
+                n => format!("⚠ config.toml — {} (and {} more; see help)", first, n - 1),
+            });
+            self.status_timestamp = None;
+        }
+        self.config_problems = problems;
     }
 
     /// Key under which a dismissed offer is remembered.
@@ -465,6 +495,8 @@ impl AppState {
             active_pane: ActivePane::Search,
             view_mode: ViewMode::History,
             show_details: true,
+            keymap: crate::keymap::defaults::keymap(),
+            config_problems: Vec::new(),
             input_mode: InputMode::Normal,
             tag_input: String::new(),
             tag_selected_index: 0,
@@ -665,7 +697,7 @@ impl AppState {
         }
     }
 
-    pub fn set_key_buffer(&mut self, key: char) {
+    pub fn set_key_buffer(&mut self, key: crate::keymap::KeyChord) {
         self.key_buffer = Some(key);
         self.key_buffer_timestamp = Some(Instant::now());
     }
@@ -1194,6 +1226,55 @@ impl AppState {
         if !self.search_query.is_empty() {
             self.selected_index = 0;
         }
+    }
+
+    /// Staged cancel, shared by Esc and Ctrl+C. Walks the same priority order
+    /// as `input::handle`'s overlay guards: closes the topmost overlay, then
+    /// leaves a text-input mode, then clears the search. Returns true only when
+    /// there was nothing left to close and the query was already empty.
+    ///
+    /// Living here rather than in the event loop is what keeps the two quit
+    /// keys from drifting, and means a new `InputMode` cannot be forgotten in a
+    /// hand-maintained list.
+    pub fn cancel_or_quit(&mut self) -> bool {
+        if self.integration_popup_open {
+            self.dismiss_integration_popup();
+            return false;
+        }
+        if self.context_menu_open {
+            self.close_context_menu();
+            return false;
+        }
+        if self.theme_popup_open {
+            self.close_theme_popup();
+            return false;
+        }
+        if self.help_open {
+            self.help_open = false;
+            self.help_search_query.clear();
+            return false;
+        }
+        if self.export_popup_open || self.import_popup_open {
+            self.close_import_export_popup();
+            return false;
+        }
+        if self.input_mode != InputMode::Normal {
+            self.cancel_input_mode();
+            return false;
+        }
+        self.handle_esc()
+    }
+
+    /// Drops whatever a text-input mode was collecting and returns to Normal.
+    pub fn cancel_input_mode(&mut self) {
+        self.input_mode = InputMode::Normal;
+        self.tag_input.clear();
+        self.tag_selected_index = 0;
+        self.tag_cursor_index = None;
+        self.collection_input_mode = CollectionInputMode::None;
+        self.collection_input_text.clear();
+        self.editing_collection_id = None;
+        self.add_command_search_index = 0;
     }
 
     /// Returns true when the caller should quit — i.e. there was no query to clear.

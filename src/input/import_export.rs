@@ -1,15 +1,18 @@
 use crate::app::{Action, AppState, ImportExportMode};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crate::keymap::KeyAction;
 
-pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
-    match (key.code, key.modifiers) {
-        (KeyCode::Char(c), KeyModifiers::NONE) => {
-            state.import_export_file_path.push(c);
-        }
-        (KeyCode::Backspace, _) => {
+pub fn dispatch(state: &mut AppState, action: KeyAction) -> Action {
+    // Only the import side has a mode to move between; on the export popup the
+    // arrows have nothing to select.
+    let importing = matches!(
+        state.import_export_mode,
+        ImportExportMode::Import | ImportExportMode::ImportPreview
+    );
+    match action {
+        KeyAction::DeleteCharBackward => {
             state.import_export_file_path.pop();
         }
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+        KeyAction::KillLine => {
             state.import_export_file_path.clear();
             // The preview describes the path that was just cleared, so it has
             // to go with it.
@@ -18,21 +21,15 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.import_export_mode = ImportExportMode::Import;
             }
         }
-        (KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL)
-            if state.import_export_mode == ImportExportMode::Import
-                || state.import_export_mode == ImportExportMode::ImportPreview =>
-        {
+        KeyAction::NavigateUp if importing => {
             state.import_mode_index = 0;
             state.import_preview = None;
             state.import_export_mode = ImportExportMode::Import;
         }
-        (KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL)
-            if state.import_export_mode == ImportExportMode::Import
-                || state.import_export_mode == ImportExportMode::ImportPreview =>
-        {
+        KeyAction::NavigateDown if importing => {
             state.import_mode_index = 1;
         }
-        (KeyCode::Enter, _) => match state.import_export_mode {
+        KeyAction::Confirm => match state.import_export_mode {
             ImportExportMode::Export => {
                 state.execute_export();
             }
@@ -43,10 +40,11 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.execute_import();
             }
         },
-        (KeyCode::Esc, _) => {
-            state.close_import_export_popup();
-        }
         _ => {}
     }
     Action::None
+}
+
+pub fn insert_char(state: &mut AppState, c: char) {
+    state.import_export_file_path.push(c);
 }

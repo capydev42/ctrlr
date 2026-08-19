@@ -4,14 +4,15 @@ use ratatui::DefaultTerminal;
 
 mod app;
 mod cli;
+mod config;
 mod hash;
 mod history;
 mod input;
+mod keymap;
 mod storage;
 mod ui;
 
-use app::{Action, AppState, InputMode};
-use input::help;
+use app::{Action, AppState};
 use std::io;
 use std::time::Duration;
 
@@ -108,22 +109,10 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
 
         terminal.draw(|f| ui::render(f, &mut state))?;
         let action = match crossterm::event::read()? {
-            Event::Key(key) => {
-                if key.code == crossterm::event::KeyCode::Esc
-                    && !state.integration_popup_open
-                    && !state.context_menu_open
-                    && !state.help_open
-                    && !state.theme_popup_open
-                    && !state.export_popup_open
-                    && !state.import_popup_open
-                    && state.input_mode != InputMode::TagInput
-                    && state.input_mode != InputMode::CollectionInput
-                    && state.handle_esc()
-                {
-                    break;
-                }
-                input::handle(&mut state, key)
-            }
+            // Esc and Ctrl+C are not special-cased here any more: they resolve
+            // through `AppState::cancel_or_quit`, which owns the staging order,
+            // and reach this loop as `Action::Exit`.
+            Event::Key(key) => input::handle(&mut state, key),
             // Hit-tested against the rects the draw above just recorded.
             Event::Mouse(mouse) => input::mouse::handle(&mut state, mouse),
             _ => Action::None,
@@ -136,22 +125,6 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
             }
             Action::Exit => {
                 break;
-            }
-            Action::CloseHelp => {
-                state.help_open = false;
-                state.help_search_query.clear();
-            }
-            Action::ExecuteHelpShortcut(action_id) => {
-                match help::execute_help_action(&mut state, &action_id) {
-                    Action::Execute(cmd) => {
-                        result = Ok(Some(cmd));
-                        break;
-                    }
-                    Action::Exit => {
-                        break;
-                    }
-                    _ => {}
-                }
             }
             Action::None => {}
         }

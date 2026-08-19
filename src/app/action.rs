@@ -2,9 +2,6 @@
 pub enum Action {
     #[default]
     None,
-    #[allow(dead_code)]
     Exit,
     Execute(String),
-    CloseHelp,
-    ExecuteHelpShortcut(String),
 }

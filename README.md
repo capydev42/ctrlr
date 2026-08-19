@@ -172,7 +172,45 @@ Press `?` (or `F1`) inside ctrlr for a searchable version of this table.
 | `Ctrl+e`  | Export popup                                 |
 | `Ctrl+o`  | Import popup                                 |
 | `?` / `F1`| Help                                         |
-| `Esc`     | Clear / close / exit                         |
+| `Esc` / `Ctrl+C` | Clear / close / exit                  |
+
+### Rebinding
+
+Every key above can be changed. Start from the defaults:
+
+```bash
+mkdir -p ~/.config/ctrlr
+ctrlr config --print > ~/.config/ctrlr/config.toml
+```
+
+```toml
+[keys.history]
+toggle_favorite = "v"
+
+[keys.global]
+go_to_top = "g g"      # a space makes a two-key sequence
+```
+
+Listing an action **replaces** its default keys, so you can drop one you dislike.
+Anything you leave out keeps its default. Contexts are `global`, `search`,
+`history`, `collections_list`, `collection_items`, `help`, `tag_input`,
+`collection_input`, `import_export`, `theme_popup`, `context_menu` and
+`integration_popup`; `ctrlr config --print` lists them all with every action
+name.
+
+Modifiers are `ctrl`, `alt` and `shift`. Named keys are `enter`, `esc`, `tab`,
+`space`, `backspace`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`,
+`up`, `down`, `left`, `right` and `f1`–`f12`. Anything else one character long
+is that character, and case matters — `g` and `G` are different keys.
+
+One thing to know: **a plain character always types when the search bar has
+focus.** That is why `d` and `?` do nothing special there, and why a letter you
+bind only fires from the other panes. Use a modifier if you want it everywhere.
+
+A key that another action already owns in the same context is taken from it. A
+line ctrlr cannot read — a bad key name, an action that does not exist, broken
+TOML — keeps its default and is listed under **Config** at the top of the help
+popup. ctrlr always starts.
 
 ### Views
 

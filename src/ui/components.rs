@@ -8,6 +8,7 @@ use ratatui::{
 };
 
 use crate::app::{ActivePane, ViewMode};
+use crate::keymap::{KeyAction, KeyContext};
 use crate::ui::theme::Theme;
 
 const MAX_VISIBLE_TAGS: usize = 3;
@@ -235,38 +236,107 @@ pub fn render_footer(
     let footer_text = if let Some(msg) = &state.status_message {
         format!("{}{}", scope, msg)
     } else {
-        match state.view_mode {
-            ViewMode::History | ViewMode::Favorites => {
-                match state.active_pane {
-                    ActivePane::Search => {
-                        format!("{}F1 Help | Ctrl+T: Theme ({}) | Alt+.: Here | /: Search | ↑/↓: Navigate | Enter: Select ", scope, state.current_theme.name())
-                    }
-                    ActivePane::History => {
-                        format!("{}? Help | Ctrl+T: Theme ({}) | c: Add to Collection | .: Here | d: Details | t: Tag | j/k or ↑/↓: Navigate | f: Favorite | Enter: Select | Esc: Exit ", scope, state.current_theme.name())
-                    }
-                    _ => "".into(),
+        let context = crate::input::pane_context(state);
+        // Which actions each pane advertises stays an editorial choice — the
+        // footer is one line and the help popup lists everything. The *keys*
+        // are looked up, so a rebind shows here without anyone remembering.
+        let items: &[(KeyAction, &str)] = match (&state.view_mode, &state.active_pane) {
+            (ViewMode::Collections, ActivePane::CollectionsList) => &[
+                (KeyAction::ShowHelp, "Help"),
+                (KeyAction::NavigateDown, "Navigate"),
+                (KeyAction::Execute, "Show commands"),
+                (KeyAction::NewCollection, "New"),
+                (KeyAction::EditCollection, "Rename"),
+                (KeyAction::DeleteCollection, "Delete"),
+                (KeyAction::SwitchPane, "Switch pane"),
+            ],
+            (ViewMode::Collections, ActivePane::CollectionItems) => &[
+                (KeyAction::ShowHelp, "Help"),
+                (KeyAction::NavigateDown, "Navigate"),
+                (KeyAction::Execute, "Select"),
+                (KeyAction::AddToCollection, "Add"),
+                (KeyAction::ToggleDetails, "Details"),
+                (KeyAction::RemoveFromCollection, "Remove"),
+                (KeyAction::SwitchPane, "Switch pane"),
+            ],
+            (ViewMode::Collections, _) => &[
+                (KeyAction::ShowHelp, "Help"),
+                (KeyAction::NavigateDown, "Navigate"),
+                (KeyAction::Execute, "Select"),
+            ],
+            (_, ActivePane::Search) => &[
+                (KeyAction::ShowHelp, "Help"),
+                (KeyAction::ChangeTheme, "Theme"),
+                (KeyAction::ScopeCwd, "Here"),
+                (KeyAction::FocusSearch, "Search"),
+                (KeyAction::NavigateDown, "Navigate"),
+                (KeyAction::Execute, "Select"),
+            ],
+            _ => &[
+                (KeyAction::ShowHelp, "Help"),
+                (KeyAction::ChangeTheme, "Theme"),
+                (KeyAction::AddToCollection, "Add to Collection"),
+                (KeyAction::ScopeCwd, "Here"),
+                (KeyAction::ToggleDetails, "Details"),
+                (KeyAction::EditTags, "Tag"),
+                (KeyAction::NavigateDown, "Navigate"),
+                (KeyAction::ToggleFavorite, "Favorite"),
+                (KeyAction::Execute, "Select"),
+                (KeyAction::Cancel, "Exit"),
+            ],
+        };
+        // The active theme's name rides along on its own key hint.
+        let theme_label = format!("Theme ({})", state.current_theme.name());
+        let items: Vec<(KeyAction, &str)> = items
+            .iter()
+            .map(|(a, label)| {
+                if *a == KeyAction::ChangeTheme {
+                    (*a, theme_label.as_str())
+                } else {
+                    (*a, *label)
                 }
-            }
-            ViewMode::Collections => {
-                match state.active_pane {
-                    ActivePane::CollectionsList => {
-                        "? Help | j/k or ↑/↓: Navigate | Enter: Show commands | n: New | e: Edit | d: Delete | Tab: Switch pane ".into()
-                    }
-                    ActivePane::CollectionItems => {
-                        "? Help | j/k or ↑/↓: Navigate | Enter: Select | c: Add | d: Details | r: Remove | Tab: Switch pane ".into()
-                    }
-                    ActivePane::Search => {
-                        "F1 Help | j/k: Navigate | Backspace: Delete | Enter: Select ".into()
-                    }
-                    ActivePane::History => {
-                        "? Help | j/k: Navigate | Enter: Select ".into()
-                    }
-                }
-            }
-        }
+            })
+            .collect();
+        format!("{}{} ", scope, hint_line(state, context, &items))
     };
 
     frame.render_widget(Paragraph::new(footer_text), area);
+}
+
+/// `"? Help | Ctrl+T: Theme | ..."`, with the keys read out of the live keymap.
+///
+/// Only the first key for each action: the footer is one line, and the help
+/// popup is where the alternatives belong. An action with no key in this
+/// context is dropped rather than shown keyless.
+pub fn hint_line(
+    state: &crate::app::AppState,
+    context: KeyContext,
+    items: &[(KeyAction, &str)],
+) -> String {
+    items
+        .iter()
+        .filter_map(|(action, label)| {
+            let key = state
+                .keymap
+                .keys_for(context, *action)
+                .into_iter()
+                .next()
+                .or_else(|| {
+                    context
+                        .falls_through_to_global()
+                        .then(|| {
+                            state
+                                .keymap
+                                .keys_for(KeyContext::Global, *action)
+                                .into_iter()
+                                .next()
+                        })
+                        .flatten()
+                })?;
+            Some(format!("{}: {}", key, label))
+        })
+        .collect::<Vec<_>>()
+        .join(" | ")
 }
 
 #[cfg(test)]

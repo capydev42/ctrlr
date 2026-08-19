@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Keybindings are yours. `ctrlr config --print > ~/.config/ctrlr/config.toml` writes out every default, and editing it rebinds any key in any pane or popup. Listing an action replaces its defaults, so you can drop one you dislike; anything you leave out stays as it was
+- A line ctrlr cannot read keeps its default and is listed under **Config** at the top of the help popup, with what was wrong. A broken config never stops ctrlr from starting
+- `Ctrl+C` now cancels, alongside `Esc`. Both behave the same way and in stages: the first press closes whatever is on top — a popup, then a tag or collection prompt — then clears the search box, and only exits ctrlr once there is nothing left to close
+
+### Changed
+- The help popup and the footer now show the keys that are actually bound, instead of a hand-written list that had already drifted. Rebind a key and both follow
+- Esc no longer has its own special case in the event loop, and the individual key handlers no longer carry Esc arms. Both cancel keys resolve through one place, so they cannot drift apart
+- Enter on a help-popup entry now runs exactly the same code as its keybinding. A few entries had quietly grown their own slightly different behaviour
+
 ---
 
 ## [0.8.0] - 2026-08-15
