@@ -118,7 +118,15 @@ Works with **bash**, **zsh** and **fish**, on Linux and macOS.
 
 ctrlr never executes anything itself. It reads your shell's history file, shows
 you a picker, and hands the command you chose back to the shell, which puts it on
-your prompt line. Nothing runs until you press Enter yourself.
+your prompt line. Nothing runs until you press Enter yourself. That holds for
+edited commands too: `e` opens the selected command in an edit line, `Ctrl+x`
+from there hands it to `$VISUAL` / `$EDITOR`, and whatever you end up with still
+only lands on the prompt.
+
+An edited command is not written to ctrlr's database. The original keeps its
+favorites, tags and run count, because the original is not what ran. Your
+edited version shows up in the list on the next launch, the same way every
+other command does — once your shell has actually run it.
 
 Metadata — favorites, tags, collections, run counts — lives in a local SQLite
 database. Your history file stays the source of truth for the command text.
@@ -161,6 +169,8 @@ Press `?` (or `F1`) inside ctrlr for a searchable version of this table.
 | Key       | Action                                       |
 |-----------|----------------------------------------------|
 | `Enter`   | Put the selected command on the prompt line  |
+| `e`       | Edit the command before running it           |
+| `Ctrl+x`  | Same, from any pane — and again inside the edit line to open `$EDITOR` |
 | `f`       | Toggle favorite                              |
 | `y`       | Copy to clipboard                            |
 | `t`       | Edit tags                                    |
@@ -186,6 +196,7 @@ ctrlr config --print > ~/.config/ctrlr/config.toml
 ```toml
 [keys.history]
 toggle_favorite = "v"
+edit_command = ["e", "ctrl+x"]
 
 [keys.global]
 go_to_top = "g g"      # a space makes a two-key sequence
@@ -194,9 +205,9 @@ go_to_top = "g g"      # a space makes a two-key sequence
 Listing an action **replaces** its default keys, so you can drop one you dislike.
 Anything you leave out keeps its default. Contexts are `global`, `search`,
 `history`, `collections_list`, `collection_items`, `help`, `tag_input`,
-`collection_input`, `import_export`, `theme_popup`, `context_menu` and
-`integration_popup`; `ctrlr config --print` lists them all with every action
-name.
+`collection_input`, `import_export`, `theme_popup`, `context_menu`,
+`integration_popup` and `edit_command`; `ctrlr config --print` lists them all
+with every action name.
 
 Modifiers are `ctrl`, `alt` and `shift`. Named keys are `enter`, `esc`, `tab`,
 `space`, `backspace`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`,

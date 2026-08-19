@@ -37,6 +37,7 @@ const META: &[(A, &str, &str, &str)] = &[
     (A::EditTags, "Edit Tags", "Add/remove tags from command", "Actions"),
     (A::AddToCollection, "Add to Collection", "Add command to collection", "Actions"),
     (A::ToggleDetails, "Toggle Details", "Show/hide details panel", "Actions"),
+    (A::EditCommand, "Edit Command", "Edit the command before running it (Ctrl+x again for $EDITOR)", "Actions"),
     (A::ChangeTheme, "Change Theme", "Open theme selector popup", "Actions"),
     (A::ExportData, "Export Data", "Open export popup (type path, Enter to export)", "Actions"),
     (A::ImportData, "Import Data", "Open import popup (type path, Enter to preview)", "Actions"),

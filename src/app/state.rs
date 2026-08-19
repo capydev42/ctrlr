@@ -5,6 +5,7 @@ use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::widgets::ListState;
 
+use crate::app::TextInput;
 use crate::input::help::GroupedShortcut;
 use crate::keymap::Keymap;
 use crate::storage::collections::Collection;
@@ -33,6 +34,9 @@ pub enum InputMode {
     TagInput,
     CollectionInput,
     ImportExport,
+    /// Editing the selected command before it leaves the TUI. The buffer is
+    /// [`AppState::edit_input`]; nothing is written to the DB.
+    EditCommand,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -133,6 +137,11 @@ pub struct AppState {
     /// default; the help popup lists them.
     pub config_problems: Vec<crate::config::ConfigProblem>,
     pub input_mode: InputMode,
+    /// The line being edited in [`InputMode::EditCommand`].
+    pub edit_input: TextInput,
+    /// The text the edit started from, so committing an unchanged line can be
+    /// told apart from committing a rewrite.
+    pub edit_origin: Option<String>,
     pub tag_input: String,
     pub tag_selected_index: usize,
     pub tag_cursor_index: Option<usize>,
@@ -498,6 +507,8 @@ impl AppState {
             keymap: crate::keymap::defaults::keymap(),
             config_problems: Vec::new(),
             input_mode: InputMode::Normal,
+            edit_input: TextInput::default(),
+            edit_origin: None,
             tag_input: String::new(),
             tag_selected_index: 0,
             tag_cursor_index: None,
@@ -1265,9 +1276,53 @@ impl AppState {
         self.handle_esc()
     }
 
+    /// Loads the selected command into the edit line. No-op when nothing is
+    /// selected, so the mode is never entered with an empty buffer.
+    ///
+    /// Reads `filtered`, which is what `normal::activate_selected` runs on —
+    /// in the Collections view that holds the open collection's items, so
+    /// editing works there for free.
+    pub fn begin_edit_command(&mut self) {
+        let Some(text) = self
+            .filtered
+            .get(self.selected_index)
+            .map(|c| c.text.clone())
+        else {
+            return;
+        };
+        self.edit_input = TextInput::new(text.clone());
+        self.edit_origin = Some(text);
+        self.input_mode = InputMode::EditCommand;
+    }
+
+    /// Hands the edited line to the shell, or `None` when there is nothing to
+    /// run — in which case the caller stays in edit mode. An empty string must
+    /// never leave the TUI: `run_tui` writes an empty output file to mean
+    /// "cancelled", and all three shell widgets test for that with `-s`.
+    ///
+    /// **Nothing is written to the DB when the text changed.** The original is
+    /// not what runs, so its `use_count` must not move; the edited variant
+    /// gets its own row the same way every command does, when the shell runs
+    /// it and `runs.log` picks it up. An unchanged line is just Enter with
+    /// extra steps and is counted as such.
+    pub fn commit_edit(&mut self) -> Option<String> {
+        let text = self.edit_input.value().trim().to_string();
+        if text.is_empty() {
+            return None;
+        }
+        let unchanged = self.edit_origin.as_deref() == Some(self.edit_input.value());
+        if unchanged {
+            self.mark_executed();
+        }
+        self.cancel_input_mode();
+        Some(text)
+    }
+
     /// Drops whatever a text-input mode was collecting and returns to Normal.
     pub fn cancel_input_mode(&mut self) {
         self.input_mode = InputMode::Normal;
+        self.edit_input.clear();
+        self.edit_origin = None;
         self.tag_input.clear();
         self.tag_selected_index = 0;
         self.tag_cursor_index = None;

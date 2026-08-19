@@ -126,6 +126,20 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
             Action::Exit => {
                 break;
             }
+            // The editor owns the terminal while it runs, so this cannot live
+            // in the input layer. Returning here keeps the user in the edit
+            // line afterwards — readline does the same, and it means the text
+            // is confirmed once before it leaves ctrlr.
+            Action::OpenEditor(text) => {
+                let outcome = app::editor::edit_in_external_editor(terminal, &text);
+                if let Some(edited) = outcome.text {
+                    state.edit_input.set_value(edited);
+                }
+                if let Some(message) = outcome.message {
+                    state.status_message = Some(message);
+                    state.status_timestamp = Some(std::time::Instant::now());
+                }
+            }
             Action::None => {}
         }
     }

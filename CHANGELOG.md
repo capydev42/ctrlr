@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Keybindings are yours. `ctrlr config --print > ~/.config/ctrlr/config.toml` writes out every default, and editing it rebinds any key in any pane or popup. Listing an action replaces its defaults, so you can drop one you dislike; anything you leave out stays as it was
 - A line ctrlr cannot read keeps its default and is listed under **Config** at the top of the help popup, with what was wrong. A broken config never stops ctrlr from starting
+- Commands can be edited before they run. `e` on a row opens it in an edit line with a real cursor — arrows, Home/End, Delete, Ctrl+U — and Enter hands the edited text to your prompt. `Ctrl+x` does the same from any pane, including the search bar
+- From the edit line, `Ctrl+x` opens the command in `$VISUAL` / `$EDITOR`, the way `fc` and readline's `Ctrl+X Ctrl+E` do. ctrlr steps out of the way while the editor runs and picks the text back up when it exits. Quitting the editor with a non-zero status, or emptying the file, leaves the line as it was
+- Editing never touches ctrlr's database. The original command keeps its favorite, tags and run count, because the original is not what ran; the edited version appears on the next launch once your shell has actually run it
 - `Ctrl+C` now cancels, alongside `Esc`. Both behave the same way and in stages: the first press closes whatever is on top — a popup, then a tag or collection prompt — then clears the search box, and only exits ctrlr once there is nothing left to close
 
 ### Changed

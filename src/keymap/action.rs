@@ -44,6 +44,7 @@ key_actions! {
 
     // The selection
     Execute => "execute",
+    EditCommand => "edit_command",
     ToggleFavorite => "toggle_favorite",
     CopyToClipboard => "copy_to_clipboard",
     EditTags => "edit_tags",
@@ -83,9 +84,13 @@ key_actions! {
     // Line editing
     CursorLeft => "cursor_left",
     CursorRight => "cursor_right",
+    CursorHome => "cursor_home",
+    CursorEnd => "cursor_end",
     DeleteCharBackward => "delete_char_backward",
+    DeleteCharForward => "delete_char_forward",
     KillLine => "kill_line",
     AcceptSuggestion => "accept_suggestion",
+    OpenExternalEditor => "open_external_editor",
 
     // Universal
     Confirm => "confirm",

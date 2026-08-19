@@ -50,6 +50,10 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
         }
     }
 
+    if state.input_mode == InputMode::EditCommand {
+        popups::render_edit_command_popup(frame, state, area);
+    }
+
     if state.input_mode == InputMode::TagInput {
         popups::render_tag_popup(frame, state, area);
     }

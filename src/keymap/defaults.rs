@@ -50,6 +50,7 @@ pub const TABLE: &[(C, &str, A)] = &[
     (C::Global, "ctrl+t",           A::ChangeTheme),
     (C::Global, "ctrl+e",           A::ExportData),
     (C::Global, "ctrl+o",           A::ImportData),
+    (C::Global, "ctrl+x",           A::EditCommand),
     (C::Global, "c",                A::AddToCollection),
     (C::Global, "esc, ctrl+c",      A::Cancel),
 
@@ -64,6 +65,7 @@ pub const TABLE: &[(C, &str, A)] = &[
     (C::History, "y",         A::CopyToClipboard),
     (C::History, "t",         A::EditTags),
     (C::History, "d",         A::ToggleDetails),
+    (C::History, "e",         A::EditCommand),
     (C::History, "Backspace", A::DeleteCharBackward),
 
     (C::CollectionsList, "/",         A::FocusSearch),
@@ -81,6 +83,7 @@ pub const TABLE: &[(C, &str, A)] = &[
     (C::CollectionItems, "d",         A::ToggleDetails),
     (C::CollectionItems, "a",         A::SearchCollection),
     (C::CollectionItems, "r",         A::RemoveFromCollection),
+    (C::CollectionItems, "e",         A::EditCommand),
     (C::CollectionItems, "Backspace", A::DeleteCharBackward),
 
     // ── Overlays ────────────────────────────────────────────────────────────
@@ -130,6 +133,16 @@ pub const TABLE: &[(C, &str, A)] = &[
     (C::IntegrationPopup, "Enter, u, y",    A::Confirm),
     (C::IntegrationPopup, "esc, ctrl+c, n, q", A::Decline),
 
+    (C::EditCommand, "Enter",       A::Confirm),
+    (C::EditCommand, "Left",        A::CursorLeft),
+    (C::EditCommand, "Right",       A::CursorRight),
+    (C::EditCommand, "Home",        A::CursorHome),
+    (C::EditCommand, "End",         A::CursorEnd),
+    (C::EditCommand, "Backspace",   A::DeleteCharBackward),
+    (C::EditCommand, "Delete",      A::DeleteCharForward),
+    (C::EditCommand, "ctrl+u",      A::KillLine),
+    (C::EditCommand, "ctrl+x",      A::OpenExternalEditor),
+    (C::EditCommand, "esc, ctrl+c", A::Cancel),
 ];
 
 #[cfg(test)]

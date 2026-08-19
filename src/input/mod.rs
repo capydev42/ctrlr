@@ -1,4 +1,5 @@
 pub mod collection;
+pub mod edit;
 pub mod help;
 pub mod import_export;
 pub mod mouse;
@@ -46,6 +47,7 @@ pub fn active_context(state: &AppState) -> KeyContext {
     match state.input_mode {
         InputMode::TagInput => KeyContext::TagInput,
         InputMode::CollectionInput => KeyContext::CollectionInput,
+        InputMode::EditCommand => KeyContext::EditCommand,
         // Unreachable: this mode is only set alongside the import/export
         // popup, which the guard above already claimed.
         InputMode::ImportExport => KeyContext::ImportExport,
@@ -106,6 +108,7 @@ pub fn dispatch(state: &mut AppState, context: KeyContext, action: KeyAction) ->
         KeyContext::ImportExport => import_export::dispatch(state, action),
         KeyContext::TagInput => tag::dispatch(state, action),
         KeyContext::CollectionInput => collection::dispatch(state, action),
+        KeyContext::EditCommand => edit::dispatch(state, action),
         KeyContext::Global
         | KeyContext::Search
         | KeyContext::History
@@ -121,6 +124,7 @@ fn insert_char(state: &mut AppState, context: KeyContext, c: char) {
         KeyContext::TagInput => tag::insert_char(state, c),
         KeyContext::CollectionInput => collection::insert_char(state, c),
         KeyContext::ImportExport => import_export::insert_char(state, c),
+        KeyContext::EditCommand => edit::insert_char(state, c),
         _ => {}
     }
 }
@@ -552,6 +556,12 @@ mod tests {
                 KeyCode::Char('d'),
                 n,
                 Resolved::Action(C::CollectionsList, KeyAction::DeleteCollection),
+            ),
+            (
+                C::History,
+                KeyCode::Char('e'),
+                n,
+                Resolved::Action(C::History, KeyAction::EditCommand),
             ),
             (
                 C::CollectionsList,

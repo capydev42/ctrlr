@@ -15,6 +15,58 @@ use super::layout::{anchor_rect, center_rect};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// The edit line: the selected command, editable before it is handed to the
+/// shell.
+///
+/// Unlike every other input in ctrlr this draws a **real** terminal cursor via
+/// `frame.set_cursor_position` rather than appending a block glyph, because the
+/// cursor moves through the text rather than trailing it. `Terminal::draw`
+/// shows and positions the cursor when the frame sets one and hides it
+/// otherwise, so no change to the loop in `run_tui` is needed.
+pub fn render_edit_command_popup(frame: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.current_theme;
+    let popup_width = area.width.saturating_sub(8).clamp(20, 100);
+    let centered = center_rect(popup_width, 5, area);
+    // Recorded for hit-testing: a click outside cancels the edit.
+    state.hit.popup = centered;
+
+    frame.render_widget(Clear, centered);
+
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .title("[Edit Command]")
+        .title_alignment(Alignment::Center)
+        .border_style(Style::new().fg(theme.popup_border));
+    let inner = block.inner(centered);
+    frame.render_widget(block, centered);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(inner);
+    let line = chunks[0];
+
+    // Scroll so the cursor stays on screen on a command longer than the box.
+    let width = line.width.max(1) as usize;
+    let col = state.edit_input.cursor_col();
+    let offset = col.saturating_sub(width.saturating_sub(1));
+
+    frame.render_widget(
+        Paragraph::new(state.edit_input.value())
+            .style(Style::new().fg(theme.input_text))
+            .scroll((0, offset as u16)),
+        line,
+    );
+    frame.set_cursor_position((line.x + (col - offset) as u16, line.y));
+
+    frame.render_widget(
+        Paragraph::new("Enter: Run | Ctrl+X: $EDITOR | Esc: Cancel")
+            .style(Style::new().fg(theme.hint_fg))
+            .alignment(Alignment::Center),
+        chunks[1],
+    );
+}
+
 /// The right-click menu, anchored at the pointer.
 pub fn render_context_menu(frame: &mut Frame, state: &mut AppState, area: Rect) {
     let labels = state.context_menu_labels();

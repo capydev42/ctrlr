@@ -79,6 +79,7 @@ fn popup_open(state: &AppState) -> bool {
         || state.import_popup_open
         || state.input_mode == InputMode::TagInput
         || state.input_mode == InputMode::CollectionInput
+        || state.input_mode == InputMode::EditCommand
 }
 
 /// Modal popups are driven through the same dispatcher their keys use, rather

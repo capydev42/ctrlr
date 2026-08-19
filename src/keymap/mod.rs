@@ -34,6 +34,7 @@ pub enum KeyContext {
     ThemePopup,
     ContextMenu,
     IntegrationPopup,
+    EditCommand,
 }
 
 impl KeyContext {
@@ -52,6 +53,7 @@ impl KeyContext {
                 | KeyContext::TagInput
                 | KeyContext::CollectionInput
                 | KeyContext::ImportExport
+                | KeyContext::EditCommand
         )
     }
 
@@ -82,6 +84,7 @@ impl KeyContext {
             KeyContext::ThemePopup => "theme_popup",
             KeyContext::ContextMenu => "context_menu",
             KeyContext::IntegrationPopup => "integration_popup",
+            KeyContext::EditCommand => "edit_command",
         }
     }
 
@@ -102,6 +105,7 @@ impl KeyContext {
         KeyContext::ThemePopup,
         KeyContext::ContextMenu,
         KeyContext::IntegrationPopup,
+        KeyContext::EditCommand,
     ];
 }
 

@@ -18,6 +18,7 @@ pub fn insert_char(state: &mut AppState, c: char) {
 pub fn dispatch(state: &mut AppState, context: KeyContext, action: KeyAction) -> Action {
     match (context, action) {
         (_, KeyAction::Execute) => return activate_selected(state),
+        (_, KeyAction::EditCommand) => state.begin_edit_command(),
 
         // Movement from anywhere.
         (KeyContext::Global, KeyAction::NavigateUp) => handle_navigation_up(state),
