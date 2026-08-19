@@ -19,6 +19,18 @@ pub fn dispatch(state: &mut AppState, context: KeyContext, action: KeyAction) ->
     match (context, action) {
         (_, KeyAction::Execute) => return activate_selected(state),
         (_, KeyAction::EditCommand) => state.begin_edit_command(),
+        // Straight to $EDITOR, skipping the inline line. `main.rs` runs the
+        // child and, because no edit line is open, emits the result rather
+        // than putting it back in a buffer.
+        (_, KeyAction::OpenExternalEditor) => {
+            if let Some(text) = state
+                .filtered
+                .get(state.selected_index)
+                .map(|c| c.text.clone())
+            {
+                return Action::OpenEditor(text);
+            }
+        }
 
         // Movement from anywhere.
         (KeyContext::Global, KeyAction::NavigateUp) => handle_navigation_up(state),

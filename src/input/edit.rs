@@ -22,9 +22,10 @@ pub fn dispatch(state: &mut AppState, action: KeyAction) -> Action {
                 return Action::Execute(cmd);
             }
         }
-        // The same key that opened the line takes it one step further out, to
-        // a real editor. readline spells this Ctrl+X Ctrl+E; there is no chord
-        // machinery here, and Ctrl+X is unambiguous inside this mode.
+        // Same key as the direct route from a list pane, and deliberately so:
+        // Ctrl+x always means "$EDITOR". From here it is a detour — `main.rs`
+        // sees an open edit line and puts the result back in the buffer
+        // instead of emitting it. readline spells this Ctrl+X Ctrl+E.
         KeyAction::OpenExternalEditor => {
             return Action::OpenEditor(state.edit_input.value().to_owned());
         }
@@ -228,10 +229,10 @@ mod tests {
         assert_eq!(state.input_mode, InputMode::EditCommand);
     }
 
-    /// `e` types in the search bar, which is why Ctrl+x exists as the global
-    /// way in.
+    /// `e` types in the search bar, so Ctrl+x is the way in from there — and
+    /// it goes straight to the editor rather than the inline line.
     #[test]
-    fn test_e_types_in_the_search_bar_but_ctrl_x_still_edits() {
+    fn test_e_types_in_the_search_bar_but_ctrl_x_reaches_the_editor() {
         let mut state = AppState::new(vec![cmd("git status")], None);
         assert_eq!(state.active_pane, crate::app::ActivePane::Search);
         input::handle(&mut state, plain('e'));
@@ -240,10 +241,60 @@ mod tests {
 
         state.search_query.clear();
         state.filter_commands();
-        input::handle(
+        let action = input::handle(
             &mut state,
             KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL),
         );
+        assert_eq!(action, Action::OpenEditor("git status".into()));
+        assert_eq!(
+            state.input_mode,
+            InputMode::Normal,
+            "the direct route opens no edit line"
+        );
+    }
+
+    /// The two routes are distinguished by whether an edit line is open, not
+    /// by the action, so this pins that they really do differ.
+    #[test]
+    fn test_ctrl_x_from_a_list_pane_skips_the_inline_line() {
+        let mut state = AppState::new(vec![cmd("git status")], None);
+        state.active_pane = crate::app::ActivePane::History;
+        let action = input::handle(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL),
+        );
+        assert_eq!(action, Action::OpenEditor("git status".into()));
+        assert_eq!(state.input_mode, InputMode::Normal);
+    }
+
+    /// `e` still opens the line, and Ctrl+x from inside it still detours
+    /// through the editor and comes back — that route is unchanged.
+    #[test]
+    fn test_the_inline_route_still_detours_through_the_editor() {
+        let mut state = AppState::new(vec![cmd("git status")], None);
+        state.active_pane = crate::app::ActivePane::History;
+        input::handle(&mut state, plain('e'));
         assert_eq!(state.input_mode, InputMode::EditCommand);
+        let action = input::handle(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL),
+        );
+        assert_eq!(action, Action::OpenEditor("git status".into()));
+        assert_eq!(
+            state.input_mode,
+            InputMode::EditCommand,
+            "the line survives, so the result can come back to it"
+        );
+    }
+
+    #[test]
+    fn test_ctrl_x_on_an_empty_list_does_nothing() {
+        let mut state = AppState::new(vec![], None);
+        state.active_pane = crate::app::ActivePane::History;
+        let action = input::handle(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL),
+        );
+        assert_eq!(action, Action::None);
     }
 }

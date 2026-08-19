@@ -50,7 +50,7 @@ pub const TABLE: &[(C, &str, A)] = &[
     (C::Global, "ctrl+t",           A::ChangeTheme),
     (C::Global, "ctrl+e",           A::ExportData),
     (C::Global, "ctrl+o",           A::ImportData),
-    (C::Global, "ctrl+x",           A::EditCommand),
+    (C::Global, "ctrl+x",           A::OpenExternalEditor),
     (C::Global, "c",                A::AddToCollection),
     (C::Global, "esc, ctrl+c",      A::Cancel),
 

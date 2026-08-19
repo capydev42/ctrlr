@@ -119,9 +119,11 @@ Works with **bash**, **zsh** and **fish**, on Linux and macOS.
 ctrlr never executes anything itself. It reads your shell's history file, shows
 you a picker, and hands the command you chose back to the shell, which puts it on
 your prompt line. Nothing runs until you press Enter yourself. That holds for
-edited commands too: `e` opens the selected command in an edit line, `Ctrl+x`
-from there hands it to `$VISUAL` / `$EDITOR`, and whatever you end up with still
-only lands on the prompt.
+edited commands too. `Ctrl+x` opens the selected command in `$VISUAL` /
+`$EDITOR` and puts whatever you save on the prompt line. `e` instead opens a
+one-line editor inside ctrlr, and `Ctrl+x` from there is the same detour through
+`$EDITOR`, coming back to the line so you can look before you commit. Either
+way, nothing runs on its own.
 
 An edited command is not written to ctrlr's database. The original keeps its
 favorites, tags and run count, because the original is not what ran. Your
@@ -170,7 +172,7 @@ Press `?` (or `F1`) inside ctrlr for a searchable version of this table.
 |-----------|----------------------------------------------|
 | `Enter`   | Put the selected command on the prompt line  |
 | `e`       | Edit the command before running it           |
-| `Ctrl+x`  | Same, from any pane — and again inside the edit line to open `$EDITOR` |
+| `Ctrl+x`  | Open the command in `$VISUAL` / `$EDITOR` and run what you save |
 | `f`       | Toggle favorite                              |
 | `y`       | Copy to clipboard                            |
 | `t`       | Edit tags                                    |
