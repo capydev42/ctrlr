@@ -199,8 +199,8 @@ to filter, then on a row:
 | `Ctrl+d` | Remove a key — press the one you want gone      |
 | `Ctrl+r` | Put every binding back to its default           |
 
-All three name the key by having you press it, so an action with several keys
-needs no extra picking. A key another action already owns is not taken
+Replace, add and remove all name the key by having you press it, so an action
+holding several keys needs no extra picking. A key another action already owns is not taken
 silently: the first press says what it would displace, the second confirms.
 
 Changes take effect at once and are written to `~/.config/ctrlr/config.toml`
@@ -222,18 +222,23 @@ ctrlr config --print > ~/.config/ctrlr/config.toml
 ```toml
 [keys.history]
 toggle_favorite = "v"
-edit_command = ["e", "ctrl+x"]
+copy_to_clipboard = ["y", "ctrl+y"]   # an action can hold several keys
 
 [keys.global]
-go_to_top = "g g"      # a space makes a two-key sequence
+go_to_top = "g g"                     # a space makes a two-key sequence
+show_help = []                        # an empty list unbinds
 ```
 
 Listing an action **replaces** its default keys, so you can drop one you dislike.
 Anything you leave out keeps its default. Contexts are `global`, `search`,
 `history`, `collections_list`, `collection_items`, `help`, `tag_input`,
 `collection_input`, `import_export`, `theme_popup`, `context_menu`,
-`integration_popup` and `edit_command`; `ctrlr config --print` lists them all
-with every action name.
+`integration_popup`, `edit_command` and `keybind_popup`; `ctrlr config --print`
+lists them all with every action name.
+
+An action may hold as many keys as you like — give it a list. The first one is
+what the footer and the help popup advertise, so put the one you think of as
+primary first.
 
 Modifiers are `ctrl`, `alt` and `shift`. Named keys are `enter`, `esc`, `tab`,
 `space`, `backspace`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`,
