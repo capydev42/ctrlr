@@ -190,10 +190,21 @@ Press `?` (or `F1`) inside ctrlr for a searchable version of this table.
 ### Rebinding
 
 Press `Ctrl+G`. The list shows every action with the keys that reach it; type
-to filter, `Enter` on a row, then press the key you want. It takes effect at
-once and is written to `~/.config/ctrlr/config.toml` when you close the popup —
-the file and the directory are created for you. `Ctrl+R` puts everything back
-to the defaults.
+to filter, then on a row:
+
+| Key      | Does                                            |
+|----------|-------------------------------------------------|
+| `Enter`  | Replace the keys with the one you press next    |
+| `Ctrl+a` | Add another key, keeping the ones it has        |
+| `Ctrl+d` | Remove a key — press the one you want gone      |
+| `Ctrl+r` | Put every binding back to its default           |
+
+All three name the key by having you press it, so an action with several keys
+needs no extra picking. A key another action already owns is not taken
+silently: the first press says what it would displace, the second confirms.
+
+Changes take effect at once and are written to `~/.config/ctrlr/config.toml`
+when you close the popup — the file and its directory are created for you.
 
 Two things the popup cannot do. `Esc` cancels a recording, so `Esc` itself has
 to be rebound in the file. Two-key sequences like `g g` are shown but marked

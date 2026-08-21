@@ -79,6 +79,8 @@ key_actions! {
     ShowHelp => "show_help",
     EditKeybindings => "edit_keybindings",
     ResetKeybindings => "reset_keybindings",
+    AddKeybinding => "add_keybinding",
+    RemoveKeybinding => "remove_keybinding",
     ChangeTheme => "change_theme",
     ExportData => "export_data",
     ImportData => "import_data",

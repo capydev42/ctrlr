@@ -8,6 +8,30 @@
 use crate::app::{Action, AppState};
 use crate::keymap::{Binding, KeyAction, KeyContext, format_binding};
 
+/// What the next key press will do to the selected row.
+///
+/// All three are "press the key", which is why removing does not need a way to
+/// point at one key among several: you name it by pressing it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaptureMode {
+    /// Drop whatever the action had and use this key instead.
+    Replace,
+    /// Keep the existing keys and add this one.
+    Add,
+    /// Take this key away, leaving the rest.
+    Remove,
+}
+
+impl CaptureMode {
+    pub fn prompt(self) -> &'static str {
+        match self {
+            CaptureMode::Replace => "Press the key to bind",
+            CaptureMode::Add => "Press a key to add",
+            CaptureMode::Remove => "Press the key to remove",
+        }
+    }
+}
+
 /// One line of the editor.
 #[derive(Clone, Debug, PartialEq)]
 pub struct KeybindRow {
@@ -98,7 +122,9 @@ pub fn dispatch(state: &mut AppState, action: KeyAction) -> Action {
             state.keybind_query.clear();
             state.refresh_keybind_rows();
         }
-        KeyAction::Confirm => state.begin_capture(),
+        KeyAction::Confirm => state.begin_capture(CaptureMode::Replace),
+        KeyAction::AddKeybinding => state.begin_capture(CaptureMode::Add),
+        KeyAction::RemoveKeybinding => state.begin_capture(CaptureMode::Remove),
         KeyAction::ResetKeybindings => state.reset_keybindings(),
         _ => {}
     }
@@ -296,6 +322,149 @@ mod tests {
                 .keys_for(KeyContext::History, KeyAction::ToggleDetails)
                 .is_empty(),
             "the old owner is evicted, or the new binding would be shadowed"
+        );
+    }
+
+    #[test]
+    fn test_ctrl_a_adds_a_key_and_keeps_the_existing_ones() {
+        let mut state = editor();
+        select(&mut state, KeyContext::Global, KeyAction::ShowHelp);
+        press(&mut state, KeyCode::Char('a'), KeyModifiers::CONTROL);
+        press(&mut state, KeyCode::F(2), KeyModifiers::NONE);
+        assert_eq!(
+            state
+                .keymap
+                .keys_for(KeyContext::Global, KeyAction::ShowHelp),
+            vec!["?", "F1", "F2"],
+            "adding appends rather than replacing"
+        );
+    }
+
+    /// The distinction that made this worth adding: Enter still replaces.
+    #[test]
+    fn test_enter_still_replaces_where_ctrl_a_appends() {
+        let mut state = editor();
+        select(&mut state, KeyContext::Global, KeyAction::ShowHelp);
+        press(&mut state, KeyCode::Enter, KeyModifiers::NONE);
+        press(&mut state, KeyCode::F(2), KeyModifiers::NONE);
+        assert_eq!(
+            state
+                .keymap
+                .keys_for(KeyContext::Global, KeyAction::ShowHelp),
+            vec!["F2"]
+        );
+    }
+
+    #[test]
+    fn test_adding_a_key_the_action_already_has_changes_nothing() {
+        let mut state = editor();
+        select(&mut state, KeyContext::Global, KeyAction::ShowHelp);
+        press(&mut state, KeyCode::Char('a'), KeyModifiers::CONTROL);
+        press(&mut state, KeyCode::Char('?'), KeyModifiers::NONE);
+        assert_eq!(
+            state
+                .keymap
+                .keys_for(KeyContext::Global, KeyAction::ShowHelp),
+            vec!["?", "F1"]
+        );
+        assert!(state.capturing.is_none(), "and it stops asking");
+    }
+
+    /// Removing names the key by pressing it, so there is no second selection
+    /// to build for a row that holds several.
+    #[test]
+    fn test_ctrl_d_removes_only_the_key_pressed() {
+        let mut state = editor();
+        select(&mut state, KeyContext::Global, KeyAction::ShowHelp);
+        press(&mut state, KeyCode::Char('d'), KeyModifiers::CONTROL);
+        press(&mut state, KeyCode::F(1), KeyModifiers::NONE);
+        assert_eq!(
+            state
+                .keymap
+                .keys_for(KeyContext::Global, KeyAction::ShowHelp),
+            vec!["?"]
+        );
+    }
+
+    #[test]
+    fn test_removing_the_last_key_leaves_the_action_unbound() {
+        let mut state = editor();
+        select(&mut state, KeyContext::History, KeyAction::ToggleFavorite);
+        press(&mut state, KeyCode::Char('d'), KeyModifiers::CONTROL);
+        press(&mut state, KeyCode::Char('f'), KeyModifiers::NONE);
+        assert!(
+            state
+                .keymap
+                .keys_for(KeyContext::History, KeyAction::ToggleFavorite)
+                .is_empty()
+        );
+        // Still listed, so a key can be put back.
+        assert!(
+            state
+                .keybind_rows
+                .iter()
+                .any(|r| r.context == KeyContext::History && r.action == KeyAction::ToggleFavorite)
+        );
+    }
+
+    /// Pressing a key the row does not hold must not remove someone else's.
+    #[test]
+    fn test_removing_a_key_the_row_does_not_have_is_refused() {
+        let mut state = editor();
+        select(&mut state, KeyContext::History, KeyAction::ToggleFavorite);
+        press(&mut state, KeyCode::Char('d'), KeyModifiers::CONTROL);
+        press(&mut state, KeyCode::Char('y'), KeyModifiers::NONE);
+        assert_eq!(
+            state
+                .keymap
+                .keys_for(KeyContext::History, KeyAction::ToggleFavorite),
+            vec!["f"]
+        );
+        assert_eq!(
+            state
+                .keymap
+                .keys_for(KeyContext::History, KeyAction::CopyToClipboard),
+            vec!["y"],
+            "the key's real owner is untouched"
+        );
+    }
+
+    #[test]
+    fn test_remove_is_refused_on_a_row_with_no_keys() {
+        let mut state = editor();
+        select(&mut state, KeyContext::History, KeyAction::ToggleFavorite);
+        press(&mut state, KeyCode::Char('d'), KeyModifiers::CONTROL);
+        press(&mut state, KeyCode::Char('f'), KeyModifiers::NONE);
+        press(&mut state, KeyCode::Char('d'), KeyModifiers::CONTROL);
+        assert!(state.capturing.is_none(), "nothing left to remove");
+    }
+
+    /// Adding onto an occupied key goes through the same two-press
+    /// confirmation as replacing does.
+    #[test]
+    fn test_adding_an_occupied_key_needs_a_second_press() {
+        let mut state = editor();
+        select(&mut state, KeyContext::History, KeyAction::ToggleFavorite);
+        press(&mut state, KeyCode::Char('a'), KeyModifiers::CONTROL);
+        press(&mut state, KeyCode::Char('y'), KeyModifiers::NONE);
+        assert_eq!(
+            state
+                .keymap
+                .keys_for(KeyContext::History, KeyAction::ToggleFavorite),
+            vec!["f"]
+        );
+        press(&mut state, KeyCode::Char('y'), KeyModifiers::NONE);
+        assert_eq!(
+            state
+                .keymap
+                .keys_for(KeyContext::History, KeyAction::ToggleFavorite),
+            vec!["f", "y"]
+        );
+        assert!(
+            state
+                .keymap
+                .keys_for(KeyContext::History, KeyAction::CopyToClipboard)
+                .is_empty()
         );
     }
 

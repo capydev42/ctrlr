@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Keybindings are yours. `Ctrl+G` opens a list of every action; filter it, press Enter on a row, then press the key you want. The change applies immediately and is written to `~/.config/ctrlr/config.toml` when you close the popup, creating the file and its directory. `Ctrl+R` restores the defaults
+- Keybindings are yours. `Ctrl+G` opens a list of every action; filter it, then on a row press Enter to replace its keys, `Ctrl+A` to add another, or `Ctrl+D` to remove one. Each names the key by having you press it, so an action with several keys needs no extra picking. Changes apply immediately and are written to `~/.config/ctrlr/config.toml` when you close the popup, creating the file and its directory. `Ctrl+R` restores the defaults
 - Taking a key another action already owns asks first: the first press says what it would displace, the second confirms
 - Or edit the file yourself — `ctrlr config --print` writes out every default. Listing an action replaces its defaults, so you can drop one you dislike; anything you leave out stays as it was. ctrlr only records what differs from its defaults, so later changes to those still reach you
 - A config ctrlr overwrites is kept as `config.toml.ctrlr.bak`

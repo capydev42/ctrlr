@@ -82,11 +82,11 @@ pub fn render_keybind_popup(frame: &mut Frame, state: &mut AppState, area: Rect)
 
     frame.render_widget(Clear, centered);
 
-    let capturing = state.capturing.is_some();
-    let hint = if capturing {
-        "Press the key to bind  |  Esc: cancel"
-    } else {
-        "Enter: rebind  |  Ctrl+R: reset all  |  type to filter  |  Esc: save & close"
+    let capturing = state.capturing.map(|(_, _, mode)| mode);
+    let hint = match capturing {
+        Some(mode) => format!("{}  |  Esc: cancel", mode.prompt()),
+        None => "Enter: replace  |  Ctrl+A: add  |  Ctrl+D: remove  |  Ctrl+R: reset  |  Esc: save & close"
+            .to_owned(),
     };
 
     let block = Block::bordered()
@@ -133,10 +133,9 @@ pub fn render_keybind_popup(frame: &mut Frame, state: &mut AppState, area: Rect)
             .enumerate()
             .map(|(i, row)| {
                 let selected = offset + i == state.keybind_selected_index;
-                let keys = if selected && capturing {
-                    "press a key…".to_owned()
-                } else {
-                    crate::input::keybind::keys_display(row)
+                let keys = match capturing {
+                    Some(mode) if selected => format!("{}…", mode.prompt()),
+                    _ => crate::input::keybind::keys_display(row),
                 };
                 // A sequence cannot be recorded by pressing it, so say why
                 // rather than letting Enter look broken on that row.

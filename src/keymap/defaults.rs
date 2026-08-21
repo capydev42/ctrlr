@@ -141,6 +141,8 @@ pub const TABLE: &[(C, &str, A)] = &[
     (C::KeybindPopup, "PageDown",     A::PageDown),
     (C::KeybindPopup, "Backspace",    A::DeleteCharBackward),
     (C::KeybindPopup, "ctrl+u",       A::KillLine),
+    (C::KeybindPopup, "ctrl+a",       A::AddKeybinding),
+    (C::KeybindPopup, "ctrl+d",       A::RemoveKeybinding),
     (C::KeybindPopup, "ctrl+r",       A::ResetKeybindings),
     (C::KeybindPopup, "esc, ctrl+c",  A::Cancel),
 

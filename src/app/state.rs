@@ -144,9 +144,14 @@ pub struct AppState {
     /// Set by any successful rebind, so closing without one writes no file and
     /// takes no backup.
     keybind_dirty: bool,
-    /// The row waiting for a key press. While this is set, `input::handle`
-    /// takes the next press raw instead of resolving it.
-    pub capturing: Option<(crate::keymap::KeyContext, crate::keymap::KeyAction)>,
+    /// The row waiting for a key press, and what the press will do to it.
+    /// While this is set, `input::handle` takes the next press raw instead of
+    /// resolving it.
+    pub capturing: Option<(
+        crate::keymap::KeyContext,
+        crate::keymap::KeyAction,
+        crate::input::keybind::CaptureMode,
+    )>,
     /// A chord that is already taken, held until the user presses it again to
     /// confirm taking it.
     pub capture_conflict: Option<crate::keymap::Binding>,
@@ -400,7 +405,8 @@ impl AppState {
 
     /// Arms capture for the selected row. Refuses rows whose binding is a
     /// two-key sequence, which a single press cannot express.
-    pub fn begin_capture(&mut self) {
+    pub fn begin_capture(&mut self, mode: crate::input::keybind::CaptureMode) {
+        use crate::input::keybind::CaptureMode;
         let Some(row) = self.selected_keybind_row() else {
             return;
         };
@@ -408,50 +414,79 @@ impl AppState {
             self.set_status("Two-key sequences can only be changed in config.toml".into());
             return;
         }
-        self.capturing = Some((row.context, row.action));
+        if mode == CaptureMode::Remove && row.keys.is_empty() {
+            self.set_status(format!("{} has no keys to remove", row.action.as_str()));
+            return;
+        }
+        self.capturing = Some((row.context, row.action, mode));
         self.capture_conflict = None;
     }
 
-    /// Applies a captured chord. Returns a message to show, if any.
+    /// Applies a captured chord in whichever mode armed it.
     ///
-    /// A chord another action already owns is not taken silently: the first
-    /// press warns and the second confirms. Once confirmed the old owner is
-    /// evicted rather than left in place, or the new binding would be shadowed
-    /// by it and appear not to work — the same rule `config::from_str` applies
-    /// to a file that does this.
+    /// Replacing or adding a chord another action already owns is not done
+    /// silently: the first press warns and the second confirms, and only then
+    /// is the old owner evicted. Leaving it in place would let it shadow the
+    /// new binding, which reads as "the rebind did not work". `from_str`
+    /// applies the same rule to a file that does this, so the two routes
+    /// cannot drift.
     pub fn apply_capture(&mut self, chord: crate::keymap::KeyChord) {
+        use crate::input::keybind::{CaptureMode, describe};
         use crate::keymap::Binding;
-        let Some((context, action)) = self.capturing else {
+
+        let Some((context, action, mode)) = self.capturing else {
             return;
         };
         let binding = Binding::Single(chord);
+        let shown = describe(&binding);
+
+        if mode == CaptureMode::Remove {
+            let held = self.keymap.keys_for(context, action);
+            if !held.contains(&shown) {
+                self.set_status(format!("{} is not bound to {}", shown, action.as_str()));
+                return;
+            }
+            self.keymap.evict(context, &binding);
+            self.finish_capture(if held.len() == 1 {
+                format!("{} is now unbound", action.as_str())
+            } else {
+                format!("{} no longer runs {}", shown, action.as_str())
+            });
+            return;
+        }
 
         let owner = crate::input::keybind::current_owner(self, context, &binding);
+        if owner == Some(action) {
+            self.set_status(format!("{} already runs {}", shown, action.as_str()));
+            self.cancel_capture();
+            return;
+        }
         if let Some(owner) = owner
-            && owner != action
             && self.capture_conflict.as_ref() != Some(&binding)
         {
             self.capture_conflict = Some(binding.clone());
             self.set_status(format!(
                 "{} is {} here — press it again to take it",
-                crate::input::keybind::describe(&binding),
+                shown,
                 owner.as_str()
             ));
             return;
         }
 
         self.keymap.evict(context, &binding);
-        self.keymap.clear_action(context, action);
-        self.keymap.bind(context, binding.clone(), action);
+        if mode == CaptureMode::Replace {
+            self.keymap.clear_action(context, action);
+        }
+        self.keymap.bind(context, binding, action);
+        self.finish_capture(format!("{} is now {}", shown, action.as_str()));
+    }
+
+    fn finish_capture(&mut self, message: String) {
         self.keybind_dirty = true;
         self.capturing = None;
         self.capture_conflict = None;
         self.refresh_keybind_rows();
-        self.set_status(format!(
-            "{} is now {}",
-            crate::input::keybind::describe(&binding),
-            action.as_str()
-        ));
+        self.set_status(message);
     }
 
     pub fn cancel_capture(&mut self) {
