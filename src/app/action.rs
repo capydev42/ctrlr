@@ -2,9 +2,10 @@
 pub enum Action {
     #[default]
     None,
-    #[allow(dead_code)]
     Exit,
     Execute(String),
-    CloseHelp,
-    ExecuteHelpShortcut(String),
+    /// Suspend the TUI and hand this text to `$VISUAL` / `$EDITOR`. Carried up
+    /// to `main.rs::app()` for the same reason as `Execute`: the input layer
+    /// has no `Terminal` to suspend.
+    OpenEditor(String),
 }

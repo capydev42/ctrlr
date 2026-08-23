@@ -1,9 +1,18 @@
 use crate::app::{Action, AppState, InputMode};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crate::keymap::KeyAction;
 
-pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
-    match (key.code, key.modifiers) {
-        (KeyCode::Left, _) => {
+/// Typing always leaves the chip cursor: it selects an already-entered tag, and
+/// the two cannot be active at once.
+pub fn insert_char(state: &mut AppState, c: char) {
+    if state.tag_cursor_index.is_some() {
+        state.tag_cursor_index = None;
+    }
+    state.tag_input.push(c);
+}
+
+pub fn dispatch(state: &mut AppState, action: KeyAction) -> Action {
+    match action {
+        KeyAction::CursorLeft => {
             let tags = state.selected_command_tags();
             if !tags.is_empty() {
                 if let Some(idx) = state.tag_cursor_index {
@@ -13,13 +22,13 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 }
             }
         }
-        (KeyCode::Right, _) => {
+        KeyAction::CursorRight => {
             let tags = state.selected_command_tags();
             if let Some(idx) = state.tag_cursor_index {
                 state.tag_cursor_index = Some(if idx + 1 >= tags.len() { 0 } else { idx + 1 });
             }
         }
-        (KeyCode::Backspace, _) => {
+        KeyAction::DeleteCharBackward => {
             if let Some(idx) = state.tag_cursor_index {
                 let mut tags = state.selected_command_tags();
                 if idx < tags.len() {
@@ -44,18 +53,12 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.tag_selected_index = 0;
             }
         }
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+        KeyAction::KillLine => {
             state.tag_input.clear();
             state.tag_selected_index = 0;
             state.tag_cursor_index = None;
         }
-        (KeyCode::Char(c), KeyModifiers::NONE) => {
-            if state.tag_cursor_index.is_some() {
-                state.tag_cursor_index = None;
-            }
-            state.tag_input.push(c);
-        }
-        (KeyCode::Tab, _) => {
+        KeyAction::AcceptSuggestion => {
             let no_cursor = state.tag_cursor_index.is_none();
             let suggestions = state.filtered_tags();
             let has_valid = !suggestions.is_empty() && state.tag_selected_index < suggestions.len();
@@ -66,10 +69,10 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.tag_selected_index = 0;
             }
         }
-        (KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+        KeyAction::NavigateUp => {
             state.tag_selected_index = state.tag_selected_index.saturating_sub(1);
         }
-        (KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+        KeyAction::NavigateDown => {
             let suggestions = state.filtered_tags();
             let show_create = !state.tag_input.trim().is_empty()
                 && !suggestions
@@ -83,7 +86,7 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
             };
             state.tag_selected_index = (state.tag_selected_index + 1).min(max_index);
         }
-        (KeyCode::Enter, _) => {
+        KeyAction::Confirm => {
             let search_text = state.tag_input.trim().to_string();
             let selected_idx = state.tag_selected_index;
 
@@ -120,12 +123,6 @@ pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
                 state.input_mode = InputMode::Normal;
                 state.tag_selected_index = 0;
             }
-        }
-        (KeyCode::Esc, _) => {
-            state.input_mode = InputMode::Normal;
-            state.tag_input.clear();
-            state.tag_selected_index = 0;
-            state.tag_cursor_index = None;
         }
         _ => {}
     }

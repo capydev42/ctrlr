@@ -50,6 +50,10 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
         }
     }
 
+    if state.input_mode == InputMode::EditCommand {
+        popups::render_edit_command_popup(frame, state, area);
+    }
+
     if state.input_mode == InputMode::TagInput {
         popups::render_tag_popup(frame, state, area);
     }
@@ -81,6 +85,10 @@ pub fn render(frame: &mut Frame, state: &mut AppState) {
 
     if state.theme_popup_open {
         popups::render_theme_popup(frame, state, area);
+    }
+
+    if state.keybind_popup_open {
+        popups::render_keybind_popup(frame, state, area);
     }
 
     if state.export_popup_open || state.import_popup_open {

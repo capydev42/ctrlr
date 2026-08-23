@@ -118,7 +118,17 @@ Works with **bash**, **zsh** and **fish**, on Linux and macOS.
 
 ctrlr never executes anything itself. It reads your shell's history file, shows
 you a picker, and hands the command you chose back to the shell, which puts it on
-your prompt line. Nothing runs until you press Enter yourself.
+your prompt line. Nothing runs until you press Enter yourself. That holds for
+edited commands too. `Ctrl+x` opens the selected command in `$VISUAL` /
+`$EDITOR` and puts whatever you save on the prompt line. `e` instead opens a
+one-line editor inside ctrlr, and `Ctrl+x` from there is the same detour through
+`$EDITOR`, coming back to the line so you can look before you commit. Either
+way, nothing runs on its own.
+
+An edited command is not written to ctrlr's database. The original keeps its
+favorites, tags and run count, because the original is not what ran. Your
+edited version shows up in the list on the next launch, the same way every
+other command does — once your shell has actually run it.
 
 Metadata — favorites, tags, collections, run counts — lives in a local SQLite
 database. Your history file stays the source of truth for the command text.
@@ -161,6 +171,8 @@ Press `?` (or `F1`) inside ctrlr for a searchable version of this table.
 | Key       | Action                                       |
 |-----------|----------------------------------------------|
 | `Enter`   | Put the selected command on the prompt line  |
+| `e`       | Edit the command before running it           |
+| `Ctrl+x`  | Open the command in `$VISUAL` / `$EDITOR` and run what you save |
 | `f`       | Toggle favorite                              |
 | `y`       | Copy to clipboard                            |
 | `t`       | Edit tags                                    |
@@ -172,7 +184,75 @@ Press `?` (or `F1`) inside ctrlr for a searchable version of this table.
 | `Ctrl+e`  | Export popup                                 |
 | `Ctrl+o`  | Import popup                                 |
 | `?` / `F1`| Help                                         |
-| `Esc`     | Clear / close / exit                         |
+| `Ctrl+g`  | Rebind keys                                  |
+| `Esc` / `Ctrl+C` | Clear / close / exit                  |
+
+### Rebinding
+
+Press `Ctrl+G`. The list shows every action with the keys that reach it; type
+to filter, then on a row:
+
+| Key      | Does                                            |
+|----------|-------------------------------------------------|
+| `Enter`  | Replace the keys with the one you press next    |
+| `Ctrl+a` | Add another key, keeping the ones it has        |
+| `Ctrl+d` | Remove a key — press the one you want gone      |
+| `Ctrl+r` | Put every binding back to its default           |
+
+Replace, add and remove all name the key by having you press it, so an action
+holding several keys needs no extra picking. A key another action already owns is not taken
+silently: the first press says what it would displace, the second confirms.
+
+Changes take effect at once and are written to `~/.config/ctrlr/config.toml`
+when you close the popup — the file and its directory are created for you.
+
+Two things the popup cannot do. `Esc` cancels a recording, so `Esc` itself has
+to be rebound in the file. Two-key sequences like `g g` are shown but marked
+`(file only)`, because recording reads a single press. If ctrlr overwrites a
+config you had written by hand, your version is kept as
+`config.toml.ctrlr.bak`.
+
+Or edit the file directly. Start from the defaults:
+
+```bash
+mkdir -p ~/.config/ctrlr
+ctrlr config --print > ~/.config/ctrlr/config.toml
+```
+
+```toml
+[keys.history]
+toggle_favorite = "v"
+copy_to_clipboard = ["y", "ctrl+y"]   # an action can hold several keys
+
+[keys.global]
+go_to_top = "g g"                     # a space makes a two-key sequence
+show_help = []                        # an empty list unbinds
+```
+
+Listing an action **replaces** its default keys, so you can drop one you dislike.
+Anything you leave out keeps its default. Contexts are `global`, `search`,
+`history`, `collections_list`, `collection_items`, `help`, `tag_input`,
+`collection_input`, `import_export`, `theme_popup`, `context_menu`,
+`integration_popup`, `edit_command` and `keybind_popup`; `ctrlr config --print`
+lists them all with every action name.
+
+An action may hold as many keys as you like — give it a list. The first one is
+what the footer and the help popup advertise, so put the one you think of as
+primary first.
+
+Modifiers are `ctrl`, `alt` and `shift`. Named keys are `enter`, `esc`, `tab`,
+`space`, `backspace`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`,
+`up`, `down`, `left`, `right` and `f1`–`f12`. Anything else one character long
+is that character, and case matters — `g` and `G` are different keys.
+
+One thing to know: **a plain character always types when the search bar has
+focus.** That is why `d` and `?` do nothing special there, and why a letter you
+bind only fires from the other panes. Use a modifier if you want it everywhere.
+
+A key that another action already owns in the same context is taken from it. A
+line ctrlr cannot read — a bad key name, an action that does not exist, broken
+TOML — keeps its default and is listed under **Config** at the top of the help
+popup. ctrlr always starts.
 
 ### Views
 

@@ -4,14 +4,15 @@ use ratatui::DefaultTerminal;
 
 mod app;
 mod cli;
+mod config;
 mod hash;
 mod history;
 mod input;
+mod keymap;
 mod storage;
 mod ui;
 
 use app::{Action, AppState, InputMode};
-use input::help;
 use std::io;
 use std::time::Duration;
 
@@ -108,22 +109,10 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
 
         terminal.draw(|f| ui::render(f, &mut state))?;
         let action = match crossterm::event::read()? {
-            Event::Key(key) => {
-                if key.code == crossterm::event::KeyCode::Esc
-                    && !state.integration_popup_open
-                    && !state.context_menu_open
-                    && !state.help_open
-                    && !state.theme_popup_open
-                    && !state.export_popup_open
-                    && !state.import_popup_open
-                    && state.input_mode != InputMode::TagInput
-                    && state.input_mode != InputMode::CollectionInput
-                    && state.handle_esc()
-                {
-                    break;
-                }
-                input::handle(&mut state, key)
-            }
+            // Esc and Ctrl+C are not special-cased here any more: they resolve
+            // through `AppState::cancel_or_quit`, which owns the staging order,
+            // and reach this loop as `Action::Exit`.
+            Event::Key(key) => input::handle(&mut state, key),
             // Hit-tested against the rects the draw above just recorded.
             Event::Mouse(mouse) => input::mouse::handle(&mut state, mouse),
             _ => Action::None,
@@ -137,20 +126,37 @@ fn app(terminal: &mut DefaultTerminal, _output_file: Option<String>) -> io::Resu
             Action::Exit => {
                 break;
             }
-            Action::CloseHelp => {
-                state.help_open = false;
-                state.help_search_query.clear();
-            }
-            Action::ExecuteHelpShortcut(action_id) => {
-                match help::execute_help_action(&mut state, &action_id) {
-                    Action::Execute(cmd) => {
-                        result = Ok(Some(cmd));
+            // The editor owns the terminal while it runs, so this cannot live
+            // in the input layer. Returning here keeps the user in the edit
+            // line afterwards — readline does the same, and it means the text
+            // is confirmed once before it leaves ctrlr.
+            Action::OpenEditor(text) => {
+                // Whether an edit line is open is what decides where the
+                // result goes, so the two routes need no separate action:
+                // from the line, Ctrl+x is a detour and comes back to it;
+                // from a list, it is the whole interaction and the text
+                // leaves ctrlr straight away.
+                let inline = state.input_mode == InputMode::EditCommand;
+                let outcome = app::editor::edit_in_external_editor(terminal, &text);
+                if let Some(message) = outcome.message {
+                    state.status_message = Some(message);
+                    state.status_timestamp = Some(std::time::Instant::now());
+                }
+                match outcome.text {
+                    Some(edited) if inline => state.edit_input.set_value(edited),
+                    // Same rule as committing the inline line: an untouched
+                    // command really did run, a rewritten one did not, and
+                    // the rewrite gets its own row from runs.log later.
+                    Some(edited) => {
+                        if edited == text {
+                            state.mark_executed();
+                        }
+                        result = Ok(Some(edited));
                         break;
                     }
-                    Action::Exit => {
-                        break;
-                    }
-                    _ => {}
+                    // Cancelled, and with no line to fall back to there is
+                    // nothing to show — `outcome.message` already said why.
+                    None => {}
                 }
             }
             Action::None => {}

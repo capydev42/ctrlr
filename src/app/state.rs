@@ -5,7 +5,9 @@ use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::widgets::ListState;
 
+use crate::app::TextInput;
 use crate::input::help::GroupedShortcut;
+use crate::keymap::Keymap;
 use crate::storage::collections::Collection;
 use crate::storage::import_export::{ImportMode, ImportPreview};
 use crate::ui::layout::Hitboxes;
@@ -32,6 +34,9 @@ pub enum InputMode {
     TagInput,
     CollectionInput,
     ImportExport,
+    /// Editing the selected command before it leaves the TUI. The buffer is
+    /// [`AppState::edit_input`]; nothing is written to the DB.
+    EditCommand,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -125,7 +130,37 @@ pub struct AppState {
     pub active_pane: ActivePane,
     pub view_mode: ViewMode,
     pub show_details: bool,
+    /// Which key does what. Built from the defaults, then overlaid with
+    /// `config.toml`.
+    pub keymap: Keymap,
+    /// Entries of `config.toml` that could not be applied. Each kept its
+    /// default; the help popup lists them.
+    pub config_problems: Vec<crate::config::ConfigProblem>,
+    pub keybind_popup_open: bool,
+    pub keybind_rows: Vec<crate::input::keybind::KeybindRow>,
+    pub keybind_selected_index: usize,
+    pub keybind_list_state: ListState,
+    pub keybind_query: String,
+    /// Set by any successful rebind, so closing without one writes no file and
+    /// takes no backup.
+    keybind_dirty: bool,
+    /// The row waiting for a key press, and what the press will do to it.
+    /// While this is set, `input::handle` takes the next press raw instead of
+    /// resolving it.
+    pub capturing: Option<(
+        crate::keymap::KeyContext,
+        crate::keymap::KeyAction,
+        crate::input::keybind::CaptureMode,
+    )>,
+    /// A chord that is already taken, held until the user presses it again to
+    /// confirm taking it.
+    pub capture_conflict: Option<crate::keymap::Binding>,
     pub input_mode: InputMode,
+    /// The line being edited in [`InputMode::EditCommand`].
+    pub edit_input: TextInput,
+    /// The text the edit started from, so committing an unchanged line can be
+    /// told apart from committing a rewrite.
+    pub edit_origin: Option<String>,
     pub tag_input: String,
     pub tag_selected_index: usize,
     pub tag_cursor_index: Option<usize>,
@@ -146,7 +181,8 @@ pub struct AppState {
     pub add_command_search_index: usize,
     pub delete_confirm_text: String,
     pub terminal_height: u16,
-    pub key_buffer: Option<char>,
+    /// First half of a pending chord, e.g. the first `g` of `gg`.
+    pub key_buffer: Option<crate::keymap::KeyChord>,
     pub key_buffer_timestamp: Option<Instant>,
     pub help_open: bool,
     pub help_search_query: String,
@@ -304,11 +340,200 @@ impl AppState {
 
         let mut state = AppState::new(commands, db);
         state.cwd = cwd;
+        state.load_config();
         state.load_theme_from_db();
         state.load_pane_widths();
         state.load_collections();
         state.check_integration();
         state
+    }
+
+    pub fn open_keybind_popup(&mut self) {
+        self.keybind_popup_open = true;
+        self.keybind_query.clear();
+        self.keybind_dirty = false;
+        self.capturing = None;
+        self.capture_conflict = None;
+        self.refresh_keybind_rows();
+    }
+
+    /// Writes the file on the way out, once, rather than after every rebind:
+    /// fewer writes and a single backup. A failed write is reported and does
+    /// not undo the change — the keys still work for this session.
+    pub fn close_keybind_popup(&mut self) {
+        self.keybind_popup_open = false;
+        self.capturing = None;
+        self.capture_conflict = None;
+        if !self.keybind_dirty {
+            return;
+        }
+        self.keybind_dirty = false;
+        match crate::config::save(&self.keymap) {
+            Ok(saved) => {
+                // The warnings described a file that no longer exists.
+                self.config_problems.clear();
+                let mut message = format!("Saved {}", saved.path.display());
+                if let Some(backup) = saved.backup {
+                    message.push_str(&format!(" (previous kept as {})", backup.display()));
+                }
+                self.set_status(message);
+            }
+            Err(e) => self.set_status(format!("Could not save keybindings: {}", e)),
+        }
+    }
+
+    pub fn refresh_keybind_rows(&mut self) {
+        let all = crate::input::keybind::rows(self);
+        self.keybind_rows = crate::input::keybind::filter(&all, &self.keybind_query);
+        let last = self.keybind_rows.len().saturating_sub(1);
+        self.select_keybind_row(self.keybind_selected_index.min(last));
+    }
+
+    pub fn select_keybind_row(&mut self, index: usize) {
+        let last = self.keybind_rows.len().saturating_sub(1);
+        self.keybind_selected_index = index.min(last);
+        self.keybind_list_state
+            .select(Some(self.keybind_selected_index));
+        // Moving off a row abandons whatever it was waiting for.
+        self.capturing = None;
+        self.capture_conflict = None;
+    }
+
+    pub fn selected_keybind_row(&self) -> Option<&crate::input::keybind::KeybindRow> {
+        self.keybind_rows.get(self.keybind_selected_index)
+    }
+
+    /// Arms capture for the selected row. Refuses rows whose binding is a
+    /// two-key sequence, which a single press cannot express.
+    pub fn begin_capture(&mut self, mode: crate::input::keybind::CaptureMode) {
+        use crate::input::keybind::CaptureMode;
+        let Some(row) = self.selected_keybind_row() else {
+            return;
+        };
+        if !row.editable {
+            self.set_status("Two-key sequences can only be changed in config.toml".into());
+            return;
+        }
+        if mode == CaptureMode::Remove && row.keys.is_empty() {
+            self.set_status(format!("{} has no keys to remove", row.action.as_str()));
+            return;
+        }
+        self.capturing = Some((row.context, row.action, mode));
+        self.capture_conflict = None;
+    }
+
+    /// Applies a captured chord in whichever mode armed it.
+    ///
+    /// Replacing or adding a chord another action already owns is not done
+    /// silently: the first press warns and the second confirms, and only then
+    /// is the old owner evicted. Leaving it in place would let it shadow the
+    /// new binding, which reads as "the rebind did not work". `from_str`
+    /// applies the same rule to a file that does this, so the two routes
+    /// cannot drift.
+    pub fn apply_capture(&mut self, chord: crate::keymap::KeyChord) {
+        use crate::input::keybind::{CaptureMode, describe};
+        use crate::keymap::Binding;
+
+        let Some((context, action, mode)) = self.capturing else {
+            return;
+        };
+        let binding = Binding::Single(chord);
+        let shown = describe(&binding);
+
+        if mode == CaptureMode::Remove {
+            let held = self.keymap.keys_for(context, action);
+            if !held.contains(&shown) {
+                self.set_status(format!("{} is not bound to {}", shown, action.as_str()));
+                return;
+            }
+            self.keymap.evict(context, &binding);
+            self.finish_capture(if held.len() == 1 {
+                format!("{} is now unbound", action.as_str())
+            } else {
+                format!("{} no longer runs {}", shown, action.as_str())
+            });
+            return;
+        }
+
+        let owner = crate::input::keybind::current_owner(self, context, &binding);
+        if owner == Some(action) {
+            self.set_status(format!("{} already runs {}", shown, action.as_str()));
+            self.cancel_capture();
+            return;
+        }
+        if let Some(owner) = owner
+            && self.capture_conflict.as_ref() != Some(&binding)
+        {
+            self.capture_conflict = Some(binding.clone());
+            self.set_status(format!(
+                "{} is {} here — press it again to take it",
+                shown,
+                owner.as_str()
+            ));
+            return;
+        }
+
+        self.keymap.evict(context, &binding);
+        if mode == CaptureMode::Replace {
+            self.keymap.clear_action(context, action);
+        }
+        self.keymap.bind(context, binding, action);
+        self.finish_capture(format!("{} is now {}", shown, action.as_str()));
+    }
+
+    fn finish_capture(&mut self, message: String) {
+        self.keybind_dirty = true;
+        self.capturing = None;
+        self.capture_conflict = None;
+        self.refresh_keybind_rows();
+        self.set_status(message);
+    }
+
+    pub fn cancel_capture(&mut self) {
+        self.capturing = None;
+        self.capture_conflict = None;
+    }
+
+    /// Back to the built-in keymap.
+    ///
+    /// Deliberately not a file delete: it marks the keymap dirty and lets the
+    /// normal save on close write it out. `to_toml` records only differences
+    /// from the defaults, so a reset keymap produces a file with no overrides
+    /// in it — the same end state as deleting, through one write path, with
+    /// the same backup, and without a `remove_file` that would have to be kept
+    /// away from tests.
+    pub fn reset_keybindings(&mut self) {
+        self.keymap = crate::keymap::defaults::keymap();
+        self.keybind_dirty = true;
+        self.config_problems.clear();
+        self.refresh_keybind_rows();
+        self.set_status("Keybindings back to the defaults".into());
+    }
+
+    fn set_status(&mut self, message: String) {
+        self.status_message = Some(message);
+        self.status_timestamp = Some(Instant::now());
+    }
+
+    /// Reads `~/.config/ctrlr/config.toml`. Only `bootstrap` calls this —
+    /// `AppState::new` must stay filesystem-free or every test would depend on
+    /// the developer's own config.
+    ///
+    /// A problem is surfaced with `status_timestamp: None`, which makes the
+    /// message stick: the expiry in the event loop is `if let Some(ts)`, and a
+    /// config error the user never sees is worse than a footer that stays busy
+    /// until the next keypress. The full list lives in the help popup.
+    fn load_config(&mut self) {
+        let (keymap, problems) = crate::config::load();
+        self.keymap = keymap;
+        if let Some(first) = problems.first() {
+            self.status_message = Some(match problems.len() {
+                1 => format!("⚠ config.toml — {}", first),
+                n => format!("⚠ config.toml — {} (and {} more; see help)", first, n - 1),
+            });
+            self.status_timestamp = None;
+        }
+        self.config_problems = problems;
     }
 
     /// Key under which a dismissed offer is remembered.
@@ -465,7 +690,19 @@ impl AppState {
             active_pane: ActivePane::Search,
             view_mode: ViewMode::History,
             show_details: true,
+            keymap: crate::keymap::defaults::keymap(),
+            config_problems: Vec::new(),
+            keybind_popup_open: false,
+            keybind_rows: Vec::new(),
+            keybind_selected_index: 0,
+            keybind_list_state: ListState::default(),
+            keybind_query: String::new(),
+            keybind_dirty: false,
+            capturing: None,
+            capture_conflict: None,
             input_mode: InputMode::Normal,
+            edit_input: TextInput::default(),
+            edit_origin: None,
             tag_input: String::new(),
             tag_selected_index: 0,
             tag_cursor_index: None,
@@ -665,7 +902,7 @@ impl AppState {
         }
     }
 
-    pub fn set_key_buffer(&mut self, key: char) {
+    pub fn set_key_buffer(&mut self, key: crate::keymap::KeyChord) {
         self.key_buffer = Some(key);
         self.key_buffer_timestamp = Some(Instant::now());
     }
@@ -1194,6 +1431,103 @@ impl AppState {
         if !self.search_query.is_empty() {
             self.selected_index = 0;
         }
+    }
+
+    /// Staged cancel, shared by Esc and Ctrl+C. Walks the same priority order
+    /// as `input::handle`'s overlay guards: closes the topmost overlay, then
+    /// leaves a text-input mode, then clears the search. Returns true only when
+    /// there was nothing left to close and the query was already empty.
+    ///
+    /// Living here rather than in the event loop is what keeps the two quit
+    /// keys from drifting, and means a new `InputMode` cannot be forgotten in a
+    /// hand-maintained list.
+    pub fn cancel_or_quit(&mut self) -> bool {
+        if self.integration_popup_open {
+            self.dismiss_integration_popup();
+            return false;
+        }
+        if self.context_menu_open {
+            self.close_context_menu();
+            return false;
+        }
+        if self.keybind_popup_open {
+            self.close_keybind_popup();
+            return false;
+        }
+        if self.theme_popup_open {
+            self.close_theme_popup();
+            return false;
+        }
+        if self.help_open {
+            self.help_open = false;
+            self.help_search_query.clear();
+            return false;
+        }
+        if self.export_popup_open || self.import_popup_open {
+            self.close_import_export_popup();
+            return false;
+        }
+        if self.input_mode != InputMode::Normal {
+            self.cancel_input_mode();
+            return false;
+        }
+        self.handle_esc()
+    }
+
+    /// Loads the selected command into the edit line. No-op when nothing is
+    /// selected, so the mode is never entered with an empty buffer.
+    ///
+    /// Reads `filtered`, which is what `normal::activate_selected` runs on —
+    /// in the Collections view that holds the open collection's items, so
+    /// editing works there for free.
+    pub fn begin_edit_command(&mut self) {
+        let Some(text) = self
+            .filtered
+            .get(self.selected_index)
+            .map(|c| c.text.clone())
+        else {
+            return;
+        };
+        self.edit_input = TextInput::new(text.clone());
+        self.edit_origin = Some(text);
+        self.input_mode = InputMode::EditCommand;
+    }
+
+    /// Hands the edited line to the shell, or `None` when there is nothing to
+    /// run — in which case the caller stays in edit mode. An empty string must
+    /// never leave the TUI: `run_tui` writes an empty output file to mean
+    /// "cancelled", and all three shell widgets test for that with `-s`.
+    ///
+    /// **Nothing is written to the DB when the text changed.** The original is
+    /// not what runs, so its `use_count` must not move; the edited variant
+    /// gets its own row the same way every command does, when the shell runs
+    /// it and `runs.log` picks it up. An unchanged line is just Enter with
+    /// extra steps and is counted as such.
+    pub fn commit_edit(&mut self) -> Option<String> {
+        let text = self.edit_input.value().trim().to_string();
+        if text.is_empty() {
+            return None;
+        }
+        let unchanged = self.edit_origin.as_deref() == Some(self.edit_input.value());
+        if unchanged {
+            self.mark_executed();
+        }
+        self.cancel_input_mode();
+        Some(text)
+    }
+
+    /// Drops whatever a text-input mode was collecting and returns to Normal.
+    pub fn cancel_input_mode(&mut self) {
+        self.input_mode = InputMode::Normal;
+        self.edit_input.clear();
+        self.edit_origin = None;
+        self.tag_input.clear();
+        self.tag_selected_index = 0;
+        self.tag_cursor_index = None;
+        self.collection_input_mode = CollectionInputMode::None;
+        self.collection_input_text.clear();
+        self.editing_collection_id = None;
+        self.add_command_search_index = 0;
     }
 
     /// Returns true when the caller should quit — i.e. there was no query to clear.

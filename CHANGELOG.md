@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Keybindings are yours. `Ctrl+G` opens a list of every action; filter it, then on a row press Enter to replace its keys, `Ctrl+A` to add another, or `Ctrl+D` to remove one. Each names the key by having you press it, so an action with several keys needs no extra picking. Changes apply immediately and are written to `~/.config/ctrlr/config.toml` when you close the popup, creating the file and its directory. `Ctrl+R` restores the defaults
+- Taking a key another action already owns asks first: the first press says what it would displace, the second confirms
+- Or edit the file yourself — `ctrlr config --print` writes out every default. Listing an action replaces its defaults, so you can drop one you dislike; anything you leave out stays as it was. ctrlr only records what differs from its defaults, so later changes to those still reach you
+- A config ctrlr overwrites is kept as `config.toml.ctrlr.bak`
+- A line ctrlr cannot read keeps its default and is listed under **Config** at the top of the help popup, with what was wrong. A broken config never stops ctrlr from starting
+- Commands can be edited before they run. `e` on a row opens it in an edit line with a real cursor — arrows, Home/End, Delete, Ctrl+U — and Enter hands the edited text to your prompt
+- `Ctrl+x` opens the selected command in `$VISUAL` / `$EDITOR` and puts what you save straight on the prompt line — no second keypress. From inside the edit line the same key is a detour instead: it comes back to the line so you can look before committing, the way readline's `Ctrl+X Ctrl+E` does. Quitting the editor with a non-zero status, or emptying the file, changes nothing
+- Editing never touches ctrlr's database. The original command keeps its favorite, tags and run count, because the original is not what ran; the edited version appears on the next launch once your shell has actually run it
+- `Ctrl+C` now cancels, alongside `Esc`. Both behave the same way and in stages: the first press closes whatever is on top — a popup, then a tag or collection prompt — then clears the search box, and only exits ctrlr once there is nothing left to close
+
+### Changed
+- The help popup and the footer now show the keys that are actually bound, instead of a hand-written list that had already drifted. Rebind a key and both follow
+- Esc no longer has its own special case in the event loop, and the individual key handlers no longer carry Esc arms. Both cancel keys resolve through one place, so they cannot drift apart
+- Enter on a help-popup entry now runs exactly the same code as its keybinding. A few entries had quietly grown their own slightly different behaviour
+
 ---
 
 ## [0.8.0] - 2026-08-15

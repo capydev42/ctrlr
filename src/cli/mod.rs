@@ -21,6 +21,15 @@ pub fn run() -> color_eyre::Result<()> {
         let shell = get_shell_flag(&args);
         let print_only = args.iter().any(|a| a == "--print");
         crate::cli::init::run(shell, print_only)?;
+    } else if args.len() > 1 && args[1] == "config" {
+        if args.iter().any(|a| a == "--print") {
+            print!("{}", crate::config::print_defaults());
+        } else {
+            match crate::config::config_path() {
+                Some(path) => println!("{}", path.display()),
+                None => eprintln!("Could not determine a config directory"),
+            }
+        }
     } else if args.len() > 1 && args[1] == "export" {
         let output_path = get_export_output_path(&args);
         crate::cli::export::run(output_path.as_deref())?;
@@ -116,17 +125,20 @@ fn print_help() {
     println!();
     println!("Commands:");
     println!("  init              Add shell integration");
+    println!("  config            Print the config file path (--print dumps the defaults)");
     println!("  export [FILE]     Export data to JSON (stdout if no file)");
     println!("  import FILE       Import data from JSON");
     println!();
     println!("Options:");
     println!("  --help, -h        Show this help");
-    println!("  --output-file, -o Write selected command to file instead of stdout");
+    println!("  --output-file, -o Write the selected command to this file. The shell");
+    println!("                    integration sets it; without it nothing is printed.");
     println!();
     println!("Examples:");
     println!("  ctrlr             Open the TUI");
     println!("  ctrlr init        Add shell integration (Ctrl+R)");
     println!("  ctrlr init --print   Print integration script");
+    println!("  ctrlr config --print > ~/.config/ctrlr/config.toml   Customise keybindings");
     println!("  ctrlr --output-file /tmp/cmd  Write output to file");
     println!("  ctrlr export      Export all data to stdout");
     println!("  ctrlr export backup.json  Export to file");
