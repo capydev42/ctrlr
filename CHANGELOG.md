@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.9.0] - 2026-08-23
+
 ### Added
 - Keybindings are yours. `Ctrl+G` opens a list of every action; filter it, then on a row press Enter to replace its keys, `Ctrl+A` to add another, or `Ctrl+D` to remove one. Each names the key by having you press it, so an action with several keys needs no extra picking. Changes apply immediately and are written to `~/.config/ctrlr/config.toml` when you close the popup, creating the file and its directory. `Ctrl+R` restores the defaults
 - Taking a key another action already owns asks first: the first press says what it would displace, the second confirms
