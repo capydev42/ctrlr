@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.10.0] - 2026-08-24
+
+### Added
+- ctrlr installs with Homebrew now, on macOS and on Linux: `brew install capydev42/ctrlr/ctrlr`
+- And from crates.io, if you have a Rust toolchain: `cargo install ctrlr`
+- Linux on ARM has its own build. Raspberry Pis, ARM servers and Asahi machines get a binary that runs instead of one that does not
+- `ctrlr --version` prints the version and exits, without opening the TUI
+
+### Fixed
+- The install script handed every Linux machine the x86_64 binary, ARM ones included, which then failed with `Exec format error`. It picks by architecture now
+
+---
+
 ## [0.9.0] - 2026-08-23
 
 ### Added
