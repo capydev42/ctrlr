@@ -20,6 +20,9 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: ctrlr-x86_64-unknown-linux-gnu.tar.gz
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: ctrlr-aarch64-unknown-linux-gnu.tar.gz
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact: ctrlr-x86_64-apple-darwin.tar.gz
@@ -83,7 +86,7 @@ jobs:
       - name: Print checksums by platform
         run: |
           cd artifacts
-          echo "=== Linux ===" && sha256sum *linux*.tar.gz 2>/dev/null || true
+          echo "=== Linux ===" && sha256sum *linux-gnu.tar.gz 2>/dev/null || true
           echo "=== macOS ===" && sha256sum *apple-darwin.tar.gz 2>/dev/null || true
 
       - name: Create release
