@@ -2,13 +2,14 @@
 
 [![CI](https://github.com/capydev42/ctrlr/actions/workflows/ci.yml/badge.svg)](https://github.com/capydev42/ctrlr/actions)
 [![GitHub release](https://img.shields.io/github/v/release/capydev42/ctrlr)](https://github.com/capydev42/ctrlr/releases)
+[![crates.io](https://img.shields.io/crates/v/ctrlr)](https://crates.io/crates/ctrlr)
 [![License](https://img.shields.io/github/license/capydev42/ctrlr)](LICENSE.md)
 ![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS-blue)
 
 > Turn your shell history into a searchable command palette  
 > Stop googling commands you already used.
 
-![ctrlr demo](assets/demo.gif)
+![ctrlr demo](https://raw.githubusercontent.com/capydev42/ctrlr/main/assets/demo.gif)
 
 ---
 
@@ -19,6 +20,12 @@ curl -fsSL https://github.com/capydev42/ctrlr/releases/latest/download/install.s
 ```
 
 The script asks where to install and downloads the binary for your platform.
+
+**Homebrew** (macOS and Linux):
+
+```bash
+brew install capydev42/ctrlr/ctrlr
+```
 
 <details>
 <summary>Other ways to install</summary>
@@ -38,6 +45,11 @@ INSTALL_DIR=/usr/local/bin ./install.sh
 ```bash
 tar -xzf ctrlr-x86_64-unknown-linux-gnu.tar.gz
 mv ctrlr ~/.local/bin/   # or /usr/local/bin/
+```
+
+**With cargo** (needs Rust 1.88 or newer and a C compiler — SQLite is built from source):
+```bash
+cargo install ctrlr
 ```
 
 **From source** (needs Rust 1.88 or newer):

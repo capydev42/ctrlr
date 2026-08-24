@@ -101,3 +101,94 @@ jobs:
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  homebrew:
+    name: Bump Homebrew formula
+    needs: release
+    runs-on: ubuntu-latest
+    # Skipped until the tap exists. To turn it on, set the repository variable
+    # HOMEBREW_TAP_REPO to capydev42/homebrew-ctrlr and add a TAP_TOKEN secret:
+    # a PAT with contents:write on that repo, because GITHUB_TOKEN is scoped to
+    # this one and cannot push to another repository.
+    if: vars.HOMEBREW_TAP_REPO != ''
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ inputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" --pattern checksums.txt
+
+      - name: Checkout tap
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.HOMEBREW_TAP_REPO }}
+          token: ${{ secrets.TAP_TOKEN }}
+          path: tap
+
+      - name: Render formula
+        run: |
+          mkdir -p tap/Formula
+          bash packaging/homebrew/render-formula.sh \
+            "${{ inputs.tag }}" checksums.txt > tap/Formula/ctrlr.rb
+          cat tap/Formula/ctrlr.rb
+
+      - name: Commit and push
+        working-directory: tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/ctrlr.rb
+          if git diff --cached --quiet; then
+            echo "Formula unchanged, nothing to push"
+            exit 0
+          fi
+          git commit -m "ctrlr ${{ inputs.tag }}"
+          git push
+
+  crates-io:
+    name: Publish to crates.io
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # The tag is typed by hand into workflow_dispatch; Cargo.toml is what
+      # actually gets published. A mismatch would put a version on crates.io
+      # that no git tag points at, and crates.io versions cannot be replaced.
+      - name: Check tag matches Cargo.toml
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          if [[ "${{ inputs.tag }}" != "v${version}" ]]; then
+            echo "::error::tag ${{ inputs.tag }} does not match Cargo.toml version ${version}"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_ENV"
+
+      # Makes a re-run of the workflow harmless: publishing an existing
+      # version is an error, and the whole job would go red after the fact.
+      - name: Skip if already published
+        run: |
+          if curl -sfA "ctrlr-release-workflow" \
+               "https://crates.io/api/v1/crates/ctrlr/${version}" >/dev/null; then
+            echo "ctrlr ${version} is already on crates.io"
+            echo "skip=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Publish
+        if: env.skip != 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked

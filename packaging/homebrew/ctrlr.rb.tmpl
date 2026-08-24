@@ -1,0 +1,45 @@
+# Rendered by packaging/homebrew/render-formula.sh from a release's
+# checksums.txt, then pushed to the tap repo. Do not edit the copy in the tap.
+class Ctrlr < Formula
+  desc "Turn your shell history into a searchable command palette"
+  homepage "https://github.com/capydev42/ctrlr"
+  version "@VERSION@"
+  license "MIT"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/capydev42/ctrlr/releases/download/v@VERSION@/ctrlr-aarch64-apple-darwin.tar.gz"
+      sha256 "@SHA_MACOS_ARM@"
+    end
+    on_intel do
+      url "https://github.com/capydev42/ctrlr/releases/download/v@VERSION@/ctrlr-x86_64-apple-darwin.tar.gz"
+      sha256 "@SHA_MACOS_INTEL@"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/capydev42/ctrlr/releases/download/v@VERSION@/ctrlr-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "@SHA_LINUX_ARM@"
+    end
+    on_intel do
+      url "https://github.com/capydev42/ctrlr/releases/download/v@VERSION@/ctrlr-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "@SHA_LINUX_INTEL@"
+    end
+  end
+
+  def install
+    bin.install "ctrlr"
+  end
+
+  def caveats
+    <<~EOS
+      Shell integration is not installed by brew. Add it with:
+        ctrlr init
+    EOS
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/ctrlr --version")
+  end
+end
