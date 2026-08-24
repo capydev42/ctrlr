@@ -27,6 +27,12 @@ The script asks where to install and downloads the binary for your platform.
 brew install capydev42/ctrlr/ctrlr
 ```
 
+**Cargo** — builds from source, needs Rust 1.88 or newer and a C compiler:
+
+```bash
+cargo install ctrlr
+```
+
 <details>
 <summary>Other ways to install</summary>
 
@@ -45,11 +51,6 @@ INSTALL_DIR=/usr/local/bin ./install.sh
 ```bash
 tar -xzf ctrlr-x86_64-unknown-linux-gnu.tar.gz
 mv ctrlr ~/.local/bin/   # or /usr/local/bin/
-```
-
-**With cargo** (needs Rust 1.88 or newer and a C compiler — SQLite is built from source):
-```bash
-cargo install ctrlr
 ```
 
 **From source** (needs Rust 1.88 or newer):
