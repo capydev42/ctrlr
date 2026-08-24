@@ -66,7 +66,11 @@ ARCH="$(uname -m)"
 
 case "$OS" in
     Linux*)
-        ASSET_NAME="ctrlr-x86_64-unknown-linux-gnu.tar.gz"
+        if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+            ASSET_NAME="ctrlr-aarch64-unknown-linux-gnu.tar.gz"
+        else
+            ASSET_NAME="ctrlr-x86_64-unknown-linux-gnu.tar.gz"
+        fi
         ;;
     Darwin*)
         if [[ "$ARCH" == "arm64" ]]; then

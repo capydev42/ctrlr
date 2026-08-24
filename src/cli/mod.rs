@@ -13,6 +13,11 @@ pub fn run() -> color_eyre::Result<()> {
         return Ok(());
     }
 
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("{}", version_line());
+        return Ok(());
+    }
+
     if args.len() > 1 && args[1] == "init" {
         if args.iter().any(|a| a == "--help" || a == "-h") {
             print_init_help();
@@ -56,6 +61,13 @@ pub fn run() -> color_eyre::Result<()> {
     }
 
     Ok(())
+}
+
+/// Answered before anything can reach the TUI: a package manager verifies an
+/// install by running the binary headless (Homebrew's `test do` block), and
+/// bare `ctrlr` would try to take the alternate screen.
+fn version_line() -> String {
+    format!("ctrlr {}", env!("CARGO_PKG_VERSION"))
 }
 
 fn get_shell_flag(args: &[String]) -> Option<Shell> {
@@ -131,6 +143,7 @@ fn print_help() {
     println!();
     println!("Options:");
     println!("  --help, -h        Show this help");
+    println!("  --version, -V     Show the version");
     println!("  --output-file, -o Write the selected command to this file. The shell");
     println!("                    integration sets it; without it nothing is printed.");
     println!();
@@ -173,6 +186,18 @@ fn print_import_help() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_version_line_is_name_and_semver() {
+        let line = version_line();
+        let (name, version) = line.split_once(' ').expect("name and version");
+        assert_eq!(name, "ctrlr");
+        assert_eq!(
+            version.split('.').count(),
+            3,
+            "expected a semver triple, got {version}"
+        );
+    }
 
     const LEGACY_BASH: &str = "# ctrlr integration
 export PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND; } history -a\"
