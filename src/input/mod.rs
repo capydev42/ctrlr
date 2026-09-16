@@ -9,7 +9,7 @@ pub mod tag;
 
 use crate::app::{Action, ActivePane, AppState, InputMode};
 use crate::keymap::{KeyAction, KeyContext, Resolved};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 
 /// The pane a key would land in with no overlay open. Also what the help popup
 /// describes: while it is open `active_context` reports `Help`, but the user is
@@ -62,6 +62,19 @@ pub fn active_context(state: &AppState) -> KeyContext {
 }
 
 pub fn handle(state: &mut AppState, key: KeyEvent) -> Action {
+    // Windows reports a Release for every Press; unix reports only Press,
+    // because ctrlr never asks for the kitty keyboard enhancements. Without
+    // this every key fires twice there — `j` walks two rows, Enter executes
+    // and then executes again.
+    //
+    // Only Release is rejected, not "anything that is not Press": if the kitty
+    // protocol is ever enabled, Repeat is a held key and has to navigate. The
+    // filter belongs here rather than in `main.rs` because this is the
+    // boundary the tests drive, and rather than in `KeyChord::matches`
+    // because the capture path below returns before any lookup happens.
+    if key.kind == KeyEventKind::Release {
+        return Action::None;
+    }
     // Ahead of `active_context` and of any keymap lookup, and the only place
     // allowed to skip resolution: recording a binding has to see the key the
     // user actually pressed, not whatever it currently means.
@@ -209,7 +222,7 @@ fn theme_popup(state: &mut AppState, action: KeyAction) -> Action {
 mod tests {
     use super::*;
     use crate::app::{Command, InputMode};
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventState, KeyModifiers};
 
     fn cmd(text: &str) -> Command {
         Command {
@@ -671,5 +684,71 @@ mod tests {
         assert!(state.help_open, "help must survive the first cancel");
         assert!(!state.cancel_or_quit());
         assert!(!state.help_open);
+    }
+
+    /// Windows emits a Release for every Press. Both of the tests below run on
+    /// unix, where crossterm never produces one — they exist so the filter in
+    /// `handle` cannot be removed without a failure here.
+    fn release(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Release,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn test_release_events_are_ignored() {
+        let mut state = state();
+        state.active_pane = ActivePane::History;
+        let before = state.selected_index;
+
+        assert_eq!(
+            handle(&mut state, release(KeyCode::Char('j'))),
+            Action::None
+        );
+        assert_eq!(
+            state.selected_index, before,
+            "a release must not move the selection, or every key steps twice"
+        );
+
+        handle(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
+        );
+        assert_eq!(state.selected_index, before + 1, "the press still works");
+    }
+
+    /// The capture path runs before any keymap lookup, so a filter placed in
+    /// `KeyChord::matches` — or in `main.rs` — would still let a release
+    /// record a binding here.
+    #[test]
+    fn test_capture_ignores_release_events() {
+        let mut state = AppState::new(Vec::new(), None);
+        state.open_keybind_popup();
+        let index = state
+            .keybind_rows
+            .iter()
+            .position(|r| r.context == KeyContext::History && r.action == KeyAction::ToggleFavorite)
+            .expect("History/toggle_favorite is listed");
+        state.select_keybind_row(index);
+        handle(
+            &mut state,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        );
+        assert!(state.capturing.is_some(), "capture is armed");
+
+        handle(&mut state, release(KeyCode::Char('v')));
+        assert!(
+            state.capturing.is_some(),
+            "a release must not be recorded as the new binding"
+        );
+        assert!(
+            !state
+                .keymap
+                .keys_for(KeyContext::History, KeyAction::ToggleFavorite)
+                .contains(&"v".to_string())
+        );
     }
 }

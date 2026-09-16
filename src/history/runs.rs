@@ -327,6 +327,9 @@ mod tests {
         assert!(left.is_empty(), "log must be drained");
     }
 
+    // Unix-only: the mode bits have no Windows counterpart, and the log
+    // inherits the profile directory's ACL there instead.
+    #[cfg(unix)]
     #[test]
     fn test_take_run_log_restores_owner_only_permissions() {
         // The hooks only set the mode when they create the file at shell
@@ -344,6 +347,9 @@ mod tests {
         assert_eq!(mode, 0o600, "run log holds command text and paths");
     }
 
+    // Unix-only: `std::os::windows::fs::symlink_dir` needs Developer Mode or
+    // an elevated process, which no CI runner can be relied on to have.
+    #[cfg(unix)]
     #[test]
     fn test_canonical_dir_resolves_symlinks() {
         let dir = TempDir::new().unwrap();

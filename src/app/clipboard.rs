@@ -1,4 +1,8 @@
+// Only the linux path shells out; every other platform goes straight to
+// arboard, so these two are unused there and would fail `-D warnings`.
+#[cfg(target_os = "linux")]
 use std::io::Write;
+#[cfg(target_os = "linux")]
 use std::process::{Command, Stdio};
 
 #[cfg(target_os = "linux")]
