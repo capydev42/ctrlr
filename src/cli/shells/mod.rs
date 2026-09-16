@@ -13,24 +13,33 @@ pub enum Shell {
 }
 
 impl Shell {
-    pub fn detect() -> Option<Self> {
-        let shell = std::env::var("SHELL").ok()?;
-        let basename = std::path::Path::new(&shell).file_name()?.to_str()?;
-        match basename {
-            "bash" => Some(Shell::Bash),
-            "zsh" => Some(Shell::Zsh),
-            "fish" => Some(Shell::Fish),
-            _ => None,
+    /// Every variant, so the help text, the "Supported:" list and the
+    /// per-shell tests cannot fall behind a new one. Hand-maintained; the
+    /// test below is what keeps it honest.
+    pub const ALL: &'static [Shell] = &[Shell::Bash, Shell::Zsh, Shell::Fish];
+
+    /// What `--shell` accepts, and what `detect` matches a `$SHELL` basename
+    /// against.
+    pub fn aliases(&self) -> &'static [&'static str] {
+        match self {
+            Shell::Bash => &["bash"],
+            Shell::Zsh => &["zsh"],
+            Shell::Fish => &["fish"],
         }
     }
 
+    pub fn detect() -> Option<Self> {
+        let shell = std::env::var("SHELL").ok()?;
+        let basename = std::path::Path::new(&shell).file_name()?.to_str()?;
+        Self::from_str(basename)
+    }
+
     pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "bash" => Some(Shell::Bash),
-            "zsh" => Some(Shell::Zsh),
-            "fish" => Some(Shell::Fish),
-            _ => None,
-        }
+        let s = s.to_lowercase();
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|shell| shell.aliases().contains(&s.as_str()))
     }
 
     pub fn config_path(&self) -> std::path::PathBuf {
@@ -118,28 +127,31 @@ pub fn script_fingerprint(shell: Shell) -> String {
     crate::hash::sha1_hex(&generate_script(shell))
 }
 
-pub fn generate_script(shell: Shell) -> String {
+/// Opens and closes every block ctrlr writes into a shell config. `strip`,
+/// `is_installed` and each script constant all read the same two strings.
+pub const START_MARKER: &str = "# ctrlr integration";
+pub const END_MARKER: &str = "# ctrlr integration end";
+
+fn script_template(shell: Shell) -> &'static str {
     match shell {
-        Shell::Bash => bash::generate(),
-        Shell::Zsh => zsh::generate(),
-        Shell::Fish => fish::generate(),
+        Shell::Bash => bash::SCRIPT,
+        Shell::Zsh => zsh::SCRIPT,
+        Shell::Fish => fish::SCRIPT,
     }
 }
 
-pub fn is_installed(shell: Shell, config_content: &str) -> bool {
-    match shell {
-        Shell::Bash => bash::is_installed(config_content),
-        Shell::Zsh => zsh::is_installed(config_content),
-        Shell::Fish => fish::is_installed(config_content),
-    }
+pub fn generate_script(shell: Shell) -> String {
+    script_template(shell).replace("{LOG}", &crate::storage::runs_log_path().to_string_lossy())
+}
+
+/// The shell is irrelevant today - every script opens with the same marker -
+/// but a shell whose comment character is not `#` would need it.
+pub fn is_installed(_shell: Shell, config_content: &str) -> bool {
+    config_content.contains(START_MARKER)
 }
 
 pub fn is_up_to_date(shell: Shell, config_content: &str) -> bool {
-    match shell {
-        Shell::Bash => bash::is_up_to_date(config_content),
-        Shell::Zsh => zsh::is_up_to_date(config_content),
-        Shell::Fish => fish::is_up_to_date(config_content),
-    }
+    config_content.contains(&generate_script(shell))
 }
 
 #[cfg(test)]
@@ -184,6 +196,66 @@ mod tests {
                 integration_state(shell, ""),
                 IntegrationState::Missing,
                 "{} with no config yet still gets the offer",
+                shell
+            );
+        }
+    }
+
+    /// `ALL` is hand-maintained. The match makes adding a variant without
+    /// listing it a compile error rather than a silently untested shell.
+    #[test]
+    fn test_all_lists_every_variant() {
+        fn exhaustive(shell: Shell) -> usize {
+            match shell {
+                Shell::Bash => 0,
+                Shell::Zsh => 1,
+                Shell::Fish => 2,
+            }
+        }
+        assert_eq!(Shell::ALL.len(), 3);
+        for (i, &shell) in Shell::ALL.iter().enumerate() {
+            assert_eq!(exhaustive(shell), i, "{} is out of order in ALL", shell);
+        }
+    }
+
+    #[test]
+    fn test_from_str_round_trips_every_display_name() {
+        for &shell in Shell::ALL {
+            assert_eq!(Shell::from_str(shell.display_name()), Some(shell));
+            assert_eq!(
+                Shell::from_str(&shell.display_name().to_uppercase()),
+                Some(shell)
+            );
+        }
+        assert_eq!(Shell::from_str("nonesuch"), None);
+    }
+
+    #[test]
+    fn test_is_installed_and_up_to_date_per_shell() {
+        for &shell in Shell::ALL {
+            let script = generate_script(shell);
+            assert!(is_installed(shell, &script));
+            assert!(is_up_to_date(shell, &script));
+            assert!(!is_installed(shell, "# other integration\nfoo"));
+            assert!(!is_up_to_date(shell, "other stuff"));
+        }
+    }
+
+    /// Both markers are what `strip_integration` cuts on, so every script has
+    /// to carry them verbatim.
+    #[test]
+    fn test_every_script_carries_both_markers() {
+        for &shell in Shell::ALL {
+            let script = generate_script(shell);
+            assert!(script.starts_with(START_MARKER), "{} start marker", shell);
+            assert!(
+                script.trim_end().ends_with(END_MARKER),
+                "{} end marker",
+                shell
+            );
+            assert!(
+                !script.contains("{LOG}"),
+                "{} still has the placeholder",
                 shell
             );
         }

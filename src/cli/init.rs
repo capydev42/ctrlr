@@ -1,4 +1,4 @@
-use crate::cli::shells::{self, Shell};
+use crate::cli::shells::{self, END_MARKER, START_MARKER, Shell};
 use color_eyre::Report;
 use std::fs;
 use std::io::Write;
@@ -12,9 +12,15 @@ pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
             None => {
                 let current_shell =
                     std::env::var("SHELL").unwrap_or_else(|_| "unknown".to_string());
+                let supported: Vec<String> = Shell::ALL
+                    .iter()
+                    .map(|s| format!("  - {}", s.display_name()))
+                    .collect();
                 println!(
-                    "⚠️ Could not confidently detect shell\n\nDetected: {} (unsupported)\n\nSupported:\n  - bash\n  - zsh\n  - fish\n\nTry:\n  ctrlr init --shell bash\n  ctrlr init --print",
-                    current_shell
+                    "⚠️ Could not confidently detect shell\n\nDetected: {} (unsupported)\n\nSupported:\n{}\n\nTry:\n  ctrlr init --shell {}\n  ctrlr init --print",
+                    current_shell,
+                    supported.join("\n"),
+                    Shell::ALL[0].display_name()
                 );
                 return Ok(());
             }
@@ -182,9 +188,6 @@ fn backup_path(config_path: &Path) -> PathBuf {
     name.push(".ctrlr.bak");
     PathBuf::from(name)
 }
-
-const START_MARKER: &str = "# ctrlr integration";
-const END_MARKER: &str = "# ctrlr integration end";
 
 /// Strips the integration block from a shell config.
 ///

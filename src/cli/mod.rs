@@ -166,7 +166,11 @@ fn print_init_help() {
     println!("Usage: ctrlr init [OPTIONS]");
     println!();
     println!("Options:");
-    println!("  --shell <SHELL>   Force a specific shell (bash, zsh, fish)");
+    let names: Vec<&str> = Shell::ALL.iter().map(|s| s.display_name()).collect();
+    println!(
+        "  --shell <SHELL>   Force a specific shell ({})",
+        names.join(", ")
+    );
     println!("  --print           Only print the integration script, don't install");
     println!("  --help, -h        Show this help");
 }
@@ -232,7 +236,7 @@ bind -x '\"\\C-r\": _ctrlr_widget'";
 
     #[test]
     fn test_integration_state_per_shell() {
-        for shell in [Shell::Bash, Shell::Zsh, Shell::Fish] {
+        for &shell in Shell::ALL {
             let installed = shells::generate_script(shell);
             assert_eq!(
                 shells::integration_state(shell, &installed),

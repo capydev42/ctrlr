@@ -3,7 +3,7 @@
 /// `--on-event` handlers are subscriptions, so ctrlr's coexist with starship's
 /// and anyone else's. fish has no epoch variable, so the timestamp costs one
 /// `date` call per command.
-const FISH_SCRIPT: &str = r#"# ctrlr integration
+pub const SCRIPT: &str = r#"# ctrlr integration
 set -g _ctrlr_log '{LOG}'
 set -g _ctrlr_cwd ''
 set -g _ctrlr_cmd ''
@@ -49,22 +49,13 @@ bind \cr _ctrlr_widget
 # ctrlr integration end
 "#;
 
-pub fn generate() -> String {
-    FISH_SCRIPT.replace("{LOG}", &crate::storage::runs_log_path().to_string_lossy())
-}
-
-pub fn is_installed(config_content: &str) -> bool {
-    config_content.contains("# ctrlr integration")
-}
-
-pub fn is_up_to_date(config_content: &str) -> bool {
-    let generated = generate();
-    config_content.contains(&generated)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::cli::shells::{Shell, generate_script};
+
+    fn generate() -> String {
+        generate_script(Shell::Fish)
+    }
 
     #[test]
     fn test_generate() {
@@ -91,18 +82,5 @@ mod tests {
     #[test]
     fn test_generate_has_end_marker() {
         assert!(generate().contains("# ctrlr integration end"));
-    }
-
-    #[test]
-    fn test_is_installed() {
-        assert!(is_installed("# ctrlr integration\nfoo"));
-        assert!(!is_installed("# other integration\nfoo"));
-    }
-
-    #[test]
-    fn test_is_up_to_date() {
-        let script = generate();
-        assert!(is_up_to_date(&script));
-        assert!(!is_up_to_date("other stuff"));
     }
 }
