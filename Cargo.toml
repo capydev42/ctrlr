@@ -17,6 +17,11 @@ rust-version = "1.88"
 
 [dependencies]
 color-eyre = "0.6.5"
+# `use-dev-tty` stays on for every target: the feature only pulls
+# `filedescriptor` and `rustix/process`, both of which crossterm already
+# declares under `cfg(unix)`, so it is inert on Windows. Splitting this
+# into a base entry plus a `[target.'cfg(unix)'.dependencies]` override
+# works but churns Cargo.lock for no behavioural gain.
 crossterm = { version = "0.29.0", features = ["use-dev-tty"] }
 ratatui = "0.30.0"
 dirs = "6"
