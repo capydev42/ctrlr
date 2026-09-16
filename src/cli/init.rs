@@ -24,7 +24,19 @@ pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
     println!("✔ Detected shell: {}", shell);
 
     let config_path = shell.config_path();
-    let config_content = fs::read_to_string(&config_path).unwrap_or_default();
+    let config_content = match shells::read_config(&config_path) {
+        Ok(content) => content.unwrap_or_default(),
+        // Stop before the y/n prompt; `--print` needs no read at all.
+        Err(e) => {
+            println!(
+                "⚠️ Cannot read {}: {}\n\nctrlr will not write over a config it could not read.\n\nTo add the integration by hand:\n  ctrlr init --shell {} --print",
+                config_path.display(),
+                e,
+                shell
+            );
+            return Ok(());
+        }
+    };
 
     let is_installed = shells::is_installed(shell, &config_content);
     let is_current = shells::is_up_to_date(shell, &config_content);
@@ -94,8 +106,22 @@ pub struct InstallOutcome {
 /// and the append land in one write, so a failure cannot leave the config with
 /// the old block removed and nothing in its place.
 pub fn install_integration(shell: Shell) -> Result<InstallOutcome, Report> {
-    let config_path = shell.config_path();
-    let content = fs::read_to_string(&config_path).unwrap_or_default();
+    install_at(&shell.config_path(), shell)
+}
+
+/// Takes the path so tests can reach it: `config_path()` resolves out of
+/// `$HOME`, which is what kept this body untested.
+fn install_at(config_path: &Path, shell: Shell) -> Result<InstallOutcome, Report> {
+    let config_path = config_path.to_path_buf();
+    let content = shells::read_config(&config_path)
+        .map_err(|e| {
+            Report::new(std::io::Error::other(format!(
+                "Refusing to write over {}: it exists but could not be read ({})",
+                config_path.display(),
+                e
+            )))
+        })?
+        .unwrap_or_default();
 
     let backup = if content.is_empty() {
         None
@@ -280,22 +306,10 @@ mod install_tests {
     use std::fs;
     use tempfile::TempDir;
 
-    /// `install_integration` resolves the config path from the environment, so
-    /// these drive the pieces it is built from instead.
+    /// Drives the real writer; this used to be a copy of its body.
     fn install_into(config: &Path, shell: Shell) -> String {
-        let content = fs::read_to_string(config).unwrap_or_default();
-        let mut new_content = strip_integration(&content);
-        while new_content.ends_with('\n') {
-            new_content.pop();
-        }
-        if !new_content.is_empty() {
-            new_content.push('\n');
-        }
-        new_content.push('\n');
-        new_content.push_str(&shells::generate_script(shell));
-        new_content.push('\n');
-        fs::write(config, &new_content).unwrap();
-        new_content
+        install_at(config, shell).expect("install must succeed");
+        fs::read_to_string(config).unwrap()
     }
 
     #[test]
@@ -353,5 +367,50 @@ mod install_tests {
             shells::integration_state(Shell::Bash, &after),
             shells::IntegrationState::Current
         );
+    }
+
+    /// The overwrite this change exists to stop.
+    #[test]
+    fn test_install_refuses_a_config_it_cannot_read() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join(".bashrc");
+        let raw: &[u8] = &[0xff, 0xfe, 0x00, b'b', 0x00, b'a'];
+        fs::write(&config, raw).unwrap();
+
+        let result = install_at(&config, Shell::Bash);
+
+        assert!(result.is_err(), "an unreadable config is not an empty one");
+        assert_eq!(fs::read(&config).unwrap(), raw, "bytes are untouched");
+        assert!(
+            !backup_path(&config).exists(),
+            "nothing was replaced, so nothing is backed up"
+        );
+    }
+
+    #[test]
+    fn test_install_creates_a_missing_config() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join("fresh").join(".bashrc");
+
+        let outcome = install_at(&config, Shell::Bash).expect("a missing config is created");
+
+        assert!(outcome.backup.is_none(), "nothing existed to save");
+        let written = fs::read_to_string(&config).unwrap();
+        assert_eq!(
+            shells::integration_state(Shell::Bash, &written),
+            shells::IntegrationState::Current
+        );
+    }
+
+    #[test]
+    fn test_install_backs_up_an_existing_config() {
+        let dir = TempDir::new().unwrap();
+        let config = dir.path().join(".bashrc");
+        fs::write(&config, "export FOO=1\n").unwrap();
+
+        let outcome = install_at(&config, Shell::Bash).unwrap();
+
+        let backup = outcome.backup.expect("an existing config is saved first");
+        assert_eq!(fs::read_to_string(backup).unwrap(), "export FOO=1\n");
     }
 }
