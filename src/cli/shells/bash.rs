@@ -5,7 +5,7 @@
 /// and records the directory the command was actually typed in. Without it we
 /// fall back to logging from PROMPT_COMMAND, which cannot see a `cd` before it
 /// happened and needs one subshell to read the history line back.
-const BASH_SCRIPT: &str = r#"# ctrlr integration
+pub const SCRIPT: &str = r#"# ctrlr integration
 _ctrlr_log='{LOG}'
 [ -d "${_ctrlr_log%/*}" ] || mkdir -p "${_ctrlr_log%/*}" 2>/dev/null
 [ -e "$_ctrlr_log" ] || ( umask 077; : >> "$_ctrlr_log" ) 2>/dev/null
@@ -101,22 +101,13 @@ bind -x '"\C-r": _ctrlr_widget'
 # ctrlr integration end
 "#;
 
-pub fn generate() -> String {
-    BASH_SCRIPT.replace("{LOG}", &crate::storage::runs_log_path().to_string_lossy())
-}
-
-pub fn is_installed(config_content: &str) -> bool {
-    config_content.contains("# ctrlr integration")
-}
-
-pub fn is_up_to_date(config_content: &str) -> bool {
-    let generated = generate();
-    config_content.contains(&generated)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::cli::shells::{Shell, generate_script};
+
+    fn generate() -> String {
+        generate_script(Shell::Bash)
+    }
 
     #[test]
     fn test_generate() {
@@ -174,18 +165,5 @@ mod tests {
     #[test]
     fn test_generate_has_end_marker() {
         assert!(generate().contains("# ctrlr integration end"));
-    }
-
-    #[test]
-    fn test_is_installed() {
-        assert!(is_installed("# ctrlr integration\nfoo"));
-        assert!(!is_installed("# other integration\nfoo"));
-    }
-
-    #[test]
-    fn test_is_up_to_date() {
-        let script = generate();
-        assert!(is_up_to_date(&script));
-        assert!(!is_up_to_date("other stuff"));
     }
 }
