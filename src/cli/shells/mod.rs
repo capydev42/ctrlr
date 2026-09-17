@@ -28,10 +28,39 @@ impl Shell {
         }
     }
 
+    /// Where this shell keeps the history file ctrlr parses.
+    pub fn history_path(&self) -> Option<std::path::PathBuf> {
+        let home = dirs::home_dir()?;
+        Some(match self {
+            Shell::Bash => home.join(".bash_history"),
+            Shell::Zsh => home.join(".zsh_history"),
+            // fish uses the XDG layout on macOS too, so not `dirs::data_dir()`.
+            Shell::Fish => home.join(".local/share/fish/fish_history"),
+        })
+    }
+
+    /// How to make the shell write its in-memory history to that file.
+    pub fn flush_argv(&self) -> Option<(&'static str, &'static str)> {
+        Some(match self {
+            Shell::Bash => ("bash", "history -a"),
+            Shell::Zsh => ("zsh", "fc -W"),
+            Shell::Fish => ("fish", "history save"),
+        })
+    }
+
     pub fn detect() -> Option<Self> {
         let shell = std::env::var("SHELL").ok()?;
         let basename = std::path::Path::new(&shell).file_name()?.to_str()?;
         Self::from_str(basename)
+    }
+
+    /// `detect` with a platform fallback, for loading history: a shell ctrlr
+    /// cannot name would otherwise mean no commands at all. `detect` itself
+    /// stays strict, because writing into the wrong config is worse than not
+    /// offering to.
+    pub fn detect_or_default() -> Option<Self> {
+        // Windows has no supported shell yet, so no fallback either.
+        Self::detect().or((!cfg!(windows)).then_some(Shell::Bash))
     }
 
     pub fn from_str(s: &str) -> Option<Self> {
@@ -259,5 +288,27 @@ mod tests {
                 shell
             );
         }
+    }
+
+    #[test]
+    fn test_every_shell_has_a_history_path_and_flush() {
+        for &shell in Shell::ALL {
+            let path = shell.history_path().expect("home is set under test");
+            assert!(
+                path.is_absolute(),
+                "{} history path is relative: {}",
+                shell,
+                path.display()
+            );
+            let (program, _) = shell.flush_argv().expect("every unix shell flushes");
+            assert_eq!(program, shell.display_name());
+        }
+    }
+
+    /// History loading needs an answer even when `$SHELL` says nothing, or a
+    /// user with an odd login shell would see no commands at all.
+    #[test]
+    fn test_detect_or_default_falls_back_on_unix() {
+        assert_eq!(Shell::detect_or_default().is_none(), cfg!(windows));
     }
 }

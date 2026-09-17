@@ -1,4 +1,5 @@
 use crate::app::Command;
+use crate::cli::shells::Shell;
 use crate::hash::{hash_command, normalize};
 
 mod bash;
@@ -7,8 +8,6 @@ pub mod runs;
 mod zsh;
 
 use std::collections::{HashMap, HashSet};
-
-// think about windows support (powershell? cmd?)
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -19,96 +18,57 @@ pub struct HistoryEntry {
 }
 
 pub fn flush_history() {
-    let shell = detect_shell();
-    let result = match shell {
-        "bash" => std::process::Command::new("bash")
-            .arg("-c")
-            .arg("history -a")
-            .output(),
-        "zsh" => std::process::Command::new("zsh")
-            .arg("-c")
-            .arg("fc -W")
-            .output(),
-        "fish" => std::process::Command::new("fish")
-            .arg("-c")
-            .arg("history save")
-            .output(),
-        _ => return,
+    let Some(shell) = Shell::detect_or_default() else {
+        return;
+    };
+    let Some((program, argv)) = shell.flush_argv() else {
+        return;
     };
 
-    if let Err(e) = result {
-        eprintln!("Failed to flush {} history: {}", shell, e);
-    } else {
-        let output = result.unwrap();
-        if !output.status.success() {
+    match std::process::Command::new(program)
+        .arg("-c")
+        .arg(argv)
+        .output()
+    {
+        Err(e) => eprintln!("Failed to flush {} history: {}", shell, e),
+        Ok(output) if !output.status.success() => {
             let stderr = String::from_utf8_lossy(&output.stderr);
             eprintln!("History flush failed for {}: {}", shell, stderr);
         }
+        Ok(_) => {}
     }
 }
 
 pub fn load_history() -> Vec<Command> {
     flush_history();
 
-    let mut commands = Vec::new();
+    let Some(shell) = Shell::detect_or_default() else {
+        return Vec::new();
+    };
+    let Some(path) = shell.history_path() else {
+        return Vec::new();
+    };
 
-    let shell = detect_shell();
+    let entries = match shell {
+        Shell::Bash => bash::read_history(&path),
+        Shell::Zsh => zsh::read_history(&path),
+        Shell::Fish => fish::read_history(&path),
+    };
 
-    let home = dirs::home_dir().unwrap_or_default();
-
-    match shell {
-        "bash" => {
-            let path = home.join(".bash_history");
-            for entry in bash::read_history(&path) {
-                commands.push(Command {
-                    id: hash_command(&entry.command),
-                    text: entry.command,
-                    tags: vec!["bash".to_string()],
-                    collection_ids: vec![],
-                    favorite: false,
-                    _context: vec!["shell:bash".to_string()],
-                    use_count: entry.use_count,
-                    last_used: entry.timestamp,
-                    runs_here: 0,
-                });
-            }
-        }
-        "zsh" => {
-            let path = home.join(".zsh_history");
-            for entry in zsh::read_history(&path) {
-                commands.push(Command {
-                    id: hash_command(&entry.command),
-                    text: entry.command,
-                    tags: vec!["zsh".to_string()],
-                    collection_ids: vec![],
-                    favorite: false,
-                    _context: vec!["shell:zsh".to_string()],
-                    use_count: entry.use_count,
-                    last_used: entry.timestamp,
-                    runs_here: 0,
-                });
-            }
-        }
-        "fish" => {
-            let path = home.join(".local/share/fish/fish_history");
-            for entry in fish::read_history(&path) {
-                commands.push(Command {
-                    id: hash_command(&entry.command),
-                    text: entry.command,
-                    tags: vec!["fish".to_string()],
-                    collection_ids: vec![],
-                    favorite: false,
-                    _context: vec!["shell:fish".to_string()],
-                    use_count: entry.use_count,
-                    last_used: entry.timestamp,
-                    runs_here: 0,
-                });
-            }
-        }
-        _ => {}
-    }
-
-    commands
+    entries
+        .into_iter()
+        .map(|entry| Command {
+            id: hash_command(&entry.command),
+            text: entry.command,
+            tags: vec![shell.display_name().to_string()],
+            collection_ids: vec![],
+            favorite: false,
+            _context: vec![format!("shell:{}", shell)],
+            use_count: entry.use_count,
+            last_used: entry.timestamp,
+            runs_here: 0,
+        })
+        .collect()
 }
 
 pub fn deduplicate(commands: Vec<Command>) -> Vec<Command> {
@@ -150,21 +110,6 @@ pub fn deduplicate(commands: Vec<Command>) -> Vec<Command> {
     merged.sort_by_key(|(i, _)| *i);
 
     merged.into_iter().map(|(_, c)| c).collect()
-}
-
-#[allow(dead_code)]
-pub fn detect_shell() -> &'static str {
-    std::env::var("SHELL")
-        .unwrap_or_default()
-        .split('/')
-        .next_back()
-        .map(|s| match s {
-            "bash" => "bash",
-            "zsh" => "zsh",
-            "fish" => "fish",
-            _ => "bash",
-        })
-        .unwrap_or("bash")
 }
 
 #[cfg(test)]
