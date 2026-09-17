@@ -1323,9 +1323,15 @@ impl AppState {
         };
         let path = shortened.unwrap_or_else(|| cwd.clone());
 
-        let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+        // Both separators: Windows accepts either, and a path can mix them.
+        let parts: Vec<&str> = path.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
         if parts.len() > 2 {
-            format!(".../{}", parts[parts.len() - 2..].join("/"))
+            let sep = std::path::MAIN_SEPARATOR;
+            format!(
+                "...{}{}",
+                sep,
+                parts[parts.len() - 2..].join(&sep.to_string())
+            )
         } else {
             path
         }
@@ -2684,9 +2690,15 @@ mod tests {
 
     #[test]
     fn test_cwd_display_shortens_long_paths() {
+        let sep = std::path::MAIN_SEPARATOR;
         let mut state = state_with(&[]);
         state.cwd = Some("/home/u/dev/rust/ctrlr".to_string());
-        assert_eq!(state.cwd_display(), ".../rust/ctrlr");
+        assert_eq!(state.cwd_display(), format!("...{sep}rust{sep}ctrlr"));
+
+        // Backslashes split too, so a Windows path shortens rather than being
+        // rendered whole. Runs on every platform; only the joiner differs.
+        state.cwd = Some(r"C:\Users\u\dev\rust\ctrlr".to_string());
+        assert_eq!(state.cwd_display(), format!("...{sep}rust{sep}ctrlr"));
 
         state.cwd = Some("/tmp".to_string());
         assert_eq!(state.cwd_display(), "/tmp");

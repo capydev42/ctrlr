@@ -100,8 +100,21 @@ fn recreate_secure(path: &Path) {
 /// dropped.
 pub fn canonical_dir(path: &str) -> String {
     std::fs::canonicalize(path)
-        .map(|p| p.to_string_lossy().into_owned())
+        .map(|p| strip_verbatim(p.to_string_lossy().into_owned()))
         .unwrap_or_else(|_| path.to_string())
+}
+
+/// Windows' `canonicalize` returns the extended-length form. Both sides of a
+/// cwd compare go through here so matching is unaffected, but `\\?\C:\x` is
+/// what the details pane would otherwise show.
+fn strip_verbatim(path: String) -> String {
+    match path.strip_prefix(r"\\?\") {
+        Some(rest) => match rest.strip_prefix("UNC\\") {
+            Some(unc) => format!(r"\\{}", unc),
+            None => rest.to_string(),
+        },
+        None => path,
+    }
 }
 
 /// The directory ctrlr itself was launched from — ctrlr is a child of the
@@ -400,5 +413,18 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].command, "old");
         assert!(path.exists(), "live log is claimed on the next call");
+    }
+
+    #[test]
+    fn test_strip_verbatim_unwraps_extended_length_paths() {
+        assert_eq!(strip_verbatim(r"\\?\C:\Users\u".into()), r"C:\Users\u");
+        assert_eq!(
+            strip_verbatim(r"\\?\UNC\srv\share\x".into()),
+            r"\\srv\share\x"
+        );
+        // Anything without the prefix, including every unix path, is untouched.
+        assert_eq!(strip_verbatim("/home/u".into()), "/home/u");
+        assert_eq!(strip_verbatim(r"C:\Users\u".into()), r"C:\Users\u");
+        assert_eq!(strip_verbatim(r"\\srv\share".into()), r"\\srv\share");
     }
 }
