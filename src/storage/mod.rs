@@ -8,14 +8,29 @@ pub mod migrations;
 pub mod runs;
 pub mod tags;
 
-pub fn get_db_path() -> PathBuf {
-    // linux: ~/.local/share/ctrlr/ctrlr.db
-    // mac: ~/Library/Application Support/ctrlr/ctrlt.db
-    // windows: %APPDATA%\ctrlr\ctrlr.db
-    let base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
-    let dir = base.join("ctrlr");
+/// ctrlr's own directory, created on the way out.
+///
+/// - linux: `~/.local/share/ctrlr`
+/// - mac: `~/Library/Application Support/ctrlr`
+/// - windows: `%LOCALAPPDATA%\ctrlr`
+///
+/// Local rather than Roaming on Windows: with roaming profiles `%APPDATA%` is
+/// copied to a network share at logoff, which is both a corruption hazard for
+/// an open SQLite file and a way for the whole command history to leave the
+/// machine.
+fn data_dir() -> PathBuf {
+    let base = if cfg!(windows) {
+        dirs::data_local_dir()
+    } else {
+        dirs::data_dir()
+    };
+    let dir = base.unwrap_or_else(|| PathBuf::from(".")).join("ctrlr");
     std::fs::create_dir_all(&dir).ok();
-    dir.join("ctrlr.db")
+    dir
+}
+
+pub fn get_db_path() -> PathBuf {
+    data_dir().join("ctrlr.db")
 }
 
 /// Where the shell integration appends its run log.
@@ -23,10 +38,7 @@ pub fn get_db_path() -> PathBuf {
 /// Sits beside the database rather than in the shell's own history location:
 /// it is ctrlr's own data, and the hooks only ever append to it.
 pub fn runs_log_path() -> PathBuf {
-    let base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
-    let dir = base.join("ctrlr");
-    std::fs::create_dir_all(&dir).ok();
-    dir.join("runs.log")
+    data_dir().join("runs.log")
 }
 
 pub fn init_db() -> rusqlite::Result<Connection> {
@@ -217,6 +229,36 @@ pub fn hydrate_commands(conn: &mut rusqlite::Connection, commands: &mut [crate::
             collections::get_collections_for_command(conn, &cmd.text).unwrap_or_default();
         if !collections.is_empty() {
             cmd.collection_ids = collections;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_db_and_run_log_sit_in_the_same_directory() {
+        let db = get_db_path();
+        let log = runs_log_path();
+        assert_eq!(db.parent(), log.parent());
+        assert_eq!(
+            db.parent().and_then(|p| p.file_name()),
+            Some("ctrlr".as_ref())
+        );
+    }
+
+    /// Roaming would copy an open SQLite file to a network share at logoff.
+    #[test]
+    fn test_windows_uses_local_appdata() {
+        let dir = get_db_path();
+        let expected = if cfg!(windows) {
+            dirs::data_local_dir()
+        } else {
+            dirs::data_dir()
+        };
+        if let Some(expected) = expected {
+            assert!(dir.starts_with(expected));
         }
     }
 }
