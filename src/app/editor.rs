@@ -69,20 +69,63 @@ pub fn edit_in_external_editor(terminal: &mut DefaultTerminal, initial: &str) ->
     outcome
 }
 
-/// `$VISUAL` wins over `$EDITOR`, then `vi`. Split on whitespace so
-/// `EDITOR="code --wait"` works; going through `sh -c` instead would drag in
-/// quoting hazards for no gain.
+/// Always present, and a working default beats an error message.
+const DEFAULT_EDITOR: &str = if cfg!(windows) { "notepad" } else { "vi" };
+
+/// `$VISUAL` wins over `$EDITOR`, then [`DEFAULT_EDITOR`]. Split here rather
+/// than through `sh -c`, which would drag in quoting hazards for no gain.
 fn resolve_editor(visual: Option<String>, editor: Option<String>) -> Vec<String> {
     visual
         .into_iter()
         .chain(editor)
-        .map(|v| {
-            v.split_whitespace()
-                .map(str::to_owned)
-                .collect::<Vec<String>>()
-        })
+        .map(|v| split_command(&v))
         .find(|argv| !argv.is_empty())
-        .unwrap_or_else(|| vec!["vi".to_owned()])
+        .unwrap_or_else(|| vec![DEFAULT_EDITOR.to_owned()])
+}
+
+/// Splits on whitespace, but honours quotes so a path containing spaces can be
+/// given as `"C:\Program Files\...\Code.exe" --wait`. An unquoted value that
+/// names an existing file is taken whole, which covers the same path without
+/// quotes as long as no arguments follow it.
+fn split_command(value: &str) -> Vec<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Vec::new();
+    }
+    if !value.contains(['"', '\'']) && Path::new(value).is_file() {
+        return vec![value.to_owned()];
+    }
+
+    let mut argv = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut started = false;
+
+    for c in value.chars() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => current.push(c),
+            None if c == '"' || c == '\'' => {
+                quote = Some(c);
+                started = true;
+            }
+            None if c.is_whitespace() => {
+                if started {
+                    argv.push(std::mem::take(&mut current));
+                    started = false;
+                }
+            }
+            None => {
+                current.push(c);
+                started = true;
+            }
+        }
+    }
+    if started {
+        argv.push(current);
+    }
+    argv.retain(|a| !a.is_empty());
+    argv
 }
 
 /// Editors append a trailing newline; anything else the user wrote is kept
@@ -100,13 +143,21 @@ fn interpret(contents: &str) -> EditorOutcome {
     }
 }
 
+/// Picks a syntax mode in the editor, and on Windows avoids handing a `.sh`
+/// to something that has no idea what that is.
+const EDIT_SUFFIX: &str = if cfg!(windows) { ".ps1" } else { ".sh" };
+
 fn temp_path() -> PathBuf {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    // `.sh` so the editor picks a syntax mode.
-    std::env::temp_dir().join(format!("ctrlr-edit-{}-{}.sh", std::process::id(), unique))
+    std::env::temp_dir().join(format!(
+        "ctrlr-edit-{}-{}{}",
+        std::process::id(),
+        unique,
+        EDIT_SUFFIX
+    ))
 }
 
 /// `create_new` rather than `create`: it fails instead of following a symlink
@@ -159,9 +210,9 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_editor_falls_back_to_editor_then_vi() {
+    fn test_resolve_editor_falls_back_to_editor_then_default() {
         assert_eq!(resolve_editor(None, Some("vim".into())), vec!["vim"]);
-        assert_eq!(resolve_editor(None, None), vec!["vi"]);
+        assert_eq!(resolve_editor(None, None), vec![DEFAULT_EDITOR]);
     }
 
     /// A blank or whitespace-only variable must not become an empty argv.
@@ -171,7 +222,10 @@ mod tests {
             resolve_editor(Some("".into()), Some("vim".into())),
             vec!["vim"]
         );
-        assert_eq!(resolve_editor(Some("   ".into()), None), vec!["vi"]);
+        assert_eq!(
+            resolve_editor(Some("   ".into()), None),
+            vec![DEFAULT_EDITOR]
+        );
     }
 
     #[test]
@@ -180,6 +234,52 @@ mod tests {
             resolve_editor(None, Some("code --wait".into())),
             vec!["code", "--wait"]
         );
+    }
+
+    /// `C:\Program Files\...` is the case plain whitespace splitting got
+    /// wrong, and the reason quoting is honoured at all.
+    #[test]
+    fn test_resolve_editor_keeps_a_quoted_path_together() {
+        assert_eq!(
+            resolve_editor(None, Some(r#""C:\Program Files\Ed\ed.exe" --wait"#.into())),
+            vec![r"C:\Program Files\Ed\ed.exe", "--wait"]
+        );
+        assert_eq!(
+            resolve_editor(None, Some("'/opt/my ed/ed'".into())),
+            vec!["/opt/my ed/ed"]
+        );
+    }
+
+    /// An unquoted path with spaces is taken whole when it names a real file,
+    /// which is the shape `$EDITOR` most often has on Windows.
+    #[test]
+    fn test_resolve_editor_takes_an_existing_path_whole() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let editor = dir.path().join("my editor");
+        std::fs::write(&editor, "").unwrap();
+        let raw = editor.to_string_lossy().into_owned();
+
+        assert_eq!(resolve_editor(None, Some(raw.clone())), vec![raw]);
+    }
+
+    /// The whole-path shortcut must not swallow arguments.
+    #[test]
+    fn test_resolve_editor_still_splits_a_path_with_arguments() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let editor = dir.path().join("ed");
+        std::fs::write(&editor, "").unwrap();
+        let raw = format!("{} --wait", editor.to_string_lossy());
+
+        assert_eq!(
+            resolve_editor(None, Some(raw)),
+            vec![editor.to_string_lossy().into_owned(), "--wait".to_owned()]
+        );
+    }
+
+    #[test]
+    fn test_temp_path_uses_a_platform_suffix() {
+        let path = temp_path();
+        assert!(path.to_string_lossy().ends_with(EDIT_SUFFIX));
     }
 
     #[test]
