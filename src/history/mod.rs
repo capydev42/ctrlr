@@ -53,6 +53,8 @@ pub fn load_history() -> Vec<Command> {
         Shell::Bash => bash::read_history(&path),
         Shell::Zsh => zsh::read_history(&path),
         Shell::Fish => fish::read_history(&path),
+        // No parser yet; PSReadLine history lands in a later change.
+        Shell::PowerShell => Vec::new(),
     };
 
     entries
