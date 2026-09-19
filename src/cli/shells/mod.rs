@@ -1,22 +1,27 @@
 pub mod bash;
 pub mod fish;
+pub mod powershell;
 pub mod zsh;
 
 use std::fmt;
 use std::path::Path;
 
+// `PowerShell` tripping enum_variant_names is the product's name, not a
+// stutter; `Pwsh` would read as excluding Windows PowerShell 5.1.
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shell {
     Bash,
     Zsh,
     Fish,
+    PowerShell,
 }
 
 impl Shell {
     /// Every variant, so the help text, the "Supported:" list and the
     /// per-shell tests cannot fall behind a new one. Hand-maintained; the
     /// test below is what keeps it honest.
-    pub const ALL: &'static [Shell] = &[Shell::Bash, Shell::Zsh, Shell::Fish];
+    pub const ALL: &'static [Shell] = &[Shell::Bash, Shell::Zsh, Shell::Fish, Shell::PowerShell];
 
     /// What `--shell` accepts, and what `detect` matches a `$SHELL` basename
     /// against.
@@ -25,6 +30,7 @@ impl Shell {
             Shell::Bash => &["bash"],
             Shell::Zsh => &["zsh"],
             Shell::Fish => &["fish"],
+            Shell::PowerShell => &["powershell", "pwsh", "ps"],
         }
     }
 
@@ -36,6 +42,25 @@ impl Shell {
             Shell::Zsh => home.join(".zsh_history"),
             // fish uses the XDG layout on macOS too, so not `dirs::data_dir()`.
             Shell::Fish => home.join(".local/share/fish/fish_history"),
+            Shell::PowerShell => {
+                if let Some(path) = std::env::var_os("CTRLR_POWERSHELL_HISTORY") {
+                    return Some(std::path::PathBuf::from(path));
+                }
+                // PSReadLine, not PowerShell itself. Windows keeps it in
+                // Roaming and shares it between 5.1 and 7; unix uses the XDG
+                // layout on macOS too. `(Get-PSReadLineOption).HistorySavePath`
+                // is what to check when this is wrong.
+                if cfg!(windows) {
+                    dirs::data_dir()?
+                        .join("Microsoft")
+                        .join("Windows")
+                        .join("PowerShell")
+                        .join("PSReadLine")
+                        .join("ConsoleHost_history.txt")
+                } else {
+                    home.join(".local/share/powershell/PSReadLine/ConsoleHost_history.txt")
+                }
+            }
         })
     }
 
@@ -45,22 +70,66 @@ impl Shell {
             Shell::Bash => ("bash", "history -a"),
             Shell::Zsh => ("zsh", "fc -W"),
             Shell::Fish => ("fish", "history save"),
+            // PSReadLine defaults HistorySaveStyle to SaveIncrementally, so
+            // the file is already current.
+            Shell::PowerShell => return None,
         })
     }
 
+    /// Which shell ctrlr is running under.
+    ///
+    /// `$SHELL` names the *login* shell, which is the wrong question: pwsh
+    /// leaves it pointing at bash. On unix `PSModulePath` is set only by
+    /// pwsh, so it answers the right one and is checked first. On Windows it
+    /// is machine-wide and says nothing, but PowerShell is the only supported
+    /// shell there anyway.
+    ///
+    /// Known miss: `pwsh` -> `bash` -> ctrlr inherits `PSModulePath` and
+    /// reports PowerShell. `CTRLR_SHELL` and `--shell` both override.
     pub fn detect() -> Option<Self> {
-        let shell = std::env::var("SHELL").ok()?;
-        let basename = std::path::Path::new(&shell).file_name()?.to_str()?;
-        Self::from_str(basename)
+        Self::detect_from(
+            std::env::var("CTRLR_SHELL").ok().as_deref(),
+            std::env::var_os("PSModulePath").is_some(),
+            std::env::var("SHELL").ok().as_deref(),
+        )
+    }
+
+    /// The rules, without the environment, so they can be tested.
+    fn detect_from(
+        ctrlr_shell: Option<&str>,
+        ps_module_path: bool,
+        shell: Option<&str>,
+    ) -> Option<Self> {
+        if let Some(name) = ctrlr_shell {
+            return Self::from_str(name);
+        }
+        // Only pwsh sets this on unix. On Windows it is machine-wide and says
+        // nothing, but PowerShell is the only supported shell there anyway.
+        if ps_module_path && !cfg!(windows) {
+            return Some(Shell::PowerShell);
+        }
+        match shell {
+            // `$SHELL` names the login shell, which is why it is checked last:
+            // pwsh leaves it pointing at bash.
+            Some(shell) => {
+                let basename = std::path::Path::new(shell).file_name()?.to_str()?;
+                Self::from_str(basename)
+            }
+            // Windows PowerShell leaves it unset.
+            None => cfg!(windows).then_some(Shell::PowerShell),
+        }
     }
 
     /// `detect` with a platform fallback, for loading history: a shell ctrlr
     /// cannot name would otherwise mean no commands at all. `detect` itself
     /// stays strict, because writing into the wrong config is worse than not
     /// offering to.
-    pub fn detect_or_default() -> Option<Self> {
-        // Windows has no supported shell yet, so no fallback either.
-        Self::detect().or((!cfg!(windows)).then_some(Shell::Bash))
+    pub fn detect_or_default() -> Self {
+        Self::detect().unwrap_or(if cfg!(windows) {
+            Shell::PowerShell
+        } else {
+            Shell::Bash
+        })
     }
 
     pub fn from_str(s: &str) -> Option<Self> {
@@ -82,6 +151,7 @@ impl Shell {
             Shell::Fish => dirs::home_dir()
                 .map(|p| p.join(".config/fish/config.fish"))
                 .unwrap_or_else(|| std::path::PathBuf::from(".config/fish/config.fish")),
+            Shell::PowerShell => powershell_profile(),
         }
     }
 
@@ -90,8 +160,59 @@ impl Shell {
             Shell::Bash => "bash",
             Shell::Zsh => "zsh",
             Shell::Fish => "fish",
+            Shell::PowerShell => "powershell",
         }
     }
+}
+
+/// `$PROFILE.CurrentUserCurrentHost`, computed rather than asked for.
+///
+/// Asking pwsh would be exact, but `config_path` runs on every launch and a
+/// pwsh startup ahead of the first frame is not affordable. `ctrlr init`
+/// prints the path it picked and asks before writing, and
+/// `CTRLR_POWERSHELL_PROFILE` is the way out when the guess is wrong.
+fn powershell_profile() -> std::path::PathBuf {
+    match std::env::var_os("CTRLR_POWERSHELL_PROFILE") {
+        Some(path) => std::path::PathBuf::from(path),
+        None => default_powershell_profile(),
+    }
+}
+
+fn default_powershell_profile() -> std::path::PathBuf {
+    const PROFILE: &str = "Microsoft.PowerShell_profile.ps1";
+
+    if cfg!(windows) {
+        // Through the known folder, not home.join("Documents"): that is what
+        // follows OneDrive and Group Policy redirection.
+        let documents = dirs::document_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+        let dir = if has_pwsh7() {
+            "PowerShell"
+        } else {
+            "WindowsPowerShell"
+        };
+        documents.join(dir).join(PROFILE)
+    } else {
+        // Not `dirs::config_dir()`: on macOS that is ~/Library/Application
+        // Support, while pwsh uses ~/.config there like everywhere else.
+        let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+        home.join(".config").join("powershell").join(PROFILE)
+    }
+}
+
+/// PowerShell 7 and Windows PowerShell 5.1 keep separate profiles.
+fn has_pwsh7() -> bool {
+    std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).any(|dir| dir.join("pwsh.exe").is_file()))
+        .unwrap_or(false)
+        || std::env::var_os("ProgramFiles")
+            .map(|p| {
+                std::path::Path::new(&p)
+                    .join("PowerShell")
+                    .join("7")
+                    .join("pwsh.exe")
+                    .is_file()
+            })
+            .unwrap_or(false)
 }
 
 impl fmt::Display for Shell {
@@ -147,6 +268,9 @@ pub fn reload_command(shell: Shell) -> &'static str {
         Shell::Bash => "exec bash",
         Shell::Zsh => "exec zsh",
         Shell::Fish => "exec fish",
+        // Dot-sourcing works here: the widget puts this on the prompt line,
+        // so it runs *in* the shell rather than in a child.
+        Shell::PowerShell => ". $PROFILE",
     }
 }
 
@@ -166,6 +290,7 @@ fn script_template(shell: Shell) -> &'static str {
         Shell::Bash => bash::SCRIPT,
         Shell::Zsh => zsh::SCRIPT,
         Shell::Fish => fish::SCRIPT,
+        Shell::PowerShell => powershell::SCRIPT,
     }
 }
 
@@ -239,9 +364,10 @@ mod tests {
                 Shell::Bash => 0,
                 Shell::Zsh => 1,
                 Shell::Fish => 2,
+                Shell::PowerShell => 3,
             }
         }
-        assert_eq!(Shell::ALL.len(), 3);
+        assert_eq!(Shell::ALL.len(), 4);
         for (i, &shell) in Shell::ALL.iter().enumerate() {
             assert_eq!(exhaustive(shell), i, "{} is out of order in ALL", shell);
         }
@@ -291,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    fn test_every_shell_has_a_history_path_and_flush() {
+    fn test_every_shell_has_a_history_path() {
         for &shell in Shell::ALL {
             let path = shell.history_path().expect("home is set under test");
             assert!(
@@ -300,15 +426,74 @@ mod tests {
                 shell,
                 path.display()
             );
-            let (program, _) = shell.flush_argv().expect("every unix shell flushes");
-            assert_eq!(program, shell.display_name());
         }
     }
 
-    /// History loading needs an answer even when `$SHELL` says nothing, or a
-    /// user with an odd login shell would see no commands at all.
+    /// PowerShell is the exception: PSReadLine saves incrementally, so there
+    /// is nothing to flush and nothing to spawn.
     #[test]
-    fn test_detect_or_default_falls_back_on_unix() {
-        assert_eq!(Shell::detect_or_default().is_none(), cfg!(windows));
+    fn test_flush_argv_names_the_shell_itself() {
+        for &shell in Shell::ALL {
+            match shell.flush_argv() {
+                Some((program, _)) => assert_eq!(program, shell.display_name()),
+                None => assert_eq!(shell, Shell::PowerShell),
+            }
+        }
+    }
+
+    #[test]
+    fn test_ctrlr_shell_overrides_everything_else() {
+        for &shell in Shell::ALL {
+            let name = shell.display_name();
+            assert_eq!(
+                Shell::detect_from(Some(name), true, Some("/bin/zsh")),
+                Some(shell)
+            );
+        }
+        // An unusable override is not a silent fallback to $SHELL.
+        assert_eq!(
+            Shell::detect_from(Some("nonesuch"), false, Some("/bin/zsh")),
+            None
+        );
+    }
+
+    /// The case `$SHELL` gets wrong: pwsh leaves it naming the login shell.
+    #[test]
+    fn test_ps_module_path_wins_over_shell_on_unix() {
+        let detected = Shell::detect_from(None, true, Some("/bin/bash"));
+        if cfg!(windows) {
+            assert_eq!(detected, Some(Shell::Bash), "machine-wide on Windows");
+        } else {
+            assert_eq!(detected, Some(Shell::PowerShell));
+        }
+    }
+
+    #[test]
+    fn test_shell_basename_is_used_when_nothing_else_applies() {
+        assert_eq!(
+            Shell::detect_from(None, false, Some("/bin/zsh")),
+            Some(Shell::Zsh)
+        );
+        assert_eq!(
+            Shell::detect_from(None, false, Some("/usr/bin/fish")),
+            Some(Shell::Fish)
+        );
+        assert_eq!(Shell::detect_from(None, false, Some("/bin/nonesuch")), None);
+    }
+
+    /// Unset `$SHELL` means PowerShell on Windows and nothing elsewhere.
+    #[test]
+    fn test_unset_shell() {
+        let expected = cfg!(windows).then_some(Shell::PowerShell);
+        assert_eq!(Shell::detect_from(None, false, None), expected);
+    }
+
+    #[test]
+    fn test_powershell_profile_is_named_for_the_current_user_host() {
+        // Not asserting absoluteness: both branches fall back to "." when the
+        // base directory cannot be resolved, which says nothing about the
+        // logic here.
+        let path = default_powershell_profile();
+        assert!(path.ends_with("Microsoft.PowerShell_profile.ps1"));
     }
 }

@@ -18,9 +18,7 @@ pub struct HistoryEntry {
 }
 
 pub fn flush_history() {
-    let Some(shell) = Shell::detect_or_default() else {
-        return;
-    };
+    let shell = Shell::detect_or_default();
     let Some((program, argv)) = shell.flush_argv() else {
         return;
     };
@@ -42,9 +40,7 @@ pub fn flush_history() {
 pub fn load_history() -> Vec<Command> {
     flush_history();
 
-    let Some(shell) = Shell::detect_or_default() else {
-        return Vec::new();
-    };
+    let shell = Shell::detect_or_default();
     let Some(path) = shell.history_path() else {
         return Vec::new();
     };
@@ -53,6 +49,8 @@ pub fn load_history() -> Vec<Command> {
         Shell::Bash => bash::read_history(&path),
         Shell::Zsh => zsh::read_history(&path),
         Shell::Fish => fish::read_history(&path),
+        // No parser yet; PSReadLine history lands in a later change.
+        Shell::PowerShell => Vec::new(),
     };
 
     entries
