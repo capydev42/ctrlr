@@ -4,6 +4,7 @@ use crate::hash::{hash_command, normalize};
 
 mod bash;
 mod fish;
+mod powershell;
 pub mod runs;
 mod zsh;
 
@@ -49,8 +50,7 @@ pub fn load_history() -> Vec<Command> {
         Shell::Bash => bash::read_history(&path),
         Shell::Zsh => zsh::read_history(&path),
         Shell::Fish => fish::read_history(&path),
-        // No parser yet; PSReadLine history lands in a later change.
-        Shell::PowerShell => Vec::new(),
+        Shell::PowerShell => powershell::read_history(&path),
     };
 
     entries
