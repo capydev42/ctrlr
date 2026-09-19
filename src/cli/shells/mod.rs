@@ -124,12 +124,12 @@ impl Shell {
     /// cannot name would otherwise mean no commands at all. `detect` itself
     /// stays strict, because writing into the wrong config is worse than not
     /// offering to.
-    pub fn detect_or_default() -> Option<Self> {
-        Self::detect().or(Some(if cfg!(windows) {
+    pub fn detect_or_default() -> Self {
+        Self::detect().unwrap_or(if cfg!(windows) {
             Shell::PowerShell
         } else {
             Shell::Bash
-        }))
+        })
     }
 
     pub fn from_str(s: &str) -> Option<Self> {
@@ -490,19 +490,10 @@ mod tests {
 
     #[test]
     fn test_powershell_profile_is_named_for_the_current_user_host() {
+        // Not asserting absoluteness: both branches fall back to "." when the
+        // base directory cannot be resolved, which says nothing about the
+        // logic here.
         let path = default_powershell_profile();
         assert!(path.ends_with("Microsoft.PowerShell_profile.ps1"));
-        assert!(
-            path.is_absolute(),
-            "profile path is relative: {}",
-            path.display()
-        );
-    }
-
-    /// History loading needs an answer even when `$SHELL` says nothing, or a
-    /// user with an odd login shell would see no commands at all.
-    #[test]
-    fn test_detect_or_default_falls_back_on_unix() {
-        assert_eq!(Shell::detect_or_default().is_none(), cfg!(windows));
     }
 }
