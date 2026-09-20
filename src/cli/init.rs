@@ -52,6 +52,10 @@ pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
             "✔ ctrlr integration is up to date in {}",
             config_path.display()
         );
+        // Also here, not just after a write: re-running `ctrlr init` is how
+        // someone checks why nothing works, and an execution policy can start
+        // blocking a profile that was installed long before.
+        warn_if_profile_is_blocked(shell);
         return Ok(());
     }
 
@@ -97,13 +101,18 @@ pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
         "→ Restart shell or run: {}",
         shells::reload_hint(shell, &config_path)
     );
+    warn_if_profile_is_blocked(shell);
+
+    Ok(())
+}
+
+/// Says so when the shell will refuse to load the profile ctrlr relies on.
+fn warn_if_profile_is_blocked(shell: Shell) {
     if shell == Shell::PowerShell
         && let Some(hint) = shells::powershell::execution_policy_hint()
     {
         println!("{}", hint);
     }
-
-    Ok(())
 }
 
 /// Where the install wrote, and what it saved first.
