@@ -32,6 +32,79 @@ jobs:
       - name: Test
         run: cargo test --all-targets
 
+      # The four integration scripts are string literals, so nothing compiles
+      # them: a typo only shows up in a user's shell profile. pwsh gets a real
+      # parse plus a writer/parser round trip; the others get a syntax check
+      # where the shell is installed.
+      - name: Shell script syntax check
+        if: matrix.os == 'ubuntu-latest'
+        shell: pwsh
+        run: |
+          cargo build --quiet
+          $work = Join-Path ([System.IO.Path]::GetTempPath()) "ctrlr-scripts"
+          New-Item -ItemType Directory -Path $work -Force | Out-Null
+
+          # A throwaway home, because `--print` returns early once the
+          # integration is installed and current for that shell. The built
+          # binary is invoked directly so cargo keeps the real home.
+          $ctrlr = Join-Path $PWD "target/debug/ctrlr"
+          $env:HOME = $work
+
+          foreach ($shell in 'bash', 'zsh', 'fish', 'powershell') {
+            $out = & $ctrlr init --shell $shell --print
+            $text = ($out -join "`n")
+            $marker = $text.IndexOf("# ctrlr integration")
+            if ($marker -lt 0) { throw "$shell printed no script: $text" }
+            $path = Join-Path $work "$shell.script"
+            Set-Content -LiteralPath $path -Value $text.Substring($marker) -Encoding utf8NoBOM
+          }
+
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $work 'powershell.script'), [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Error $_ }; throw "powershell syntax" }
+
+          # zsh and fish are not guaranteed on the runner image.
+          $checks = [ordered]@{ bash = '-n'; zsh = '-n'; fish = '--no-execute' }
+          foreach ($shell in $checks.Keys) {
+            if (Get-Command $shell -ErrorAction SilentlyContinue) {
+              & $shell $checks[$shell] (Join-Path $work "$shell.script")
+              if ($LASTEXITCODE -ne 0) { throw "$shell syntax check failed" }
+              Write-Host "$shell ok"
+            } else {
+              Write-Host "skipping $shell (not installed)"
+            }
+          }
+
+      # Proves the writer and `read_runs` still agree on the record format,
+      # which a parse check cannot see.
+      - name: PowerShell hook writes a parseable record
+        if: matrix.os == 'ubuntu-latest'
+        shell: pwsh
+        run: |
+          $work = Join-Path ([System.IO.Path]::GetTempPath()) "ctrlr-scripts"
+          $log = Join-Path $work "runs.log"
+          $sourced = Join-Path $work "sourced.ps1"
+          $script = Get-Content -LiteralPath (Join-Path $work 'powershell.script') -Raw
+          # The generated path points into the throwaway home from the previous
+          # step; redirect it to a file this step owns.
+          # Single quotes: PowerShell escapes with a backtick, so "\$global"
+          # in a double-quoted string interpolates away to nothing.
+          $pattern = '(?m)^(\s*\$global:_ctrlrLog = ).*$'
+          $script = $script -replace $pattern, ('$1' + "'$log'")
+          Set-Content -LiteralPath $sourced -Value $script -Encoding utf8NoBOM
+
+          . $sourced
+          _ctrlrWrite 0 '/tmp/dir with space' "echo `"tab`there`" and uml"
+          _ctrlrWrite 1 '/tmp' 'false'
+
+          if (-not (Test-Path -LiteralPath $log)) { throw "the hook wrote nothing" }
+          "CTRLR_RUN_LOG_FIXTURE=$log" | Out-File -Append -Encoding utf8NoBOM $env:GITHUB_ENV
+
+      - name: Round-trip the fixture through read_runs
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo test --all-targets fixture_written_by_a_shell_hook_parses
+
       - name: Clippy
         if: matrix.os == 'ubuntu-latest'
         run: cargo clippy --all-targets -- -D warnings
