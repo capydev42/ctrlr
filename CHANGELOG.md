@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.11.1] - 2026-09-20
+
+### Fixed
+- `install.ps1` refused every install with "checksums.txt has no entry for ctrlr-x86_64-pc-windows-msvc.zip" — against a checksums file that contained exactly that entry. GitHub serves release assets as `application/octet-stream`, and PowerShell hands those back as raw bytes rather than text, so there were no lines to search
+- `Ctrl+R` never bound on PSReadLine 1.x, which Windows 10 still ships with Windows PowerShell 5.1. The binding used a parameter that only exists from 2.0 on, so it failed at shell start and Ctrl+R quietly stayed PSReadLine's own search
+- `ctrlr init` now says so when Windows will not load the profile it just wrote. Under the `Restricted` execution policy — the client default — nothing in the profile runs: no Ctrl+R, no directory tracking, and an error at every shell start that never mentions ctrlr. The message names the narrow fix, `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, and nothing looser
+- After installing into a PowerShell profile, ctrlr suggested `source <profile>`. PowerShell has no `source`; it now prints `. $PROFILE`
+
+---
+
 ## [0.11.0] - 2026-09-20
 
 ### Added
