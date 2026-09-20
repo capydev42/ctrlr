@@ -93,7 +93,15 @@ pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
     if let Some(backup) = &outcome.backup {
         println!("→ Previous config saved to {}", backup.display());
     }
-    println!("→ Restart shell or run: source {}", config_path.display());
+    println!(
+        "→ Restart shell or run: {}",
+        shells::reload_hint(shell, &config_path)
+    );
+    if shell == Shell::PowerShell
+        && let Some(hint) = shells::powershell::execution_policy_hint()
+    {
+        println!("{}", hint);
+    }
 
     Ok(())
 }

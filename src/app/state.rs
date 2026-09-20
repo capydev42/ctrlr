@@ -602,6 +602,16 @@ impl AppState {
                     None => format!("Wrote {}", outcome.config_path.display()),
                 });
 
+                // The popup is the install path most users take, so the
+                // execution-policy warning has to reach it too - otherwise
+                // ctrlr reports success and nothing works afterwards.
+                if shell == crate::cli::shells::Shell::PowerShell
+                    && let Some(hint) = crate::cli::shells::powershell::execution_policy_hint()
+                    && let Some(message) = self.integration_message.as_mut()
+                {
+                    message.push_str(&hint);
+                }
+
                 // With a reload on the prompt line ctrlr is about to exit, so
                 // the result view is never seen. Without one the popup stays
                 // up: "restart your shell" in a status message that expires

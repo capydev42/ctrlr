@@ -124,7 +124,10 @@ if (-not $global:_ctrlrInstalled) {
 
 # Outside the guard on purpose: reloading the profile is how a user gets the
 # binding back after something else claimed Ctrl+R. Re-registering is a no-op.
-Set-PSReadLineKeyHandler -Chord 'Ctrl+r' -BriefDescription 'ctrlr' -ScriptBlock {
+# -Key, not -Chord: PSReadLine 1.x knows only the former, and on 2.x it is an
+# alias for the latter. Windows 10 still ships 1.x with Windows PowerShell 5.1,
+# where -Chord fails to bind and Ctrl+R silently stays PSReadLine's own search.
+Set-PSReadLineKeyHandler -Key 'Ctrl+r' -BriefDescription 'ctrlr' -ScriptBlock {
     $tmp = [System.IO.Path]::GetTempFileName()
     try {
         ctrlr --output-file $tmp
@@ -132,23 +135,63 @@ Set-PSReadLineKeyHandler -Chord 'Ctrl+r' -BriefDescription 'ctrlr' -ScriptBlock 
         # non-zero to say so. Replacing with it would wipe a half-typed line.
         $picked = [System.IO.File]::ReadAllText($tmp)
         if ($picked.Trim().Length -gt 0) {
-            $line = $null
-            $cursor = $null
-            [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
-            [Microsoft.PowerShell.PSConsoleReadLine]::Replace(
-                0, $line.Length, $picked.TrimEnd("`r", "`n"))
+            # RevertLine plus Insert rather than Replace: the pair predates
+            # PSReadLine 2.0, and leaves the cursor at the end just the same.
+            [Microsoft.PowerShell.PSConsoleReadLine]::RevertLine()
+            [Microsoft.PowerShell.PSConsoleReadLine]::Insert($picked.TrimEnd("`r", "`n"))
         }
     } finally {
         Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
-        # The child drew over PSReadLine's idea of the screen.
-        [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
+        try {
+            # The child drew over PSReadLine's idea of the screen. Absent on
+            # 1.x, where the redraw is skipped rather than raised at the user.
+            [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
+        } catch [System.Management.Automation.RuntimeException] {
+        }
     }
 }
 # ctrlr integration end
 "#;
 
+/// Warns when Windows would refuse to run the profile ctrlr just wrote.
+///
+/// Under `Restricted` — the Windows client default — no profile is loaded at
+/// all, so `ctrlr init` reports success and nothing works afterwards: no
+/// Ctrl+R, no run log, and a red error at every shell start that does not
+/// mention ctrlr. `AllSigned` rejects it too, since the profile is unsigned.
+///
+/// Only on Windows: PowerShell on unix ignores execution policy entirely.
+pub fn execution_policy_hint() -> Option<String> {
+    if !cfg!(windows) {
+        return None;
+    }
+    // A spawn, but only from `ctrlr init` and the install popup - never on the
+    // launch path.
+    let out = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", "Get-ExecutionPolicy"])
+        .output()
+        .ok()?;
+    hint_for_policy(&String::from_utf8_lossy(&out.stdout))
+}
+
+fn hint_for_policy(policy: &str) -> Option<String> {
+    let policy = policy.trim();
+    if !policy.eq_ignore_ascii_case("Restricted") && !policy.eq_ignore_ascii_case("AllSigned") {
+        return None;
+    }
+    Some(format!(
+        "\n\u{26a0}\u{fe0f} PowerShell will not load the profile: execution policy is {policy}.\n\
+         Until that changes, Ctrl+R and directory tracking stay off.\n\n\
+         To allow your own profile while still requiring signatures on\n\
+         downloaded scripts:\n    \
+         Set-ExecutionPolicy -Scope CurrentUser RemoteSigned\n\n\
+         That covers your user only and needs no administrator rights."
+    ))
+}
+
 #[cfg(test)]
 mod tests {
+    use super::hint_for_policy;
     use crate::cli::shells::{Shell, generate_script};
 
     fn generate() -> String {
@@ -221,7 +264,7 @@ mod tests {
     #[test]
     fn test_generate_binds_ctrl_r() {
         let script = generate();
-        assert!(script.contains("Set-PSReadLineKeyHandler -Chord 'Ctrl+r'"));
+        assert!(script.contains("Set-PSReadLineKeyHandler -Key 'Ctrl+r'"));
         assert!(script.contains("ctrlr --output-file $tmp"));
     }
 
@@ -239,7 +282,31 @@ mod tests {
         // Everything inside the guard is indented; the binding is not, which
         // is what makes a profile reload restore it.
         let script = generate();
-        assert!(script.contains("\nSet-PSReadLineKeyHandler -Chord 'Ctrl+r'"));
+        assert!(script.contains("\nSet-PSReadLineKeyHandler -Key 'Ctrl+r'"));
         assert!(!script.contains("    Set-PSReadLineKeyHandler"));
+    }
+
+    #[test]
+    fn test_policy_hint_only_for_the_blocking_policies() {
+        for blocked in ["Restricted", "AllSigned", "  restricted\r\n"] {
+            let hint = hint_for_policy(blocked).expect("should warn");
+            assert!(hint.contains("Set-ExecutionPolicy -Scope CurrentUser RemoteSigned"));
+        }
+        for allowed in ["RemoteSigned", "Unrestricted", "Bypass", "Undefined", ""] {
+            assert!(
+                hint_for_policy(allowed).is_none(),
+                "{allowed} should not warn"
+            );
+        }
+    }
+
+    /// Never RemoteSigned or looser: those would drop the signature check on
+    /// downloaded scripts as well.
+    #[test]
+    fn test_policy_hint_suggests_the_narrow_fix() {
+        let hint = hint_for_policy("Restricted").unwrap();
+        assert!(!hint.contains("Unrestricted"));
+        assert!(!hint.contains("Bypass"));
+        assert!(hint.contains("CurrentUser"));
     }
 }
