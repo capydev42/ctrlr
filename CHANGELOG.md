@@ -11,6 +11,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.11.0] - 2026-09-20
+
+### Added
+- ctrlr runs on Windows. There is a `ctrlr-x86_64-pc-windows-msvc.zip` in every release, and `install.ps1` installs it: `irm https://github.com/capydev42/ctrlr/releases/latest/download/install.ps1 | iex`. Unlike `install.sh` it verifies the download against the release checksums before writing anything
+- PowerShell is a supported shell, on Windows and as PowerShell Core on Linux and macOS. `ctrlr init` writes the integration into `$PROFILE`, Ctrl+R opens the picker, and history comes from PSReadLine's `ConsoleHost_history.txt`, multi-line commands included
+- Directories are recorded exactly in PowerShell: the hook runs before the command does, so a `cd` is logged against the directory it was typed in rather than the one it moved to. Commands PSReadLine judges to hold a secret stay out of the run log, the same way it keeps them out of its own history
+- `--shell powershell` (also `pwsh`, `ps`), and running ctrlr from inside pwsh is detected without it
+
+### Fixed
+- `ctrlr init` could overwrite a shell config it had failed to read. An unreadable file looked the same as a missing one, so no backup was taken and the config was replaced with just ctrlr's block. It now refuses and says why. PowerShell 5.1 writes `$PROFILE` as UTF-16 by default, which is exactly such a file
+- A shell config that did not exist yet was never offered the integration at all — the same confusion, in the other direction
+- `$EDITOR` pointing at a path with spaces was split into pieces. Quoted paths work now, and so does an unquoted one that names an existing file
+- On Windows every keypress registered twice, because the terminal reports the release as well as the press
+
+### Changed
+- ctrlr's database and run log live in `%LOCALAPPDATA%` on Windows rather than `%APPDATA%`. A roaming profile would otherwise copy your command history to a network share at logoff
+
+---
+
 ## [0.10.0] - 2026-08-24
 
 ### Added
