@@ -130,7 +130,12 @@ if (-not $global:_ctrlrInstalled) {
 Set-PSReadLineKeyHandler -Key 'Ctrl+r' -BriefDescription 'ctrlr' -ScriptBlock {
     $tmp = [System.IO.Path]::GetTempFileName()
     try {
-        ctrlr --output-file $tmp
+        # Start-Process, not a plain call: inside a key handler the scriptblock
+        # captures a native command's stdout into its own pipeline, so the TUI
+        # renders into nothing while still reading keys - the prompt looks
+        # frozen. This hands the child the console directly. The path is quoted
+        # because Windows PowerShell 5.1 does not quote array arguments itself.
+        Start-Process -FilePath ctrlr -ArgumentList "--output-file `"$tmp`"" -NoNewWindow -Wait
         # An empty file means the picker was cancelled, and ctrlr exits
         # non-zero to say so. Replacing with it would wipe a half-typed line.
         $picked = [System.IO.File]::ReadAllText($tmp)
@@ -265,7 +270,8 @@ mod tests {
     fn test_generate_binds_ctrl_r() {
         let script = generate();
         assert!(script.contains("Set-PSReadLineKeyHandler -Key 'Ctrl+r'"));
-        assert!(script.contains("ctrlr --output-file $tmp"));
+        assert!(script.contains("Start-Process -FilePath ctrlr"));
+        assert!(script.contains("-NoNewWindow -Wait"));
     }
 
     /// ctrlr writes an empty file to mean "cancelled"; replacing with it would
@@ -308,5 +314,13 @@ mod tests {
         assert!(!hint.contains("Unrestricted"));
         assert!(!hint.contains("Bypass"));
         assert!(hint.contains("CurrentUser"));
+    }
+
+    /// A plain `ctrlr --output-file` call is captured by the handler's own
+    /// pipeline and the picker renders into nothing.
+    #[test]
+    fn test_widget_does_not_call_ctrlr_directly() {
+        let script = generate();
+        assert!(!script.contains("\n        ctrlr --output-file"));
     }
 }
