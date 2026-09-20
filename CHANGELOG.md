@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.11.2] - 2026-09-20
+
+### Fixed
+- `Ctrl+R` in PowerShell opened the picker but left the console frozen: the key handler's own pipeline swallowed the output, so ctrlr drew into nothing while still reading keys. It now hands the child the console directly. The same command typed at the prompt had always worked, which is why this only surfaced from the binding
+
+---
+
 ## [0.11.1] - 2026-09-20
 
 ### Fixed
