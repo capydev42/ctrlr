@@ -4,7 +4,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/capydev42/ctrlr)](https://github.com/capydev42/ctrlr/releases)
 [![crates.io](https://img.shields.io/crates/v/ctrlr)](https://crates.io/crates/ctrlr)
 [![License](https://img.shields.io/github/license/capydev42/ctrlr)](LICENSE.md)
-![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS-blue)
+![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20Windows-blue)
 
 > Turn your shell history into a searchable command palette  
 > Stop googling commands you already used.
@@ -20,6 +20,15 @@ curl -fsSL https://github.com/capydev42/ctrlr/releases/latest/download/install.s
 ```
 
 The script asks where to install and downloads the binary for your platform.
+
+**Windows**, in PowerShell:
+
+```powershell
+irm https://github.com/capydev42/ctrlr/releases/latest/download/install.ps1 | iex
+```
+
+Verifies the download against the release checksums, then adds itself to your
+user `PATH` — which applies to new shells, not the one you ran it in.
 
 **Homebrew** (macOS and Linux):
 
@@ -86,7 +95,12 @@ ctrlr know **where** your commands ran — see [How it works](#how-it-works).
 ctrlr also offers to install it for you the first time you run it, and backs your
 config up to `<config>.ctrlr.bak` before touching it.
 
-Works with **bash**, **zsh** and **fish**, on Linux and macOS.
+Works with **bash**, **zsh** and **fish** on Linux and macOS, and with
+**PowerShell** on Windows. PowerShell Core on Linux and macOS works too.
+
+Git Bash and MSYS on Windows are not supported: ctrlr is a native Windows
+process there while the shell thinks in `/c/...` paths, so the two never agree
+on a directory.
 
 ---
 
@@ -148,8 +162,8 @@ database. Your history file stays the source of truth for the command text.
 
 **Where commands ran.** No shell writes the working directory into its history
 file, so it cannot be recovered after the fact. The integration installed by
-`ctrlr init` appends one line per command to `~/.local/share/ctrlr/runs.log`
-using a shell builtin — no process is spawned per prompt — and ctrlr drains that
+`ctrlr init` appends one line per command to `runs.log` in ctrlr's data
+directory ([see below](#storage)) using a shell builtin — no process is spawned per prompt — and ctrlr drains that
 log on launch. This only covers commands run *after* the integration is
 installed; existing history has no directories attached to it.
 
@@ -157,6 +171,12 @@ On zsh and fish the directory recorded is the one the command was typed in. On
 bash the same holds when [bash-preexec](https://github.com/rcaloras/bash-preexec)
 is loaded — starship and atuin both bring it. Without it, ctrlr falls back to
 logging at prompt time, so a `cd` is recorded against the directory it moved to.
+
+PowerShell is exact through PSReadLine's `AddToHistoryHandler`, which runs
+before the command does. Very old PSReadLine versions (1.x, shipped with the
+original Windows 10) have no such hook and fall back to prompt time, the same
+way bash does. Commands PSReadLine judges to hold a secret are kept out of its
+history file, and ctrlr does not log those either.
 
 If ctrlr tells you the installed integration is outdated, re-run `ctrlr init`:
 the old block still binds `Ctrl+R`, but features it has no hooks for stay
@@ -348,6 +368,8 @@ records and your theme.
 
 - Linux: `~/.local/share/ctrlr/ctrlr.db`
 - macOS: `~/Library/Application Support/ctrlr/ctrlr.db`
+- Windows: `%LOCALAPPDATA%\ctrlr\ctrlr.db` — Local, not Roaming, so a domain
+  profile does not copy your history to a network share at logoff
 
 The run log lives next to it as `runs.log`. If the database cannot be opened,
 ctrlr still runs — read-only, straight off your shell history.
