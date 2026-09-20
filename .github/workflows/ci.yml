@@ -59,10 +59,14 @@ jobs:
             Set-Content -LiteralPath $path -Value $text.Substring($marker) -Encoding utf8NoBOM
           }
 
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Join-Path $work 'powershell.script'), [ref]$null, [ref]$errors) | Out-Null
-          if ($errors) { $errors | ForEach-Object { Write-Error $_ }; throw "powershell syntax" }
+          # install.ps1 alongside them: it is shipped as a release asset and
+          # piped straight into iex, so a typo there breaks installation.
+          foreach ($file in (Join-Path $work 'powershell.script'), 'install.ps1') {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file), [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $errors | ForEach-Object { Write-Error $_ }; throw "$file syntax" }
+          }
 
           # zsh and fish are not guaranteed on the runner image.
           $checks = [ordered]@{ bash = '-n'; zsh = '-n'; fish = '--no-execute' }

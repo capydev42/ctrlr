@@ -79,6 +79,12 @@ case "$OS" in
             ASSET_NAME="ctrlr-x86_64-apple-darwin.tar.gz"
         fi
         ;;
+    MINGW*|MSYS*|CYGWIN*)
+        echo -e "${RED}Error: this script installs the unix binaries.${NC}"
+        echo "On Windows, run in PowerShell:"
+        echo "  irm https://github.com/${REPO}/releases/latest/download/install.ps1 | iex"
+        exit 1
+        ;;
     *)
         echo -e "${RED}Error: Unsupported OS: $OS${NC}"
         exit 1
