@@ -496,4 +496,34 @@ mod tests {
         assert!(!from.exists());
         assert!(to.exists());
     }
+
+    /// Reads a log produced by a real shell hook, when CI points at one.
+    ///
+    /// The shell scripts are string literals: nothing compiles them, and the
+    /// contract that actually breaks is the writer disagreeing with this
+    /// parser about the record format. The CI step generates a line by
+    /// dot-sourcing the generated script and calling its writer, then points
+    /// here. Silently a no-op without the variable, which is every local run.
+    #[test]
+    fn test_fixture_written_by_a_shell_hook_parses() {
+        let Some(path) = std::env::var_os("CTRLR_RUN_LOG_FIXTURE") else {
+            return;
+        };
+        let path = PathBuf::from(path);
+        let raw = fs::read_to_string(&path).expect("fixture is readable UTF-8");
+        assert!(!raw.trim().is_empty(), "fixture is empty");
+
+        let entries = read_runs(&path);
+        assert_eq!(
+            entries.len(),
+            raw.lines().filter(|l| !l.trim().is_empty()).count(),
+            "every line the hook wrote has to parse: {:?}",
+            raw
+        );
+
+        let first = &entries[0];
+        assert!(first.ran_at > 0, "timestamp");
+        assert!(!first.cwd.is_empty(), "cwd");
+        assert!(first.host.is_some(), "host column is empty");
+    }
 }
