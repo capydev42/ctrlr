@@ -47,7 +47,7 @@ cargo install ctrlr
 
 **A specific version:**
 ```bash
-curl -fsSL https://github.com/capydev42/ctrlr/releases/download/v0.10.0/install.sh -o install.sh && chmod +x install.sh && ./install.sh
+curl -fsSL https://github.com/capydev42/ctrlr/releases/download/v0.11.0/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 ```
 
 **A fixed directory, no prompt:**
