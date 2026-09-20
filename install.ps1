@@ -83,7 +83,12 @@ try {
     Invoke-WebRequest -Uri "$base/$asset" -OutFile $zip -UseBasicParsing
 
     Write-Host "Verifying checksum..."
-    $checksums = (Invoke-WebRequest -Uri "$base/checksums.txt" -UseBasicParsing).Content
+    # To a file, not through .Content: GitHub serves release assets as
+    # application/octet-stream, and Invoke-WebRequest hands back a byte array
+    # for anything it does not consider text. Splitting that finds no lines.
+    $checksumFile = Join-Path $work 'checksums.txt'
+    Invoke-WebRequest -Uri "$base/checksums.txt" -OutFile $checksumFile -UseBasicParsing
+    $checksums = Get-Content -LiteralPath $checksumFile -Raw
     $expected = Get-ExpectedHash $checksums $asset
     $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -ne $expected) {
