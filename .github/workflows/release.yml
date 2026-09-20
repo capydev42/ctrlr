@@ -117,6 +117,7 @@ jobs:
             artifacts/*.zip
             artifacts/checksums.txt
             install.sh
+            install.ps1
           generate_release_notes: true
           draft: false
         env:
