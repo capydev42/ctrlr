@@ -1,6 +1,4 @@
-//! PowerShell profile integration.
-//!
-//! The Ctrl+R widget lands in a later change; this is the run log only.
+//! PowerShell profile integration: the run log and the Ctrl+R widget.
 
 pub const SCRIPT: &str = r#"# ctrlr integration
 # Re-entry guard. `ctrlr` tells PowerShell to reload with `. $PROFILE`, so this
@@ -123,6 +121,29 @@ if (-not $global:_ctrlrInstalled) {
         if ($global:_ctrlrPrevPrompt) { & $global:_ctrlrPrevPrompt } else { "PS $($PWD.Path)> " }
     }
 }
+
+# Outside the guard on purpose: reloading the profile is how a user gets the
+# binding back after something else claimed Ctrl+R. Re-registering is a no-op.
+Set-PSReadLineKeyHandler -Chord 'Ctrl+r' -BriefDescription 'ctrlr' -ScriptBlock {
+    $tmp = [System.IO.Path]::GetTempFileName()
+    try {
+        ctrlr --output-file $tmp
+        # An empty file means the picker was cancelled, and ctrlr exits
+        # non-zero to say so. Replacing with it would wipe a half-typed line.
+        $picked = [System.IO.File]::ReadAllText($tmp)
+        if ($picked.Trim().Length -gt 0) {
+            $line = $null
+            $cursor = $null
+            [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+            [Microsoft.PowerShell.PSConsoleReadLine]::Replace(
+                0, $line.Length, $picked.TrimEnd("`r", "`n"))
+        }
+    } finally {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+        # The child drew over PSReadLine's idea of the screen.
+        [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
+    }
+}
 # ctrlr integration end
 "#;
 
@@ -195,5 +216,30 @@ mod tests {
     #[test]
     fn test_generate_ends_with_the_marker() {
         assert!(generate().trim_end().ends_with("# ctrlr integration end"));
+    }
+
+    #[test]
+    fn test_generate_binds_ctrl_r() {
+        let script = generate();
+        assert!(script.contains("Set-PSReadLineKeyHandler -Chord 'Ctrl+r'"));
+        assert!(script.contains("ctrlr --output-file $tmp"));
+    }
+
+    /// ctrlr writes an empty file to mean "cancelled"; replacing with it would
+    /// wipe whatever the user had already typed.
+    #[test]
+    fn test_generate_ignores_an_empty_pick() {
+        assert!(generate().contains("$picked.Trim().Length -gt 0"));
+    }
+
+    /// The binding sits outside the re-entry guard so reloading the profile
+    /// restores it after something else claims Ctrl+R.
+    #[test]
+    fn test_key_handler_is_registered_outside_the_guard() {
+        // Everything inside the guard is indented; the binding is not, which
+        // is what makes a profile reload restore it.
+        let script = generate();
+        assert!(script.contains("\nSet-PSReadLineKeyHandler -Chord 'Ctrl+r'"));
+        assert!(!script.contains("    Set-PSReadLineKeyHandler"));
     }
 }
