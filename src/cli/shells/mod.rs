@@ -274,6 +274,17 @@ pub fn reload_command(shell: Shell) -> &'static str {
     }
 }
 
+/// What to tell the user to type so the just-written config takes effect.
+///
+/// Not `reload_command`: that one replaces the shell, which is the right
+/// answer only when ctrlr can put it on the prompt line.
+pub fn reload_hint(shell: Shell, config_path: &Path) -> String {
+    match shell {
+        Shell::PowerShell => ". $PROFILE".to_string(),
+        _ => format!("source {}", config_path.display()),
+    }
+}
+
 /// Identifies the exact script a config was last offered, so a dismissal lasts
 /// until the integration actually changes.
 pub fn script_fingerprint(shell: Shell) -> String {
