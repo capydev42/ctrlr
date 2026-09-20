@@ -32,6 +32,12 @@ const MAX_LOG_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_LINES: usize = 50_000;
 
 /// Suffix of the staging file the log is renamed to before it is read.
+///
+/// Shared by every instance, which leaves a race on both platforms: two ctrlr
+/// launches that find the same leftover staging file both parse it and both
+/// record its runs, so `command_runs` gains duplicate rows. A pid-unique name
+/// would close it. Windows Terminal restoring a multi-tab layout makes
+/// simultaneous launches likelier there.
 const INGEST_SUFFIX: &str = ".ingest";
 
 fn ingest_path(path: &Path) -> PathBuf {
@@ -47,6 +53,12 @@ fn ingest_path(path: &Path) -> PathBuf {
 /// original path. That closes the read/truncate race against other terminals
 /// without needing a lock. A staging file left behind by a crashed run is
 /// picked up on the next call.
+///
+/// On Windows the same argument needs one more thing from the writer: a rename
+/// fails against any open handle unless every one of them was opened with
+/// `FILE_SHARE_DELETE`, which is why the PowerShell hook opens the log that
+/// way. Handles ctrlr does not control - a virus scanner, a `Get-Content
+/// -Wait` - are what the retry below is for.
 pub fn take_run_log(path: &Path) -> Vec<RunEntry> {
     let staging = ingest_path(path);
 
@@ -57,7 +69,7 @@ pub fn take_run_log(path: &Path) -> Vec<RunEntry> {
         if !path.exists() {
             return Vec::new();
         }
-        if std::fs::rename(path, &staging).is_err() {
+        if !rename_with_retry(path, &staging) {
             return Vec::new();
         }
     }
@@ -68,12 +80,38 @@ pub fn take_run_log(path: &Path) -> Vec<RunEntry> {
     entries
 }
 
+/// Retries a rename briefly before giving up for this launch.
+///
+/// Giving up loses nothing: the log stays where it is and the next launch
+/// drains it. The cap matters more than the success rate, because this runs
+/// before the first frame.
+fn rename_with_retry(from: &Path, to: &Path) -> bool {
+    const ATTEMPTS: u32 = 3;
+    const BACKOFF: std::time::Duration = std::time::Duration::from_millis(20);
+
+    for attempt in 0..ATTEMPTS {
+        if std::fs::rename(from, to).is_ok() {
+            return true;
+        }
+        if attempt + 1 < ATTEMPTS {
+            std::thread::sleep(BACKOFF);
+        }
+    }
+    false
+}
+
 /// Leaves an empty log behind with owner-only permissions.
 ///
 /// The hooks set the mode once, when they create the file at shell startup.
 /// After a drain their `>>` recreates it under the user's umask instead —
 /// usually 0644 — so the file holding your command text and paths has to be
 /// re-established here rather than left to them.
+///
+/// Windows needs no counterpart. The log lives under the user's profile
+/// directory, whose inherited DACL already grants only that user, SYSTEM and
+/// Administrators — the same reach as 0600 plus root. Setting an explicit DACL
+/// would mean `windows-sys` and a pile of SID plumbing to defend against a
+/// threat the profile already covers.
 fn recreate_secure(path: &Path) {
     if path.exists() {
         return;
@@ -426,5 +464,36 @@ mod tests {
         assert_eq!(strip_verbatim("/home/u".into()), "/home/u");
         assert_eq!(strip_verbatim(r"C:\Users\u".into()), r"C:\Users\u");
         assert_eq!(strip_verbatim(r"\\srv\share".into()), r"\\srv\share");
+    }
+
+    /// Giving up has to stay cheap: this runs before the first frame, and a
+    /// failed drain costs nothing because the log is read again next launch.
+    #[test]
+    fn test_rename_retry_gives_up_quickly() {
+        let dir = TempDir::new().unwrap();
+        let from = dir.path().join("runs.log");
+        fs::write(&from, "").unwrap();
+        let to = dir.path().join("gone").join("runs.log.ingest");
+
+        let start = std::time::Instant::now();
+        assert!(!rename_with_retry(&from, &to), "no such directory");
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(500),
+            "took {:?}",
+            start.elapsed()
+        );
+        assert!(from.exists(), "the log is left where it was");
+    }
+
+    #[test]
+    fn test_rename_retry_succeeds_on_the_first_try() {
+        let dir = TempDir::new().unwrap();
+        let from = dir.path().join("runs.log");
+        let to = dir.path().join("runs.log.ingest");
+        fs::write(&from, "v1\t1\t0\tbox\t/tmp\tls\n").unwrap();
+
+        assert!(rename_with_retry(&from, &to));
+        assert!(!from.exists());
+        assert!(to.exists());
     }
 }
