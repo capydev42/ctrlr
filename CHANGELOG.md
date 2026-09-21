@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.11.3] - 2026-09-21
+
+### Fixed
+- The execution-policy warning never appeared for an integration that was already installed. `ctrlr init` reported "up to date" and returned before the check ran — which is the case where it matters most, since re-running `ctrlr init` is how you look for the reason nothing works
+
+---
+
 ## [0.11.2] - 2026-09-20
 
 ### Fixed
