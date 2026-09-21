@@ -174,13 +174,26 @@ pub fn execution_policy_hint() -> Option<String> {
     // launch path.
     let out = std::process::Command::new("powershell")
         .args(["-NoProfile", "-Command", "Get-ExecutionPolicy"])
-        .output()
-        .ok()?;
-    hint_for_policy(&String::from_utf8_lossy(&out.stdout))
+        .output();
+
+    match out {
+        Ok(out) => hint_for_policy(&String::from_utf8_lossy(&out.stdout)),
+        // Saying nothing would read as "the policy is fine", which is the one
+        // thing this does not know.
+        Err(e) => Some(format!(
+            "\n\u{26a0}\u{fe0f} Could not check the PowerShell execution policy: {e}\n\
+             If Ctrl+R does nothing, run Get-ExecutionPolicy - a Restricted or\n\
+             AllSigned policy stops the profile from loading at all."
+        )),
+    }
 }
 
-fn hint_for_policy(policy: &str) -> Option<String> {
-    let policy = policy.trim();
+fn hint_for_policy(raw: &str) -> Option<String> {
+    // Keep only letters: with [Console]::OutputEncoding set to Unicode the
+    // name arrives as UTF-16 through the pipe, so lossy decoding leaves a NUL
+    // between every character and a plain compare silently misses.
+    let policy: String = raw.chars().filter(char::is_ascii_alphabetic).collect();
+    let policy = policy.as_str();
     if !policy.eq_ignore_ascii_case("Restricted") && !policy.eq_ignore_ascii_case("AllSigned") {
         return None;
     }
@@ -294,7 +307,8 @@ mod tests {
 
     #[test]
     fn test_policy_hint_only_for_the_blocking_policies() {
-        for blocked in ["Restricted", "AllSigned", "  restricted\r\n"] {
+        let utf16ish = "R\0e\0s\0t\0r\0i\0c\0t\0e\0d\0";
+        for blocked in ["Restricted", "AllSigned", "  restricted\r\n", utf16ish] {
             let hint = hint_for_policy(blocked).expect("should warn");
             assert!(hint.contains("Set-ExecutionPolicy -Scope CurrentUser RemoteSigned"));
         }
