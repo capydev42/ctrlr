@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.11.4] - 2026-09-22
+
+### Fixed
+- The execution-policy warning still did not appear on Windows. ctrlr reads `Get-ExecutionPolicy` from a child process whose output is a pipe rather than a console, and PowerShell encodes that as UTF-16 — so the policy name arrived with a null byte between every character and the comparison quietly missed
+- A failed check no longer passes for a passed one: if ctrlr cannot run `Get-ExecutionPolicy` at all, it says so instead of staying silent, which had read as "the policy is fine"
+
+---
+
 ## [0.11.3] - 2026-09-21
 
 ### Fixed
