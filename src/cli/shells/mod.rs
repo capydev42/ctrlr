@@ -221,6 +221,16 @@ impl fmt::Display for Shell {
     }
 }
 
+/// The indented "Supported:" block, shared by `ctrlr init`'s detection
+/// failure and the `--shell` error so the two cannot drift.
+pub fn supported_list() -> String {
+    Shell::ALL
+        .iter()
+        .map(|s| format!("  - {}", s.display_name()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// What the shell config currently holds, from ctrlr's side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntegrationState {
