@@ -12,14 +12,10 @@ pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
             None => {
                 let current_shell =
                     std::env::var("SHELL").unwrap_or_else(|_| "unknown".to_string());
-                let supported: Vec<String> = Shell::ALL
-                    .iter()
-                    .map(|s| format!("  - {}", s.display_name()))
-                    .collect();
                 println!(
                     "⚠️ Could not confidently detect shell\n\nDetected: {} (unsupported)\n\nSupported:\n{}\n\nTry:\n  ctrlr init --shell {}\n  ctrlr init --print",
                     current_shell,
-                    supported.join("\n"),
+                    shells::supported_list(),
                     Shell::ALL[0].display_name()
                 );
                 return Ok(());
@@ -29,10 +25,18 @@ pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
 
     println!("✔ Detected shell: {}", shell);
 
+    // Ahead of every read and every state check: `--print` depends on the
+    // shell alone, and answering it after the "up to date" return meant an
+    // installed user got no script at all.
+    if print_only {
+        print!("{}", print_script_text(shell));
+        return Ok(());
+    }
+
     let config_path = shell.config_path();
     let config_content = match shells::read_config(&config_path) {
         Ok(content) => content.unwrap_or_default(),
-        // Stop before the y/n prompt; `--print` needs no read at all.
+        // Stop before the y/n prompt.
         Err(e) => {
             println!(
                 "⚠️ Cannot read {}: {}\n\nctrlr will not write over a config it could not read.\n\nTo add the integration by hand:\n  ctrlr init --shell {} --print",
@@ -65,15 +69,6 @@ pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
 
     let script = shells::generate_script(shell);
 
-    if print_only {
-        println!(
-            "# Copy this into your shell config ({}):\n",
-            config_path.display()
-        );
-        println!("{}", script);
-        return Ok(());
-    }
-
     println!("\nWe will add the following to {}:", config_path.display());
     println!("{}", script);
 
@@ -104,6 +99,16 @@ pub fn run(shell: Option<Shell>, print_only: bool) -> Result<(), Report> {
     warn_if_profile_is_blocked(shell);
 
     Ok(())
+}
+
+/// What `--print` prints. The shell is the only input, which is what keeps
+/// the output independent of whether anything is installed.
+fn print_script_text(shell: Shell) -> String {
+    format!(
+        "# Copy this into your shell config ({}):\n\n{}\n",
+        shell.config_path().display(),
+        shells::generate_script(shell)
+    )
 }
 
 /// Says so when the shell will refuse to load the profile ctrlr relies on.
@@ -317,6 +322,25 @@ bindkey '^R' _ctrlr_widget";
             START_MARKER, END_MARKER, START_MARKER, END_MARKER
         );
         assert_eq!(strip_integration(&content), "a\nb\nc");
+    }
+
+    /// `--print` used to sit behind the "up to date" return, so an installed
+    /// user got no script. Nothing but the shell reaches this.
+    #[test]
+    fn test_print_script_text_depends_only_on_the_shell() {
+        for &shell in Shell::ALL {
+            let text = print_script_text(shell);
+            assert!(
+                text.contains(START_MARKER),
+                "{} printed no integration block",
+                shell
+            );
+            assert!(
+                text.contains(&shell.config_path().display().to_string()),
+                "{} printed no config path",
+                shell
+            );
+        }
     }
 }
 

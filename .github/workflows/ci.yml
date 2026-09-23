@@ -44,13 +44,17 @@ jobs:
           $work = Join-Path ([System.IO.Path]::GetTempPath()) "ctrlr-scripts"
           New-Item -ItemType Directory -Path $work -Force | Out-Null
 
-          # A throwaway home, because `--print` returns early once the
-          # integration is installed and current for that shell. The built
-          # binary is invoked directly so cargo keeps the real home.
+          # A throwaway home: the generated scripts point at paths under it,
+          # and the next step rewrites one of them. The built binary is
+          # invoked directly so cargo keeps the real home.
           $ctrlr = Join-Path $PWD "target/debug/ctrlr"
           $env:HOME = $work
 
           foreach ($shell in 'bash', 'zsh', 'fish', 'powershell') {
+            # Install first: `--print` has to answer whatever the install
+            # state is, and returning early on "up to date" is the bug this
+            # guards against.
+            'y' | & $ctrlr init --shell $shell | Out-Null
             $out = & $ctrlr init --shell $shell --print
             $text = ($out -join "`n")
             $marker = $text.IndexOf("# ctrlr integration")

@@ -4,12 +4,16 @@ pub mod init;
 pub mod shells;
 
 use crate::cli::shells::Shell;
+use std::fmt;
 
 pub fn run() -> color_eyre::Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
+    // Resolved against the subcommand, not globally: `args.iter().any(...)`
+    // used to answer `ctrlr init --help` with the general help, which left
+    // every subcommand help unreachable.
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        print_help();
+        print!("{}", help_text_for(subcommand(&args)));
         return Ok(());
     }
 
@@ -18,49 +22,61 @@ pub fn run() -> color_eyre::Result<()> {
         return Ok(());
     }
 
-    if args.len() > 1 && args[1] == "init" {
-        if args.iter().any(|a| a == "--help" || a == "-h") {
-            print_init_help();
-            return Ok(());
+    match subcommand(&args) {
+        Some("init") => {
+            let shell = match get_shell_flag(&args) {
+                Ok(shell) => shell,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+            let print_only = args.iter().any(|a| a == "--print");
+            crate::cli::init::run(shell, print_only)?;
         }
-        let shell = get_shell_flag(&args);
-        let print_only = args.iter().any(|a| a == "--print");
-        crate::cli::init::run(shell, print_only)?;
-    } else if args.len() > 1 && args[1] == "config" {
-        if args.iter().any(|a| a == "--print") {
-            print!("{}", crate::config::print_defaults());
-        } else {
-            match crate::config::config_path() {
-                Some(path) => println!("{}", path.display()),
-                None => eprintln!("Could not determine a config directory"),
+        Some("config") => {
+            if args.iter().any(|a| a == "--print") {
+                print!("{}", crate::config::print_defaults());
+            } else {
+                match crate::config::config_path() {
+                    Some(path) => println!("{}", path.display()),
+                    None => eprintln!("Could not determine a config directory"),
+                }
             }
         }
-    } else if args.len() > 1 && args[1] == "export" {
-        let output_path = get_export_output_path(&args);
-        crate::cli::export::run(output_path.as_deref())?;
-    } else if args.len() > 1 && args[1] == "import" {
-        if args.iter().any(|a| a == "--help" || a == "-h") {
-            print_import_help();
-            return Ok(());
+        Some("export") => {
+            let output_path = get_export_output_path(&args);
+            crate::cli::export::run(output_path.as_deref())?;
         }
-        let input_path = get_import_input_path(&args);
-        if input_path.is_none() {
-            eprintln!("Error: import requires a file path");
-            print_import_help();
-            std::process::exit(1);
+        Some("import") => {
+            let input_path = get_import_input_path(&args);
+            if input_path.is_none() {
+                eprintln!("Error: import requires a file path");
+                print!("{}", import_help_text());
+                std::process::exit(1);
+            }
+            let input_path = input_path.unwrap();
+            let merge = args.iter().any(|a| a == "--merge");
+            let replace = args.iter().any(|a| a == "--replace");
+            let dry_run = args.iter().any(|a| a == "--dry-run");
+            crate::cli::import::run(&input_path, merge, replace, dry_run)?;
         }
-        let input_path = input_path.unwrap();
-        let merge = args.iter().any(|a| a == "--merge");
-        let replace = args.iter().any(|a| a == "--replace");
-        let dry_run = args.iter().any(|a| a == "--dry-run");
-        crate::cli::import::run(&input_path, merge, replace, dry_run)?;
-    } else {
-        let output_file = get_output_file_flag(&args);
-        check_integration_warning();
-        crate::run_tui(output_file)?;
+        _ => {
+            let output_file = get_output_file_flag(&args);
+            check_integration_warning();
+            crate::run_tui(output_file)?;
+        }
     }
 
     Ok(())
+}
+
+/// The subcommand, if there is one. A leading flag is not one, so
+/// `ctrlr --help` and `ctrlr -o /tmp/cmd` still mean the TUI.
+fn subcommand(args: &[String]) -> Option<&str> {
+    args.get(1)
+        .filter(|a| !a.starts_with('-'))
+        .map(|s| s.as_str())
 }
 
 /// Answered before anything can reach the TUI: a package manager verifies an
@@ -70,11 +86,33 @@ fn version_line() -> String {
     format!("ctrlr {}", env!("CARGO_PKG_VERSION"))
 }
 
-fn get_shell_flag(args: &[String]) -> Option<Shell> {
-    args.iter()
-        .position(|a| a == "--shell")
-        .and_then(|i| args.get(i + 1))
-        .and_then(|s| Shell::from_str(s))
+/// `--shell` with no name, or a name ctrlr does not know. Both are kept apart
+/// from "not given", which means auto-detect: silently dropping an unknown
+/// name reported as a bug in the detection instead.
+#[derive(Debug, PartialEq, Eq)]
+enum ShellFlagError {
+    Missing,
+    Unknown(String),
+}
+
+impl fmt::Display for ShellFlagError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Missing => write!(f, "Error: --shell needs a shell name")?,
+            Self::Unknown(name) => write!(f, "Error: unknown shell: {}", name)?,
+        }
+        write!(f, "\n\nSupported:\n{}", shells::supported_list())
+    }
+}
+
+fn get_shell_flag(args: &[String]) -> Result<Option<Shell>, ShellFlagError> {
+    let Some(i) = args.iter().position(|a| a == "--shell") else {
+        return Ok(None);
+    };
+    let name = args.get(i + 1).ok_or(ShellFlagError::Missing)?;
+    Shell::from_str(name)
+        .map(Some)
+        .ok_or_else(|| ShellFlagError::Unknown(name.clone()))
 }
 
 fn get_output_file_flag(args: &[String]) -> Option<String> {
@@ -130,61 +168,116 @@ fn check_integration_warning() {
     }
 }
 
-fn print_help() {
-    println!("ctrlr - Command history picker");
-    println!();
-    println!("Usage: ctrlr [COMMAND]");
-    println!();
-    println!("Commands:");
-    println!("  init              Add shell integration");
-    println!("  config            Print the config file path (--print dumps the defaults)");
-    println!("  export [FILE]     Export data to JSON (stdout if no file)");
-    println!("  import FILE       Import data from JSON");
-    println!();
-    println!("Options:");
-    println!("  --help, -h        Show this help");
-    println!("  --version, -V     Show the version");
-    println!("  --output-file, -o Write the selected command to this file. The shell");
-    println!("                    integration sets it; without it nothing is printed.");
-    println!();
-    println!("Examples:");
-    println!("  ctrlr             Open the TUI");
-    println!("  ctrlr init        Add shell integration (Ctrl+R)");
-    println!("  ctrlr init --print   Print integration script");
-    println!("  ctrlr config --print > ~/.config/ctrlr/config.toml   Customise keybindings");
-    println!("  ctrlr --output-file /tmp/cmd  Write output to file");
-    println!("  ctrlr export      Export all data to stdout");
-    println!("  ctrlr export backup.json  Export to file");
-    println!("  ctrlr import backup.json  Import (merge mode)");
-    println!("  ctrlr import backup.json --dry-run  Preview import");
-    println!("  ctrlr import backup.json --replace  Replace all data");
+/// Every help text is a `String` rather than a `println!` block so the tests
+/// can read them; an unreachable one is exactly what this change fixes.
+fn help_text_for(subcommand: Option<&str>) -> String {
+    match subcommand {
+        Some("init") => init_help_text(),
+        Some("config") => config_help_text(),
+        Some("export") => export_help_text(),
+        Some("import") => import_help_text(),
+        _ => help_text(),
+    }
 }
 
-fn print_init_help() {
-    println!("ctrlr init - Add shell integration");
-    println!();
-    println!("Usage: ctrlr init [OPTIONS]");
-    println!();
-    println!("Options:");
+fn help_text() -> String {
+    "\
+ctrlr - Command history picker
+
+Usage: ctrlr [COMMAND]
+
+Commands:
+  init              Add shell integration
+  config            Print the config file path (--print dumps the defaults)
+  export [FILE]     Export data to JSON (stdout if no file)
+  import FILE       Import data from JSON
+
+Options:
+  --help, -h        Show this help
+  --version, -V     Show the version
+  --output-file, -o Write the selected command to this file. The shell
+                    integration sets it; without it nothing is printed.
+
+Examples:
+  ctrlr             Open the TUI
+  ctrlr init        Add shell integration (Ctrl+R)
+  ctrlr init --print   Print integration script
+  ctrlr config --print > ~/.config/ctrlr/config.toml   Customise keybindings
+  ctrlr --output-file /tmp/cmd  Write output to file
+  ctrlr export      Export all data to stdout
+  ctrlr export backup.json  Export to file
+  ctrlr import backup.json  Import (merge mode)
+  ctrlr import backup.json --dry-run  Preview import
+  ctrlr import backup.json --replace  Replace all data
+"
+    .to_string()
+}
+
+fn init_help_text() -> String {
     let names: Vec<&str> = Shell::ALL.iter().map(|s| s.display_name()).collect();
-    println!(
-        "  --shell <SHELL>   Force a specific shell ({})",
+    format!(
+        "\
+ctrlr init - Add shell integration
+
+Usage: ctrlr init [OPTIONS]
+
+Options:
+  --shell <SHELL>   Force a specific shell ({})
+  --print           Only print the integration script, don't install
+  --help, -h        Show this help
+",
         names.join(", ")
-    );
-    println!("  --print           Only print the integration script, don't install");
-    println!("  --help, -h        Show this help");
+    )
 }
 
-fn print_import_help() {
-    println!("ctrlr import - Import data from JSON");
-    println!();
-    println!("Usage: ctrlr import FILE [OPTIONS]");
-    println!();
-    println!("Options:");
-    println!("  --merge           Merge with existing data (default)");
-    println!("  --replace         Replace all existing data");
-    println!("  --dry-run         Preview changes without applying");
-    println!("  --help, -h        Show this help");
+fn config_help_text() -> String {
+    "\
+ctrlr config - Show the config file path
+
+Usage: ctrlr config [OPTIONS]
+
+Options:
+  --print           Dump the default keymap as TOML instead of the path
+  --help, -h        Show this help
+
+Examples:
+  ctrlr config      Print where the config file is read from
+  ctrlr config --print > ~/.config/ctrlr/config.toml   Start from the defaults
+"
+    .to_string()
+}
+
+fn export_help_text() -> String {
+    "\
+ctrlr export - Export data to JSON
+
+Usage: ctrlr export [FILE]
+
+Without a file the JSON goes to stdout.
+
+Options:
+  --help, -h        Show this help
+
+Examples:
+  ctrlr export      Export all data to stdout
+  ctrlr export backup.json  Export to file
+"
+    .to_string()
+}
+
+fn import_help_text() -> String {
+    "\
+ctrlr import - Import data from JSON
+
+Usage: ctrlr import FILE [OPTIONS]
+
+Options:
+  --merge           Merge with existing data (default)
+  --replace         Replace all existing data
+  --dry-run         Preview changes without applying
+  --help, -h        Show this help
+"
+    .to_string()
 }
 
 #[cfg(test)]
@@ -242,6 +335,80 @@ bind -x '\"\\C-r\": _ctrlr_widget'";
                 shells::integration_state(shell, &installed),
                 shells::IntegrationState::Current,
                 "{} reports its own script as current",
+                shell
+            );
+        }
+    }
+
+    /// Builds an argv the way `std::env::args()` hands one over, program name
+    /// included.
+    fn argv(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn test_subcommand_ignores_leading_flags() {
+        assert_eq!(subcommand(&argv(&["ctrlr"])), None);
+        assert_eq!(subcommand(&argv(&["ctrlr", "--help"])), None);
+        assert_eq!(subcommand(&argv(&["ctrlr", "-o", "/tmp/cmd"])), None);
+        assert_eq!(
+            subcommand(&argv(&["ctrlr", "init", "--help"])),
+            Some("init")
+        );
+    }
+
+    #[test]
+    fn test_help_follows_the_subcommand() {
+        for sub in ["init", "config", "export", "import"] {
+            let text = help_text_for(Some(sub));
+            assert!(
+                text.starts_with(&format!("ctrlr {} - ", sub)),
+                "{} --help answered with:\n{}",
+                sub,
+                text
+            );
+        }
+        assert_eq!(help_text_for(None), help_text());
+        assert_eq!(help_text_for(Some("nonesuch")), help_text());
+    }
+
+    /// The only place `--shell` is documented, and it was unreachable once.
+    #[test]
+    fn test_init_help_lists_every_shell() {
+        let text = init_help_text();
+        for &shell in Shell::ALL {
+            assert!(
+                text.contains(shell.display_name()),
+                "{} is missing from the init help",
+                shell
+            );
+        }
+    }
+
+    #[test]
+    fn test_shell_flag_distinguishes_absent_unknown_and_missing() {
+        assert_eq!(get_shell_flag(&argv(&["ctrlr", "init"])), Ok(None));
+        assert_eq!(
+            get_shell_flag(&argv(&["ctrlr", "init", "--shell", "powershell"])),
+            Ok(Some(Shell::PowerShell))
+        );
+        assert_eq!(
+            get_shell_flag(&argv(&["ctrlr", "init", "--shell", "quatsch"])),
+            Err(ShellFlagError::Unknown("quatsch".to_string()))
+        );
+        assert_eq!(
+            get_shell_flag(&argv(&["ctrlr", "init", "--shell"])),
+            Err(ShellFlagError::Missing)
+        );
+    }
+
+    #[test]
+    fn test_shell_flag_error_lists_the_supported_shells() {
+        let message = ShellFlagError::Unknown("quatsch".to_string()).to_string();
+        for &shell in Shell::ALL {
+            assert!(
+                message.contains(shell.display_name()),
+                "{} is missing from the error",
                 shell
             );
         }
