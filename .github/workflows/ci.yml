@@ -113,6 +113,62 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: cargo test --all-targets fixture_written_by_a_shell_hook_parses
 
+      # install.sh is a release asset piped straight into bash, so it gets the
+      # same scrutiny as install.ps1. BASE_URL points it at a release built
+      # here: ubuntu exercises the sha256sum branch, macOS the shasum one.
+      - name: install.sh verifies the download
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          bash -n install.sh
+
+          # All four asset names, so the check does not depend on the runner.
+          make_release() {
+            mkdir -p "$1"
+            printf '#!/bin/sh\necho %s\n' "$2" > "$1/ctrlr"
+            chmod +x "$1/ctrlr"
+            ( cd "$1"
+              for t in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu \
+                       x86_64-apple-darwin aarch64-apple-darwin; do
+                tar czf "ctrlr-$t.tar.gz" ctrlr
+              done
+              if command -v sha256sum >/dev/null; then
+                sha256sum *.tar.gz > checksums.txt
+              else
+                shasum -a 256 *.tar.gz > checksums.txt
+              fi )
+          }
+
+          work="$(mktemp -d)"
+          make_release "$work/rel" original
+
+          BASE_URL="file://$work/rel" INSTALL_DIR="$work/good" bash install.sh
+          if [ ! -x "$work/good/ctrlr" ]; then
+            echo "a verified release did not install"; exit 1
+          fi
+
+          # A different but perfectly valid archive under the same name, kept
+          # against the old checksums.txt. tar would unpack it without
+          # complaint, so only the sum can catch the swap.
+          cp "$work/rel/checksums.txt" "$work/sums.txt"
+          make_release "$work/rel" swapped
+          cp "$work/sums.txt" "$work/rel/checksums.txt"
+          if BASE_URL="file://$work/rel" INSTALL_DIR="$work/bad" bash install.sh; then
+            echo "a swapped archive installed"; exit 1
+          fi
+          if [ -e "$work/bad/ctrlr" ]; then
+            echo "a swapped archive was written"; exit 1
+          fi
+
+          make_release "$work/rel2" original
+          : > "$work/rel2/checksums.txt"
+          if BASE_URL="file://$work/rel2" INSTALL_DIR="$work/noentry" bash install.sh; then
+            echo "a missing checksums entry installed"; exit 1
+          fi
+          if [ -e "$work/noentry/ctrlr" ]; then
+            echo "an unlisted archive was written"; exit 1
+          fi
+
       - name: Clippy
         if: matrix.os == 'ubuntu-latest'
         run: cargo clippy --all-targets -- -D warnings
