@@ -34,7 +34,35 @@ EXAMPLES:
 ENVIRONMENT:
     REPO        GitHub repository (default: capydev42/ctrlr)
     INSTALL_DIR Install directory (default: ask user)
+    BASE_URL    Where to fetch the assets from, overriding REPO and --version
 EOF
+}
+
+# "<sha256>  <asset>" lines, the same file render-formula.sh reads. A missing
+# entry is an error, not a skipped check.
+expected_sha() {
+    local asset="$1" file="$2" sha
+    sha="$(awk -v a="$asset" '$2 == a { print $1 }' "$file")"
+    if [[ -z "${sha}" ]]; then
+        echo -e "${RED}Error: checksums.txt has no entry for ${asset}${NC}" >&2
+        return 1
+    fi
+    printf '%s' "${sha}"
+}
+
+# sha256sum on Linux, shasum on macOS, openssl as a third try.
+actual_sha() {
+    local file="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "${file}" | awk '{ print $1 }'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "${file}" | awk '{ print $1 }'
+    elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -sha256 "${file}" | awk '{ print $NF }'
+    else
+        echo -e "${RED}Error: no sha256 tool found (looked for sha256sum, shasum, openssl)${NC}" >&2
+        return 1
+    fi
 }
 
 # Parse arguments
@@ -91,11 +119,15 @@ case "$OS" in
         ;;
 esac
 
-# Determine download URL
-if [[ -n "${VERSION}" ]]; then
-    DOWNLOAD_BASE="https://github.com/${REPO}/releases/download/${VERSION}"
-else
-    DOWNLOAD_BASE="https://github.com/${REPO}/releases/latest/download"
+# Determine download URL. BASE_URL wins, which is how the CI check points this
+# at a local release over file://.
+DOWNLOAD_BASE="${BASE_URL:-}"
+if [[ -z "${DOWNLOAD_BASE}" ]]; then
+    if [[ -n "${VERSION}" ]]; then
+        DOWNLOAD_BASE="https://github.com/${REPO}/releases/download/${VERSION}"
+    else
+        DOWNLOAD_BASE="https://github.com/${REPO}/releases/latest/download"
+    fi
 fi
 DOWNLOAD_URL="${DOWNLOAD_BASE}/${ASSET_NAME}"
 
@@ -121,20 +153,17 @@ if [[ -z "${INSTALL_DIR}" ]]; then
                 ;;
         esac
     else
-        # Non-interactive: use default or fail with helpful message
-        if [[ -n "${INSTALL_DIR}" ]]; then
-            echo -e "${YELLOW}Using INSTALL_DIR=${INSTALL_DIR}${NC}"
-        else
-            echo -e "${RED}Error: Interactive input not available.${NC}"
-            echo ""
-            echo "When piping to bash, use INSTALL_DIR environment variable:"
-            echo "  INSTALL_DIR=~/.local/bin curl -fsSL ... | bash"
-            echo "  INSTALL_DIR=/usr/local/bin curl -fsSL ... | sudo bash"
-            echo ""
-            echo "Or download the script first and run it directly:"
-            echo "  curl -fsSL ... -o install.sh && chmod +x install.sh && ./install.sh"
-            exit 1
-        fi
+        # Nothing to ask with, and no default: INSTALL_DIR is empty or we would
+        # not be in this branch.
+        echo -e "${RED}Error: Interactive input not available.${NC}"
+        echo ""
+        echo "When piping to bash, use INSTALL_DIR environment variable:"
+        echo "  INSTALL_DIR=~/.local/bin curl -fsSL ... | bash"
+        echo "  INSTALL_DIR=/usr/local/bin curl -fsSL ... | sudo bash"
+        echo ""
+        echo "Or download the script first and run it directly:"
+        echo "  curl -fsSL ... -o install.sh && chmod +x install.sh && ./install.sh"
+        exit 1
     fi
 fi
 
@@ -148,20 +177,36 @@ mkdir -p "${INSTALL_DIR}"
 
 # Download and extract
 TMP_DIR=$(mktemp -d)
+# One cleanup for every exit below, of which the checksum check adds three.
+trap 'cd /; rm -rf "${TMP_DIR}"' EXIT
 cd "${TMP_DIR}"
 
 echo -e "Downloading ${ASSET_NAME}..."
 if ! curl -fsSL "${DOWNLOAD_URL}" -o "${ASSET_NAME}"; then
     echo -e "${RED}Error: Failed to download from ${DOWNLOAD_URL}${NC}"
     echo "This might mean the release is not yet available."
-    rm -rf "${TMP_DIR}"
     exit 1
 fi
 
 # Check if file is an HTML error page
 if grep -q "<!DOCTYPE" "${ASSET_NAME}" 2>/dev/null; then
     echo -e "${RED}Error: Received HTML instead of archive (release might not exist)${NC}"
-    rm -rf "${TMP_DIR}"
+    exit 1
+fi
+
+echo -e "Verifying checksum..."
+if ! curl -fsSL "${DOWNLOAD_BASE}/checksums.txt" -o checksums.txt; then
+    echo -e "${RED}Error: Failed to download checksums.txt from ${DOWNLOAD_BASE}${NC}"
+    exit 1
+fi
+
+EXPECTED_SHA="$(expected_sha "${ASSET_NAME}" checksums.txt)" || exit 1
+ACTUAL_SHA="$(actual_sha "${ASSET_NAME}")" || exit 1
+
+if [[ "${EXPECTED_SHA}" != "${ACTUAL_SHA}" ]]; then
+    echo -e "${RED}Error: checksum mismatch for ${ASSET_NAME}${NC}"
+    echo "  expected ${EXPECTED_SHA}"
+    echo "  got      ${ACTUAL_SHA}"
     exit 1
 fi
 
@@ -169,10 +214,6 @@ tar -xzf "${ASSET_NAME}"
 rm -f "${INSTALL_DIR}/ctrlr" 2>/dev/null || true
 mv ctrlr "${INSTALL_DIR}/"
 chmod +x "${INSTALL_DIR}/ctrlr"
-
-# Cleanup
-cd /
-rm -rf "${TMP_DIR}"
 
 echo -e "${GREEN}Installed ctrlr to ${INSTALL_DIR}/ctrlr${NC}"
 
