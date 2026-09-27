@@ -179,8 +179,7 @@ fn install_at(config_path: &Path, shell: Shell) -> Result<InstallOutcome, Report
     }
 
     // Unconditional: create_dir_all succeeds on a directory that already
-    // exists, and guarding it would need either a let-chain (Rust 1.88, past
-    // the 1.86 MSRV) or a nested if that clippy rejects.
+    // exists, so there is nothing to guard.
     if let Some(dir) = config_path.parent() {
         fs::create_dir_all(dir).map_err(|e| {
             Report::new(std::io::Error::other(format!(
