@@ -19,7 +19,8 @@
 curl -fsSL https://github.com/capydev42/ctrlr/releases/latest/download/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 ```
 
-The script asks where to install and downloads the binary for your platform.
+The script asks where to install, downloads the binary for your platform and
+verifies it against the release checksums.
 
 **Windows**, in PowerShell:
 
@@ -399,10 +400,14 @@ I wasted a lot of time re-googling commands I had already used.
 - [x] Better ranking (recency + frequency)
 - [x] Directory-aware history
 - [x] Mouse support & resizable panes
-- [ ] Improved collections UX
-- [ ] Richer command preview
-- [ ] Vim-style navigation improvements
-- [ ] Plugin / extensibility ideas
+- [x] Improved collections UX
+- [x] Richer command preview
+- [x] Vim-style navigation
+- [x] Themes with live preview
+- [x] Edit a command before running it
+- [x] Rebindable keys — `config.toml` and an in-TUI editor (`Ctrl+G`)
+- [x] Windows and PowerShell support
+- [ ] Git Bash and MSYS on Windows
 
 ---
 

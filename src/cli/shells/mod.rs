@@ -3,8 +3,9 @@ pub mod fish;
 pub mod powershell;
 pub mod zsh;
 
+use std::ffi::OsStr;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // `PowerShell` tripping enum_variant_names is the product's name, not a
 // stutter; `Pwsh` would read as excluding Windows PowerShell 5.1.
@@ -40,8 +41,7 @@ impl Shell {
         Some(match self {
             Shell::Bash => home.join(".bash_history"),
             Shell::Zsh => home.join(".zsh_history"),
-            // fish uses the XDG layout on macOS too, so not `dirs::data_dir()`.
-            Shell::Fish => home.join(".local/share/fish/fish_history"),
+            Shell::Fish => xdg_home("XDG_DATA_HOME", ".local/share")?.join("fish/fish_history"),
             Shell::PowerShell => {
                 if let Some(path) = std::env::var_os("CTRLR_POWERSHELL_HISTORY") {
                     return Some(std::path::PathBuf::from(path));
@@ -58,7 +58,8 @@ impl Shell {
                         .join("PSReadLine")
                         .join("ConsoleHost_history.txt")
                 } else {
-                    home.join(".local/share/powershell/PSReadLine/ConsoleHost_history.txt")
+                    xdg_home("XDG_DATA_HOME", ".local/share")?
+                        .join("powershell/PSReadLine/ConsoleHost_history.txt")
                 }
             }
         })
@@ -146,10 +147,10 @@ impl Shell {
                 .map(|p| p.join(".bashrc"))
                 .unwrap_or_else(|| std::path::PathBuf::from(".bashrc")),
             Shell::Zsh => dirs::home_dir()
-                .map(|p| p.join(".zshrc"))
+                .map(|p| zsh_rc(std::env::var_os("ZDOTDIR").as_deref(), &p))
                 .unwrap_or_else(|| std::path::PathBuf::from(".zshrc")),
-            Shell::Fish => dirs::home_dir()
-                .map(|p| p.join(".config/fish/config.fish"))
+            Shell::Fish => xdg_home("XDG_CONFIG_HOME", ".config")
+                .map(|p| p.join("fish/config.fish"))
                 .unwrap_or_else(|| std::path::PathBuf::from(".config/fish/config.fish")),
             Shell::PowerShell => powershell_profile(),
         }
@@ -192,10 +193,10 @@ fn default_powershell_profile() -> std::path::PathBuf {
         };
         documents.join(dir).join(PROFILE)
     } else {
-        // Not `dirs::config_dir()`: on macOS that is ~/Library/Application
-        // Support, while pwsh uses ~/.config there like everywhere else.
-        let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-        home.join(".config").join("powershell").join(PROFILE)
+        xdg_home("XDG_CONFIG_HOME", ".config")
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("powershell")
+            .join(PROFILE)
     }
 }
 
@@ -219,6 +220,39 @@ impl fmt::Display for Shell {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.display_name())
     }
+}
+
+/// A base directory the shell resolves from the environment.
+///
+/// Not `dirs::config_dir()`/`data_dir()`: those are `~/Library/...` on macOS,
+/// while fish and pwsh use `~/.config` and `~/.local/share` there too. A
+/// relative value counts as unset per the XDG spec — fish resolves one against
+/// its own cwd, which ctrlr has no way to know.
+fn xdg_base(value: Option<&OsStr>, home: &Path, fallback: &str) -> PathBuf {
+    match value {
+        Some(v) if Path::new(v).is_absolute() => PathBuf::from(v),
+        _ => home.join(fallback),
+    }
+}
+
+/// `xdg_base` against the real environment.
+fn xdg_home(var: &str, fallback: &str) -> Option<PathBuf> {
+    Some(xdg_base(
+        std::env::var_os(var).as_deref(),
+        &dirs::home_dir()?,
+        fallback,
+    ))
+}
+
+/// `$ZDOTDIR/.zshrc` when zsh was given one. Only visible when the user
+/// exported it: set in `~/.zshenv` without `export` it reaches no child, and
+/// this falls back the way it always did.
+fn zsh_rc(zdotdir: Option<&OsStr>, home: &Path) -> PathBuf {
+    match zdotdir {
+        Some(v) if Path::new(v).is_absolute() => PathBuf::from(v),
+        _ => home.to_path_buf(),
+    }
+    .join(".zshrc")
 }
 
 /// The indented "Supported:" block, shared by `ctrlr init`'s detection
@@ -392,6 +426,68 @@ mod tests {
         for (i, &shell) in Shell::ALL.iter().enumerate() {
             assert_eq!(exhaustive(shell), i, "{} is out of order in ALL", shell);
         }
+    }
+
+    /// An absolute path for whichever platform the test runs on: `/data` is
+    /// not absolute on Windows, and `is_absolute` is what `xdg_base` asks.
+    fn abs(name: &str) -> PathBuf {
+        let path = if cfg!(windows) {
+            PathBuf::from(format!("C:\\{}", name))
+        } else {
+            PathBuf::from(format!("/{}", name))
+        };
+        // Checked rather than assumed: the tests below mean nothing if the
+        // fixture is not the thing `xdg_base` branches on.
+        assert!(
+            path.is_absolute(),
+            "{} is not absolute here",
+            path.display()
+        );
+        path
+    }
+
+    #[test]
+    fn test_xdg_base_uses_an_absolute_value() {
+        let data = abs("data");
+        let base = xdg_base(Some(data.as_os_str()), &abs("home"), ".local/share");
+        assert_eq!(base, data);
+    }
+
+    /// The XDG spec says to ignore a relative value. fish does not — it
+    /// resolves one against its own cwd, which ctrlr cannot know.
+    #[test]
+    fn test_xdg_base_ignores_a_relative_value() {
+        let home = abs("home");
+        let base = xdg_base(Some(OsStr::new("rel/data")), &home, ".local/share");
+        assert_eq!(base, home.join(".local/share"));
+    }
+
+    #[test]
+    fn test_xdg_base_ignores_an_empty_value() {
+        let home = abs("home");
+        let base = xdg_base(Some(OsStr::new("")), &home, ".config");
+        assert_eq!(base, home.join(".config"));
+    }
+
+    #[test]
+    fn test_xdg_base_falls_back_to_home() {
+        let home = abs("home");
+        assert_eq!(xdg_base(None, &home, ".config"), home.join(".config"));
+    }
+
+    #[test]
+    fn test_zsh_rc_prefers_zdotdir() {
+        let dot = abs("dot");
+        let rc = zsh_rc(Some(dot.as_os_str()), &abs("home"));
+        assert_eq!(rc, dot.join(".zshrc"));
+    }
+
+    #[test]
+    fn test_zsh_rc_without_zdotdir() {
+        let home = abs("home");
+        assert_eq!(zsh_rc(None, &home), home.join(".zshrc"));
+        // A relative ZDOTDIR is ignored for the same reason as an XDG one.
+        assert_eq!(zsh_rc(Some(OsStr::new("dot")), &home), home.join(".zshrc"));
     }
 
     #[test]
