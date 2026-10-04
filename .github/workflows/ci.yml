@@ -47,8 +47,14 @@ jobs:
           # A throwaway home: the generated scripts point at paths under it,
           # and the next step rewrites one of them. The built binary is
           # invoked directly so cargo keeps the real home.
+          #
+          # The XDG pair as well, not just HOME: ctrlr resolves the fish and
+          # pwsh paths through them, so leaving them alone installs the
+          # profile into the runner's real config dir.
           $ctrlr = Join-Path $PWD "target/debug/ctrlr"
           $env:HOME = $work
+          $env:XDG_CONFIG_HOME = Join-Path $work "config"
+          $env:XDG_DATA_HOME = Join-Path $work "data"
 
           foreach ($shell in 'bash', 'zsh', 'fish', 'powershell') {
             # Install first: `--print` has to answer whatever the install
@@ -100,9 +106,21 @@ jobs:
           # in a double-quoted string interpolates away to nothing.
           $pattern = '(?m)^(\s*\$global:_ctrlrLog = ).*$'
           $script = $script -replace $pattern, ('$1' + "'$log'")
+          if ($script -notmatch [regex]::Escape("'$log'")) {
+            throw "the log path was not substituted; the generated line changed shape"
+          }
           Set-Content -LiteralPath $sourced -Value $script -Encoding utf8NoBOM
 
+          # GitHub runs the step as `pwsh -command ". <file>"`, so profiles are
+          # loaded and one of them may already hold the integration. Its
+          # re-entry guard would then skip the whole body and keep that log
+          # path, and _ctrlrWrite swallows every error.
+          Remove-Variable -Name _ctrlrInstalled -Scope Global -ErrorAction SilentlyContinue
           . $sourced
+          if ($global:_ctrlrLog -ne $log) {
+            throw "sourcing left the log at '$($global:_ctrlrLog)', expected '$log'"
+          }
+
           _ctrlrWrite 0 '/tmp/dir with space' "echo `"tab`there`" and uml"
           _ctrlrWrite 1 '/tmp' 'false'
 
