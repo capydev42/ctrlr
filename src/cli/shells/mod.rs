@@ -428,57 +428,66 @@ mod tests {
         }
     }
 
+    /// An absolute path for whichever platform the test runs on: `/data` is
+    /// not absolute on Windows, and `is_absolute` is what `xdg_base` asks.
+    fn abs(name: &str) -> PathBuf {
+        let path = if cfg!(windows) {
+            PathBuf::from(format!("C:\\{}", name))
+        } else {
+            PathBuf::from(format!("/{}", name))
+        };
+        // Checked rather than assumed: the tests below mean nothing if the
+        // fixture is not the thing `xdg_base` branches on.
+        assert!(
+            path.is_absolute(),
+            "{} is not absolute here",
+            path.display()
+        );
+        path
+    }
+
     #[test]
     fn test_xdg_base_uses_an_absolute_value() {
-        let base = xdg_base(
-            Some(OsStr::new("/data")),
-            Path::new("/home/u"),
-            ".local/share",
-        );
-        assert_eq!(base, PathBuf::from("/data"));
+        let data = abs("data");
+        let base = xdg_base(Some(data.as_os_str()), &abs("home"), ".local/share");
+        assert_eq!(base, data);
     }
 
     /// The XDG spec says to ignore a relative value. fish does not — it
     /// resolves one against its own cwd, which ctrlr cannot know.
     #[test]
     fn test_xdg_base_ignores_a_relative_value() {
-        let base = xdg_base(
-            Some(OsStr::new("rel/data")),
-            Path::new("/home/u"),
-            ".local/share",
-        );
-        assert_eq!(base, PathBuf::from("/home/u/.local/share"));
+        let home = abs("home");
+        let base = xdg_base(Some(OsStr::new("rel/data")), &home, ".local/share");
+        assert_eq!(base, home.join(".local/share"));
     }
 
     #[test]
     fn test_xdg_base_ignores_an_empty_value() {
-        let base = xdg_base(Some(OsStr::new("")), Path::new("/home/u"), ".config");
-        assert_eq!(base, PathBuf::from("/home/u/.config"));
+        let home = abs("home");
+        let base = xdg_base(Some(OsStr::new("")), &home, ".config");
+        assert_eq!(base, home.join(".config"));
     }
 
     #[test]
     fn test_xdg_base_falls_back_to_home() {
-        let base = xdg_base(None, Path::new("/home/u"), ".config");
-        assert_eq!(base, PathBuf::from("/home/u/.config"));
+        let home = abs("home");
+        assert_eq!(xdg_base(None, &home, ".config"), home.join(".config"));
     }
 
     #[test]
     fn test_zsh_rc_prefers_zdotdir() {
-        let rc = zsh_rc(Some(OsStr::new("/home/u/dot")), Path::new("/home/u"));
-        assert_eq!(rc, PathBuf::from("/home/u/dot/.zshrc"));
+        let dot = abs("dot");
+        let rc = zsh_rc(Some(dot.as_os_str()), &abs("home"));
+        assert_eq!(rc, dot.join(".zshrc"));
     }
 
     #[test]
     fn test_zsh_rc_without_zdotdir() {
-        assert_eq!(
-            zsh_rc(None, Path::new("/home/u")),
-            PathBuf::from("/home/u/.zshrc")
-        );
+        let home = abs("home");
+        assert_eq!(zsh_rc(None, &home), home.join(".zshrc"));
         // A relative ZDOTDIR is ignored for the same reason as an XDG one.
-        assert_eq!(
-            zsh_rc(Some(OsStr::new("dot")), Path::new("/home/u")),
-            PathBuf::from("/home/u/.zshrc")
-        );
+        assert_eq!(zsh_rc(Some(OsStr::new("dot")), &home), home.join(".zshrc"));
     }
 
     #[test]
